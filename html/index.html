@@ -1,0 +1,507 @@
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<meta name="description" content="Improve your RSI experience.">
+		<meta name="author" content="Kamille92">
+		<title></title>
+		<!--
+		<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+		<link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.12.0/css/all.css" integrity="sha384-ekOryaXPbeCpWQNxMwSWVvQ0+1VrStoPJq54shlYhR8HzQgig1v5fas6YgOqLoKz" crossorigin="anonymous">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.12/dist/css/bootstrap-select.min.css">
+		<link rel="stylesheet" href="../css/default.css">
+		
+		<script src="../js/jquery-3.4.1.min.js"></script>
+		<script src="../js/bootstrap.bundle.min.js"></script>
+		<script src="../js/popper.min.js"></script>
+		<script src="../js/bootstrap-select.min.js"></script>
+		-->
+		
+		<link rel="stylesheet" href="../css/bootstrap.min.css">
+		<link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.12.0/css/all.css" integrity="sha384-ekOryaXPbeCpWQNxMwSWVvQ0+1VrStoPJq54shlYhR8HzQgig1v5fas6YgOqLoKz" crossorigin="anonymous">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.12/dist/css/bootstrap-select.min.css">
+		<link rel="stylesheet" href="../css/default.css">
+		
+		<script src="../js/jquery-3.4.1.min.js"></script>
+		<script src="../js/bootstrap.bundle.min.js"></script>
+		<script src="../js/popper.min.js"></script>
+		<script src="../js/bootstrap-select.min.js"></script>
+		
+		<script src="../js/functions.js"></script>
+		<script src="../js/index.js"></script>
+		
+		<script src="../js/page_comm_link.js"></script>
+		<script src="../js/page_spectrum.js"></script>
+		<script src="../js/page_contacts.js"></script>
+		<script src="../js/page_organizations.js"></script>
+		<script src="../js/page_roadmap.js"></script>
+		<script src="../js/page_ships.js"></script>
+		<script src="../js/page_store.js"></script>
+		<script src="../js/page_telemetry.js"></script>
+	</head>
+	<body class="bg">
+		<!-- TOP Nav bar -->
+		<nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow-lg">
+			<div>
+				<a class="navbar-brand mr-0 pl-2" href="https://robertsspaceindustries.com/" target="_blank">
+					<img src="../img/icon_64.png" width="30" height="30" class="d-inline-block align-top" alt="RSI" />
+					<span></span> <small><i class="fas fa-sync fa-spin text-warning d-none"></i></small>
+				</a>
+				<span class="d-none d-sm-inline">Star Citizens: <strong id="fans" class="mr-4"></strong> Funds raised: <strong id="funds"></strong>
+				</span>
+			</div>
+			<div class="media user_info">
+				<div class="media-body mr-1">
+					<div class="text-white displayname"></div>
+					<div><small><a href="#" target="_blank" class="nickname"><span class="text-muted"></span></a></small></div>
+				</div>
+				<img class="avatar">
+			</div>
+		</nav>
+		<!-- BOTTOM bar -->
+		<nav class="navbar navbar-dark bg-dark shadow-lg fixed-bottom text-light flex-md-nowrap">
+			<div>
+				This is an unofficial Star Citizen application<span class="d-none d-xxs-inline">, not affiliated with the Cloud Imperium group of companies.</span>
+			</div>
+			<div class="d-none d-sm-block">
+				<a href="https://rebrand.ly/0qbpn85" target="_blank" class="hover">Please, consider up-voting my post on Spectrum <small><i class="fas fa-external-link"></i></small></a>
+			</div>
+		</nav>
+		<div class="container-fluid">
+			<div class="row">
+				<div class="col-6 offset-3 mt-5">
+					<div id="cnx_status" class="offline card text-dark d-none">
+						<div class="card-body">
+							<div class="p-3">
+								<h5 class="card-title"></h5>
+								<h6 class="card-subtitle mb-2 text-muted">Connexion Status</h6>
+								<p class="card-text">In order for this tool to work, you need to be be authenticated on RSI website first.</p>
+								<a href="#" target="_blank" class="live_status btn"></a>
+								or
+								<a href="https://robertsspaceindustries.com/enlist?referral=STAR-VCSD-SQFF" target="_blank" class="btn btn-info">Create an account using my referal code</a>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div id="app" class="d-none">
+				<!-- Side bar -->
+				<nav class="bg-menu sidebar">
+					<div class="sidebar-sticky">
+						<ul class="nav flex-column mb-2">
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Comm_Link">
+								<i class="fas fa-satellite"></i> Comm-Link <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item">
+								<a class="nav-link" href="#page_Spectrum">
+								<i class="fas fa-comments-alt"></i> Spectrum <span class="badge badge-success badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Ships">
+								<i class="fas fa-rocket"></i> Ships <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Store">
+								<i class="fas fa-store"></i> Store
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Contacts">
+								<i class="fad fa-user"></i> Contacts <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Organizations">
+								<i class="fad fa-users"></i> Organizations <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Roadmap">
+								<i class="fas fa-road"></i> Roadmap <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item d-none">
+								<a class="nav-link" href="#page_Telemetry">
+								<i class="fas fa-chart-scatter"></i> Telemetry <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+						</ul>
+					</div>
+					<div class="community_logo">
+						<img src="../img/MadeByTheCommunity_White-min.png" alt="Made by the community" class="img-responsive" />
+						<div>
+							By <strong><a href="https://twitter.com/Kamille_92" target="_blank">Kamille92</a></strong> with <i class="fas fa-heart text-danger"></i> and <i class="fas fa-coffee text-warning"></i> 
+						</div>
+					</div>
+				</nav>
+				<main role="main" class="">
+					<div id="page_Comm_Link" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Comm Link<span><span></h1>
+						</div>
+						<div class="content">
+							<div class="row mb-2 d-flex flex-row-reverse">
+									<div id="input_search_news"class="input-group col-12 col-xs-12 col-sm-12 col-md-8 col-lg-6 col-xl-6 float-right">
+										<div class="input-group-prepend">
+											<span class="input-group-text bg-dark text-white">Search</span>
+										</div>
+										<input type="text" class="form-control" placeholder="" id="news_search">
+									</div>
+								</div>
+							<div class="Comm_Link row row row-cols-1 row-cols-xs-2 row-cols-lg-3 row-cols-xl-4 row-cols-xxxxl-4">
+							</div>
+						</div>
+					</div>
+					<div id="page_Spectrum" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Spectrum<span><span></h1>
+						</div>
+						<div class="content">
+							<div class="row">
+								<div class="col-12 col-md-6 threads">
+									<div class="card bg-dark">
+										<div class="card-body">
+											<h5 class="card-title">Latest CIG threads <span></span></h5>
+											<button class="btn btn-sm btn-primary read_all_CIG_threads">Mark all as read</button>
+											<ul class="list-unstyled"></ul>
+										</div>
+									</div>
+								</div>
+								<div class="col-12 col-md-6 notification">
+									<div class="card bg-dark">
+										<div class="card-body">
+											<h5 class="card-title">Notifications <span></span></h5>
+											<button class="btn btn-sm btn-primary read_all_notifications">Mark all as read</button>
+											<ul class="list-unstyled"></ul>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div id="page_Ships" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Ships<span><span></h1>
+						</div>
+						<div class="content">
+							<div class="page-content mt-3">
+								<div class="row">
+									<div class="col-12 col-md-4 col-lg-6 col-xl-6 float-left mb-2">
+										<button id="my_ships" type="button" class="btn btn-secondary d-none">My hangar <span class="nb"></span></button>
+										<button id="my_loans" type="button" class="btn btn-secondary d-none" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="This includes your loaners">My IG ship<span class="plurial"></span> <span class="nb"></span></button>
+									</div>
+									<div id="input_search_ships"class="input-group col-12 col-xs-12 col-sm-12 col-md-8 col-lg-6 col-xl-6 float-right d-none mb-2">
+										<div class="input-group-prepend">
+											<span class="input-group-text bg-dark text-white">Search</span>
+										</div>
+										<input type="text" class="form-control" placeholder="Ex: Constellation" id="ships_search">
+									</div>
+								</div>
+								<div class="row">
+									<div class="col-xs-2 col-md-3">
+										<div class="form-group">
+											<div class="input-group">
+												<div class="input-group-prepend">
+													<span class="input-group-text bg-dark text-white">Manufacturers</span>
+												</div>
+												<select id="Ship_Manufacturers" name="Ship_Manufacturers" class="selectpicker form-control" data-live-search="true" data-style="btn-secondary text-white" data-size="8"></select>
+											</div>
+										</div>
+									</div>
+									<div class="col-xs-2 col-md-3">
+										<div class="form-group">
+											<div class="input-group">
+												<div class="input-group-prepend">
+													<span class="input-group-text bg-dark text-white">Status</span>
+												</div>
+												<select id="Ship_Status" name="Ship_Status" class="selectpicker form-control" data-style="btn-secondary text-white" data-size="8"></select>
+											</div>
+										</div>
+									</div>
+									<div class="col-xs-2 col-md-3">
+										<div class="form-group">
+											<div class="input-group">
+												<div class="input-group-prepend">
+													<span class="input-group-text bg-dark text-white">Focus</span>
+												</div>
+												<select id="Ship_Focus" name="Ship_Focus" class="selectpicker form-control" data-style="btn-secondary text-white" data-size="8"></select>
+											</div>
+										</div>
+									</div>
+									<div class="col-xs-2 col-md-3">
+										<div class="form-group">
+											<div class="input-group">
+												<div class="input-group-prepend">
+													<span class="input-group-text bg-dark text-white">Type</span>
+												</div>
+												<select id="Ship_Type" name="Ship_Type" class="selectpicker form-control" data-style="btn-secondary text-white" data-size="8"></select>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="clearfix"></div>
+								<div class="ship_list"></div>
+							</div>
+						</div>
+					</div>
+					<div id="page_Contacts" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Contacts<span><span></h1>
+						</div>
+						
+						<div class="ptu_status d-none text-center mt-2">
+							<a href="#" target="_blank" class="btn btn-sm btn-danger">PTU contact sync => click and sign in to PTU site</a>
+						</div>
+						
+						<div class="sync mb-2 d-none">
+							<div class="text-center mt-2" id="display_sync_button">
+								<button type="button" class="btn btn-secondary text-warning" id="btn_sync_contact" data-toggle="modal" data-target="#exampleModal"><i class="fas fa-sync"></i> <span>Copy contacts (LIVE <i class="fad fa-long-arrow-alt-right"></i> PTU)</span><span class="d-none">Loading...</span></button>
+							</div>
+							<div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+								<div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+									<div class="modal-content bg-dark">
+										<div class="modal-header">
+											<h5 class="modal-title">Copy contacts</h5>
+											<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+												<span aria-hidden="true">&times;</span>
+											</button>
+										</div>
+										<div class="modal-body">
+											<div id="log" class="mt-2 d-none">
+												<div class="row">
+													<div class="col-8 offset-2">
+														<div id="summary" class="d-none">
+															<ul class="list-group">
+																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_added">
+																	Contacts added
+																	<span class="badge badge-success badge-pill" id="contacts_added">0</span>
+																</li>
+																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_existing">
+																	Already existing contacts 
+																	<span class="badge badge-warning badge-pill" id="contacts_existing">0</span>
+																</li>
+																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_no_ptu">
+																	Contacts without PTU account
+																	<span class="badge badge-danger badge-pill" id="contacts_no_ptu">0</span>
+																</li>
+															</ul>
+														</div>
+													</div>
+												</div>
+												<table class="table table-sm table-dark mt-2">
+													<thead>
+														<tr class="text-center">
+															<th scope="col"></th>
+															<th scope="col">Handle</th>
+															<th scope="col">Status</th>
+														</tr>
+													</thead>
+													<tbody>
+													</tbody>
+												</table>
+											</div>
+										</div>
+										<div class="modal-footer">
+											<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="content">
+							<div class="page-content mt-3">
+								<div class="mb-3 col-12 col-md-4 col-lg-6 col-xl-6 float-left">
+									<button id="my_contacts" type="button" class="btn d-none">My contact<span class="plurial"></span> only <span class="nb_my_contacts"></span></button>
+								</div>
+								<div id="input_search_contacts"class="input-group mb-3 col-12 col-xs-12 col-sm-12 col-md-8 col-lg-6 col-xl-6 float-right d-none">
+									<div class="input-group-prepend">
+										<span class="input-group-text bg-dark text-white">Search</span>
+									</div>
+									<input type="text" class="form-control" placeholder="Ex: Kamille92" id="contacts_search">
+								</div>
+								<div class="clearfix"></div>
+								<div class="contacts_list"></div>
+							</div>
+							<div class="my_contacts_list row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
+						</div>
+					</div>
+					<div id="page_Organizations" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Organizations<span><span></h1>
+						</div>
+						<div class="content">
+							<div class="my_organizations row row-cols-1"></div>
+						</div>
+					</div>
+					<div id="page_Store" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Store<span><span></h1>
+						</div>
+						<div class="content">
+						</div>
+					</div>
+					<div id="page_Roadmap" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<nav aria-label="breadcrumb" class="h2 d-flex">
+								<ol class="breadcrumb bg text-light m-0 p-0">
+									<li class="breadcrumb-item active"><a href="#page_Roadmap">Roadmap</a></li>
+								</ol>
+								<a href="#" target="_blank" class="ml-4 btn btn-warning d-none" id="roadmap_roundup">Roadmap roundup</a>
+							</nav>
+						</div>
+						<div class="content">
+						</div>
+					</div>
+					<div id="page_Telemetry" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Telemetry<span><span></h1>
+						</div>
+						<div class="content">
+							<div class="row">
+								<div class="col-md-4 mb-4">
+									<div class="card text-dark">
+										<div class="card-header">
+											<h5 class="mb-0">My PC</h5>
+										</div>
+										<div class="card-body p-0">
+											<div class="list-group">
+												<a href="#" class="list-group-item list-group-item-action p-1">
+													<div class="d-flex w-100 justify-content-between">
+														<h5 class="mb-0">CPU</h5>
+														<span class="badge badge-primary badge-pill cpuPerfIdx"></span>
+													</div>
+													<p class="mb-1 ml-4 cpu"></p>
+												</a>
+												<a href="#" class="list-group-item list-group-item-action p-1">
+													<div class="d-flex w-100 justify-content-between">
+														<h5 class="mb-0">GPU</h5>
+														<span class="badge badge-primary badge-pill gpuPerfIdx"></span>
+													</div>
+													<p class="mb-1 ml-4 gpu"></p>
+												</a>
+												<a href="#" class="list-group-item list-group-item-action p-1">
+													<div class="d-flex w-100 justify-content-between">
+														<h5 class="mb-0">Memory</h5>
+													</div>
+													<p class="mb-1 ml-4 totPhysMem"></p>
+												</a>
+												<a href="#" class="list-group-item list-group-item-action p-1">
+													<div class="d-flex w-100 justify-content-between">
+														<h5 class="mb-0">Resolution</h5>
+													</div>
+													<p class="mb-1 ml-4 resolution"></p>
+												</a>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="col-md-4 mb-4">
+									<div class="card text-dark">
+										<div class="card-header">
+											<h5 class="mb-0">Latency</h5>
+										</div>
+										<div class="card-body p-0">
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-1">Average</h5>
+												</div>
+												<p class="mb-1 ml-4 latency avg"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-1">Max</h5>
+												</div>
+												<p class="mb-1 ml-4 latency max"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-1">Min</h5>
+												</div>
+												<p class="mb-1 ml-4 latency min"></p>
+											</a>
+										</div>
+									</div>
+								</div>
+								<div class="col-md-4 mb-4">
+									<div class="card text-dark">
+										<div class="card-header">
+											<h5 class="mb-0">Loading time</h5>
+										</div>
+										<div class="card-body p-0">
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Average</h5>
+												</div>
+												<p class="mb-1 ml-4 load_times avg"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Max</h5>
+												</div>
+												<p class="mb-1 ml-4 load_times max"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Min</h5>
+												</div>
+												<p class="mb-1 ml-4 load_times min"></p>
+											</a>
+										</div>
+									</div>
+								</div>
+							</div>
+							<div class="row">
+								<div class="col-md-4 mb-4">
+									<div class="card text-dark">
+										<div class="card-header">
+											<h5 class="mb-0">CPU Usage</h5>
+										</div>
+										<div class="card-body p-0">
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Average</h5>
+												</div>
+												<p class="mb-1 ml-4 sc_avg_use"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Max</h5>
+												</div>
+												<p class="mb-1 ml-4 sc_max_use"></p>
+											</a>
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Min</h5>
+												</div>
+												<p class="mb-1 ml-4 sc_min_use"></p>
+											</a>
+										</div>
+									</div>
+								</div>
+								<div class="col-md-4 mb-4">
+									<div class="card text-dark">
+										<div class="card-header">
+											<h5 class="mb-0">FPS</h5>
+										</div>
+										<div class="card-body p-0">
+											<a href="#" class="list-group-item list-group-item-action p-1">
+												<div class="d-flex w-100 justify-content-between">
+													<h5 class="mb-0">Average</h5>
+												</div>
+												<p class="mb-1 ml-4 avg_fps"></p>
+											</a>
+										</div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</main>
+			</div>
+		</div>
+	</body>
+</html>
