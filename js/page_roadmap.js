@@ -7,7 +7,9 @@ function LeftMenu_Click_Roadmap(elem, href)
 	} else {
 		$(href + ' .content').html('<div class="text-center text-secondary mt-4"><i class="fas fa-spinner fa-spin fa-5x"></i></center>');
 		
-		$('#roadmap_roundup').addClass('d-none');
+		$('#roadmap_roundup, #page_Roadmap button.prev, #page_Roadmap button.next').addClass('d-none');
+		$('#page_Roadmap button.prev, #page_Roadmap button.next').attr("disabled", true);
+		$('#page_Roadmap .timeSince').text('');
 		
 		// Get Roadmap information
 		chrome.runtime.sendMessage({
@@ -21,7 +23,7 @@ function LeftMenu_Click_Roadmap(elem, href)
 				$(boards).each(function (index, board) {
 					$(href + ' .content .boards').append('' +
 						'<div class="col mb-4">' +
-							'<div class="card bg-dark cursor" data-id="' + board.id + '" data-name="' + board.name + '">' +
+							'<div class="card bg-dark cursor getboard" data-id="' + board.id + '" data-name="' + board.name + '" data-last_updated="' + board.last_updated + '">' +
 								'<div class="card-header p-1 m-0">' + board.name + '</div>' +
 								'<img class="img-fluid img_roadmap" src="' + base_LIVE_Url + board.thumbnail.urls.square + '" alt="' + board.name + '" />' +
 								'<div class="card-footer p-1 m-0 text-right" title="' + board.last_updated + '"><i>Updated ' + timeSince(board.last_updated) + '</i></div>' +
@@ -53,7 +55,8 @@ function find_difference(card, current_release, previous_releases)
 					// card was already there in previous roadmap
 					found = true;
 					
-					if (previous_release.id != current_release.id)
+					if (previous_release.id != current_release.id && previous_release.name != current_release.name)
+					//if (previous_release.name != current_release.name)
 					{
 						// card was already there but has been moved
 						moved = true;
@@ -194,7 +197,152 @@ function validURL(str) {
   return !!pattern.test(str);
 }
 
+
+function get_board(board_id, board_last_updated)
+{
+	$('#page_Roadmap button.prev, #page_Roadmap button.next').removeClass('d-none');
+	
+	chrome.runtime.sendMessage({
+		type: 'getBoardData',
+		BoardID: board_id,
+		BoardLastUpdated: board_last_updated,
+	}, function (result) {
+		if (result.success == 1) {
+			var current = result.data.curr.data;
+			var current_releases = current.releases;
+			var current_categories = current.categories;
+			/*
+			var current_tags = current.tags;
+			var current_chapters = current.chapters;
+			*/
+			
+			var previous = result.data.prev.data;
+			if (typeof previous == "undefined")
+			{
+				previous = current;
+				prev_last_updated = false;
+			}
+			else prev_last_updated = previous.last_updated;
+			
+			var previous_releases = previous.releases;
+			var previous_categories = previous.categories;
+			/*
+			var previous_tags = previous.tags;
+			var previous_chapters = previous.chapters;
+			*/
+			
+			var next = result.data.next.data;
+			
+			if (prev_last_updated) $('#page_Roadmap button.prev').attr("disabled", false).data('id', board_id).data('last_updated', prev_last_updated);
+			
+			var next_last_updated = false;
+			if (typeof next != "undefined") next_last_updated = next.last_updated;
+			if (next_last_updated) $('#page_Roadmap button.next').attr("disabled", false).data('id', board_id).data('last_updated', next_last_updated);
+			
+			var missing = find_missing(previous_releases, current_releases);
+			
+			var current_date = new Date(current.last_updated*1000);
+			
+			const options = { weekday: 'short', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' };
+			$('#page_Roadmap span.timeSince').text(current_date.toLocaleDateString(undefined, options));
+			
+			if (current.notification_enabled == 1)
+			{					
+				current.notification_body = current.notification_body.replace(')','');
+				var matches = current.notification_body.match(/\bhttps?:\/\/\S+/gi);
+			
+				if (typeof matches !== undefined && validURL(matches)) $('#roadmap_roundup').attr('href', matches).removeClass('d-none');
+			}
+			else
+			{
+				$('#roadmap_roundup').addClass('d-none');
+			}
+			
+			//console.log(missing.previous_cards);
+
+			$('.board-' + board_id).html('').removeClass('d-none');;
+
+
+			$('.board-' + board_id).append('<div class="row col row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-3 row-cols-xl-4 row-cols-xxl-4 row-cols-xxxl-5 row-cols-xxxxl-5"></div>');
+
+			$(current_releases).each(function (index, release) {
+				if (release.cards.length > 0) {
+					
+					$('.board-' + board_id + ' > .row').append('' +
+						'<div class="release-' + release.id + (release.released == 1 ? ' d-none' : '') + ' col mb-2 pl-2 pr-0" data-name="' + release.name + '" data-released="' + release.released + '">' +
+							'<div class="card bg-dark mb-2">' +
+								'<h2 class="card-header cursor noselect p-1 m-0 text-center">' + release.name + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i></h2>' +
+								'<div class="card-body p-2 m-0">' +
+									'<div class="row release"></div>' +
+								'</div>' +
+							'</div>' +
+						'</div>' +
+					'');
+
+					$(current_categories).each(function (index, category) {
+						missing_in_this_category = '';
+						
+						if (typeof missing.removed[release.id] !== "undefined")
+						{
+							$(missing.removed[release.id]).each( (index, missing_in_this_release) => {
+								$(missing_in_this_release).each( (index, elem) => {
+									if (elem.card.category_id == category.id)
+									{
+										missing_in_this_category = missing_in_this_category + display_card (elem.card, "REMOVED", "");
+									}
+								});
+							});
+						}
+						
+						
+						$('.board-' + board_id + ' > .row .release-' + release.id + ' .card-body > .row.release').append('' +
+							'<div class="col-12 mb-2" data-dategory>' +
+								'<div class="card bg-secondary text-light" data-id="' + category.id + '" data-name="' + category.name + '">' +
+									'<div class="card-header cursor noselect p-1 m-0 ml-2 category-title">' + 
+										category.name + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i>' +
+									'</div>' +
+									'<div class="card-body p-2 m-0 category-' + category.id + '">' +
+										'<div class="row category">' +
+											missing_in_this_category + 
+										'</div>' +
+									'</div>' +
+								'</div>' +
+							'</div>' +
+						'');
+					});
+
+					$(release.cards).each(function (index, card) {
+						difference = find_difference(card, release, previous_releases);
+						
+						$('.board-' + card.board_id + ' > .row .release-' + card.release_id + ' .card-body .row.release .category-' + card.category_id + ' .row.category').append(display_card(card, difference.id_changed, difference.extra, missing.previous_cards[card.id]));
+					});
+				}
+
+			});
+
+			$('.row.category').each(function (index) {
+				if ($(this).find('div').length == 0) $(this).parent().parent().parent().addClass('d-none');
+			});
+
+			$('[data-released="0"]:gt(0) > .card > .card-body').removeClass('d-none');
+
+		}
+	});
+}
+
 $(document).ready(function () {
+	
+	$(document).keydown(function(e) {
+		if (!$('#page_Roadmap').hasClass('d-none'))
+		{
+			if(e.keyCode == 37) { // left
+				$('#page_Roadmap button.prev').click();
+			}
+			else if(e.keyCode == 39) { // right
+				$('#page_Roadmap button.next').click();
+			}
+		}
+	});
 	
 	// Click on Roadmap breadcrumb
 	$(document).on('click', '#page_Roadmap nav > ol > li:eq(0)', function () {
@@ -204,13 +352,15 @@ $(document).ready(function () {
 		
 		//$('#page_Roadmap nav button').addClass('d-none');
 		
-		$('#roadmap_roundup').addClass('d-none');
+		$('#roadmap_roundup, #page_Roadmap button.prev, #page_Roadmap button.next').addClass('d-none');
+		$('#page_Roadmap .timeSince').text('');
 	});
 
 	// Click on a Roadmap board
-	$(document).on('click', '.boards .card', function () {
+	$(document).on('click', '.boards .getboard', function () {
 		var board_id = $(this).data('id');
 		var board_name = $(this).data('name');
+		var board_last_updated = $(this).data('last_updated');
 
 		$('#page_Roadmap nav > ol > li:eq(0)').removeClass('active');
 		$('#page_Roadmap nav > ol > li:gt(0)').remove();
@@ -219,105 +369,18 @@ $(document).ready(function () {
 		//$('#page_Roadmap nav button').removeClass('d-none');
 
 		$('.boards, .board').addClass('d-none');
-
-		chrome.runtime.sendMessage({
-			type: 'getBoardData',
-			BoardID: board_id
-		}, function (result) {
-			if (result.success == 1) {
-				var current = result.data.current;
-				var current_releases = current.releases;
-				var current_categories = current.categories;
-				var current_tags = current.tags;
-				var current_chapters = current.chapters;
-				
-				var previous = result.data.previous;
-				var previous_releases = previous.releases;
-				var previous_categories = previous.categories;
-				var previous_tags = previous.tags;
-				var previous_chapters = previous.chapters;
-				
-				var missing = find_missing(previous_releases, current_releases);
-				
-				if (current.notification_enabled == 1)
-				{					
-					current.notification_body = current.notification_body.replace(')','');
-					var matches = current.notification_body.match(/\bhttps?:\/\/\S+/gi);
-				
-					if (typeof matches !== undefined && validURL(matches)) $('#roadmap_roundup').attr('href', matches).text(current.notification_title).removeClass('d-none');
-				}
-				
-				//console.log(missing.previous_cards);
-
-				$('.board-' + board_id).html('').removeClass('d-none');;
-
-
-				$('.board-' + board_id).append('<div class="row col row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-3 row-cols-xl-4 row-cols-xxl-4 row-cols-xxxl-5 row-cols-xxxxl-5"></div>');
-
-				$(current_releases).each(function (index, release) {
-					if (release.cards.length > 0) {
-						
-						$('.board-' + board_id + ' > .row').append('' +
-							'<div class="release-' + release.id + (release.released == 1 ? ' d-none' : '') + ' col mb-2 pl-2 pr-0" data-name="' + release.name + '" data-released="' + release.released + '">' +
-								'<div class="card bg-dark mb-2">' +
-									'<h2 class="card-header cursor noselect p-1 m-0 text-center">' + release.name + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i></h2>' +
-									'<div class="card-body p-2 m-0">' +
-										'<div class="row release"></div>' +
-									'</div>' +
-								'</div>' +
-							'</div>' +
-						'');
-
-						$(current_categories).each(function (index, category) {
-							missing_in_this_category = '';
-							
-							if (typeof missing.removed[release.id] !== "undefined")
-							{
-								$(missing.removed[release.id]).each( (index, missing_in_this_release) => {
-									$(missing_in_this_release).each( (index, elem) => {
-										if (elem.card.category_id == category.id)
-										{
-											missing_in_this_category = missing_in_this_category + display_card (elem.card, "REMOVED", "");
-										}
-									});
-								});
-							}
-							
-							
-							$('.board-' + board_id + ' > .row .release-' + release.id + ' .card-body > .row.release').append('' +
-								'<div class="col-12 mb-2" data-dategory>' +
-									'<div class="card bg-secondary text-light" data-id="' + category.id + '" data-name="' + category.name + '">' +
-										'<div class="card-header cursor noselect p-1 m-0 ml-2 category-title">' + 
-											category.name + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i>' +
-										'</div>' +
-										'<div class="card-body p-2 m-0 category-' + category.id + '">' +
-											'<div class="row category">' +
-												missing_in_this_category + 
-											'</div>' +
-										'</div>' +
-									'</div>' +
-								'</div>' +
-							'');
-						});
-
-						$(release.cards).each(function (index, card) {
-							difference = find_difference(card, release, previous_releases);
-							
-							$('.board-' + card.board_id + ' > .row .release-' + card.release_id + ' .card-body .row.release .category-' + card.category_id + ' .row.category').append(display_card(card, difference.id_changed, difference.extra, missing.previous_cards[card.id]));
-						});
-					}
-
-				});
-
-				$('.row.category').each(function (index) {
-					if ($(this).find('div').length == 0) $(this).parent().parent().parent().addClass('d-none');
-				});
-
-				$('[data-released="0"]:gt(0) > .card > .card-body').removeClass('d-none');
-
-			}
-		});
-
+		
+		get_board(board_id, board_last_updated);
+	});
+	
+	$(document).on('click', '#page_Roadmap button.prev, #page_Roadmap button.next', function () {
+		var board_id = $(this).data('id');
+		var board_last_updated = $(this).data('last_updated');
+		
+		get_board(board_id, board_last_updated);
+		
+		$('#roadmap_roundup').addClass('d-none');
+		$('#page_Roadmap button.prev, #page_Roadmap button.next').attr("disabled", true);
 	});
 
 	// Click on Roadmap Release card

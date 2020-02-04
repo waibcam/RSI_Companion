@@ -345,13 +345,22 @@
 						</div>
 					</div>
 					<div id="page_Roadmap" class="page d-none">
-						<div class="pt-3 pb-2 mb-3 border-bottom">
-							<nav aria-label="breadcrumb" class="h2 d-flex">
+						<div class="pt-3 pb-2 mb-3 border-bottom d-flex justify-content-between">
+							<nav aria-label="breadcrumb" class="h2">
 								<ol class="breadcrumb bg text-light m-0 p-0">
 									<li class="breadcrumb-item active"><a href="#page_Roadmap">Roadmap</a></li>
 								</ol>
-								<a href="#" target="_blank" class="ml-4 btn btn-warning d-none" id="roadmap_roundup">Roadmap roundup</a>
 							</nav>
+							<div class="pt-2 d-flex justify-content-end">
+								<div>
+									<a href="#" target="_blank" class="btn btn-sm btn-warning d-none" id="roadmap_roundup">Roadmap roundup</a>
+								</div>
+								<div>
+									<button class="btn btn-primary btn-sm ml-2 prev d-none" data-id="" data-last_updated="" disabled><i class="fad fa-chevron-circle-left"></i> Prev</button>
+									<small><span class="timeSince ml-2"></span></small>
+									<button class="btn btn-primary btn-sm ml-2 next d-none" data-id="" data-last_updated="" disabled>Next <i class="fad fa-chevron-circle-right"></i></button>
+								</div>
+							</div>
 						</div>
 						<div class="content">
 						</div>

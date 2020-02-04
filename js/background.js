@@ -30,7 +30,7 @@ chrome.management.getSelf((ExtensionInfo) => {
 });
 
 
-local_storage = {};
+var local_storage = {};
 
 var FrienList = {live: [], ptu: []};
 var AddedMembers = [];
@@ -87,6 +87,11 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Extension is installed / upgraded
 chrome.runtime.onInstalled.addListener((details) => {
+	
+	// Clear local storage on new install / upgrade
+	chrome.storage.local.clear(function (callback){
+		local_storage = [];
+	});
 
 	// check if user is connected on RSI
 	CheckConnection (false, (connection_status) => {
@@ -217,12 +222,6 @@ function OpenApp() {
 	);
 }
 
-
-
-/*
-chrome.storage.local.clear(function (callback){
-});
-*/
 
 // Get data from storage
 chrome.storage.local.get(function (result){
@@ -838,82 +837,32 @@ function getBoards(callback)
 }
 
 
-// Return Roadmap data for a specific BoardID. 1: SC & 2: SQ42
-function getBoardData(BoardID, callback)
-{	
-	var local_Boards = local_storage.Boards;
-	
-	if (typeof local_Boards == "undefined") local_Boards = [];
-	
-	$.ajax({
-		async: true,
-		type: "get",
-		contentType: 'application/json',
-		url: base_LIVE_Url + "api/roadmap/v1/boards/" + BoardID,
-		success: (result) => {
-			
-			if (result.success == 1)
-			{
-				if (typeof local_Boards[BoardID] == "undefined" || local_Boards[BoardID] == null)
-				{
-					// No Local data (First time, most likely)
-					local_Boards[BoardID] = {current: {last_updated: 0}, previous: {last_updated: 0}};				
-				}
-				
-				if (local_Boards[BoardID].current.last_updated < result.data.last_updated)
-				{
-					// New version !
-					local_Boards[BoardID].current = result.data;
-					
-					// get the last one.
-					$.ajax({
-						async: true,
-						type: "get",
-						contentType: 'application/json',
-						url: "https://sc-roadmap.kamille.ovh/",
-						cache: true,
-						success: (previous) => {
-							if (previous.success == 1)
-							{
-								local_Boards[BoardID].previous = previous.data;
-							}
-							
-							data = local_Boards[BoardID];
-							
-							local_storage.Boards = local_Boards;
-							
-							chrome.storage.local.set({Boards: local_Boards}, () => {
-								// saved locally
-							});
-							
-							callback({success: 1, code: "OK", msg: "OK", data: data});
-						},
-						data: {
-							id: BoardID,
-							last_updated: result.data.last_updated
-						},
-						error: (request, status, error) => {
-							callback({success: 1, code: "OK", msg: "OK", data: data});
-						}
-					});
-				}
-				else
-				{
-					// Using "old data"
-					callback({success: 1, code: "OK", msg: "OK", data: local_Boards[BoardID]});
-				}
-			}
-			else
-			{
-				callback({success: 0, code: "KO", data: {}});
-			}
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText});
-		},
-	});
-}
+var session_data = [];
 
+// Return Roadmap data for a specific BoardID. 1: SC & 2: SQ42
+function getBoardData(BoardID, BoardLastUpdated, callback)
+{
+	if (typeof session_data[BoardID] == "undefined") session_data[BoardID] = [];
+	
+	if (typeof session_data[BoardID][BoardLastUpdated] != "undefined") callback(session_data[BoardID][BoardLastUpdated]);
+	else
+	{		
+		$.ajax({
+			async: true,
+			type: "get",
+			contentType: 'application/json',
+			url: "https://sc-roadmap.kamille.ovh/get.php?id=" + BoardID + "&last_updated=" + BoardLastUpdated,
+			success: (BoardData) => {				
+				session_data[BoardID][BoardLastUpdated] = BoardData;
+				
+				callback(BoardData);
+			},
+			error: (request, status, error) => {
+				callback({success: 1, code: "OK", msg: "OK", data: {}});
+			}
+		});
+	}
+}
 
 //Search in Contact list
 function SearchContact(LIVE_Token, Query, callback)
@@ -1435,7 +1384,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     }
 	else if (message && message.type == 'getBoardData') {
 		(async () => {
-			getBoardData (message.BoardID, (data) => {
+			getBoardData (message.BoardID, message.BoardLastUpdated, (data) => {
 				data.cached_since = current_timestamp;
 				
 				BoardData[message.BoardID] = data;
