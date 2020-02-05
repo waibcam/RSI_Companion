@@ -1008,10 +1008,10 @@ function getBoardData(BoardID, BoardLastUpdated, callback)
 				
 				callback(BoardData);
 			},
-			data: {
+			data: JSON.stringify({
 				id: BoardID,
 				last_updated: BoardLastUpdated,
-			},
+			}),
 			error: (request, status, error) => {
 				callback({success: 1, code: "OK", msg: "OK", data: {}});
 			}
