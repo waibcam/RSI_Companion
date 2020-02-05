@@ -47,15 +47,19 @@
 					<img src="../img/icon_64.png" width="30" height="30" class="d-inline-block align-top" alt="RSI" />
 					<span></span> <small><i class="fas fa-sync fa-spin text-warning d-none"></i></small>
 				</a>
-				<span class="d-none d-sm-inline">Star Citizens: <strong id="fans" class="mr-4"></strong> Funds raised: <strong id="funds"></strong>
-				</span>
+				<span class="d-none d-sm-inline">Star Citizens: <strong id="fans" class="mr-4"></strong> Funds raised: <strong id="funds"></strong></span>
 			</div>
-			<div class="media user_info">
-				<div class="media-body mr-1">
-					<div class="text-white displayname"></div>
-					<div><small><a href="#" target="_blank" class="nickname"><span class="text-muted"></span></a></small></div>
+			<div class="d-flex">
+				<div class="mt-2 mr-4">
+					<button type="button" class="btn btn-sm btn-warning d-none" data-toggle="modal" data-target="#ships_not_found"></button>
 				</div>
-				<img class="avatar">
+				<div class="media user_info">
+					<div class="media-body mr-1">
+						<div class="text-white displayname"></div>
+						<div><small><a href="#" target="_blank" class="nickname"><span class="text-muted"></span></a></small></div>
+					</div>
+					<img class="avatar">
+				</div>
 			</div>
 		</nav>
 		<!-- BOTTOM bar -->
@@ -67,6 +71,24 @@
 				<a href="https://robertsspaceindustries.com/community/citizen-spotlight/16217-RSI-Companion" target="_blank" class="hover">Please, consider up-voting my post on Spectrum <small><i class="fas fa-external-link"></i></small></a>
 			</div>
 		</nav>
+		<div class="modal fade" id="ships_not_found" tabindex="-1" role="dialog" aria-labelledby="ships_not_found" aria-hidden="true">
+			<div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+				<div class="modal-content bg-dark">
+					<div class="modal-header">
+						<h5 class="modal-title">Ships not found! Report them.</h5>
+						<button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">&times;</span>
+						</button>
+					</div>
+					<div class="modal-body">
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-secondary" data-dismiss="modal">No thanks!</button>
+						<button type="button" class="btn btn-success send_report" data-dismiss="modal">Yes, send the report</button>
+					</div>
+				</div>
+		  </div>
+		</div>
 		<div class="container-fluid">
 			<div class="row">
 				<div class="col-6 offset-3 mt-5">
@@ -259,14 +281,14 @@
 						
 						<div class="sync mb-2 d-none">
 							<div class="text-center mt-2" id="display_sync_button">
-								<button type="button" class="btn btn-secondary text-warning" id="btn_sync_contact" data-toggle="modal" data-target="#exampleModal"><i class="fas fa-sync"></i> <span>Copy contacts (LIVE <i class="fad fa-long-arrow-alt-right"></i> PTU)</span><span class="d-none">Loading...</span></button>
+								<button type="button" class="btn btn-secondary text-warning" id="btn_sync_contact" data-toggle="modal" data-target="#ptu_sync_modal"><i class="fas fa-sync"></i> <span>Copy contacts (LIVE <i class="fad fa-long-arrow-alt-right"></i> PTU)</span><span class="d-none">Loading...</span></button>
 							</div>
-							<div class="modal fade" id="exampleModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true">
+							<div class="modal fade" id="ptu_sync_modal" tabindex="-1" role="dialog" aria-labelledby="ptu_sync_modalLabel" aria-hidden="true">
 								<div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
 									<div class="modal-content bg-dark">
 										<div class="modal-header">
 											<h5 class="modal-title">Copy contacts</h5>
-											<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+											<button type="button" class="close text-light" data-dismiss="modal" aria-label="Close">
 												<span aria-hidden="true">&times;</span>
 											</button>
 										</div>

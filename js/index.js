@@ -43,6 +43,18 @@ $(document).ready(function () {
 		funds = (funds-(funds%100))/100;
 		$('#funds').text("$" + numberWithCommas(funds));
 	});	
+	
+	$(document).on('click', '.send_report', function () {
+		var button = $(this);
+		chrome.runtime.sendMessage({
+			type: 'sendReport',
+			report_type: button.data('report_type'),
+			report_data: button.data('report_data')
+		}, function(result){
+			$('button[data-target="#' + button.data('report_type') + '"]').remove();
+		});
+	});
+
 });
 
 

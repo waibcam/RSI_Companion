@@ -49,6 +49,8 @@ var checking_connection = false;
 var last_CheckConnection = 0;
 var max_periodInMinutes = 10;
 
+var caching_data = false;
+
 var google_api_key = "AIzaSyAQCGuWt-QbXdl2noNSpRiRxVSBMrMr3XI";
 
 
@@ -212,14 +214,23 @@ chrome.tabs.onActivated.addListener(function callback(activeInfo){
 function OpenApp() {
 	setAlarm('CheckConnection', 1);
 	
-	chrome.tabs.create(
-		{
-			url: "html/index.html",
-			active: true
-		}, (tab) => {
-			application_tab = tab;
+	var open = function(){
+		if (checking_connection === false && caching_data === false){
+			// run when condition is met
+			chrome.tabs.create({
+				url: "html/index.html",
+				active: true
+			}, (tab) => {
+				application_tab = tab;
+			});
 		}
-	);
+		else {
+			setBadge('WAIT', '#BF6913');
+			setTimeout(open, 250); // check again in 250 second
+		}
+	}
+
+	open();
 }
 
 
@@ -254,9 +265,11 @@ function cache_data(connection_status, callback)
 {
 	show_log("Caching started");
 	
-	if (connection_status.live.connected === true)
+	if (connection_status.live.connected === true && caching_data === false)
 	{
 		// User is connected
+		
+		caching_data = true;
 		
 		current_timestamp = Math.floor(Date.now() / 1000);
 		
@@ -268,6 +281,7 @@ function cache_data(connection_status, callback)
 				data.cached_since = current_timestamp;
 				ShipList = data;
 				
+				caching_data = false;
 				// this part is the most longer, usually.
 				callback();
 			});
@@ -286,9 +300,17 @@ function cache_data(connection_status, callback)
 				OrgList = data;
 			})
 		}
-		else callback();
+		else
+		{
+			caching_data = false;
+			callback();
+		}
 	}
-	else callback();
+	else
+	{
+		caching_data = false;
+		callback();
+	}
 	
 	show_log("cache_data ended");
 }
@@ -701,17 +723,22 @@ function getShipList(LIVE_Token, callback)
 		contentType: 'application/json',
 		url: base_LIVE_Url + "ship-matrix/index",
 		success: (ship_matrix_result) => {
+			var ship_matrix = ship_matrix_result.data;
+			var MyShipLoaned = [];
+			var owned_ship = [];
+			var Manufacturers = [];
+			var my_ships_not_found = [];
+			if (typeof local_storage.report == "undefined") local_storage.report = {};
+				
 			if (ship_matrix_result.success == 1 && ship_matrix_result.data.length > 0)
 			{
-				var ship_matrix = ship_matrix_result.data;
-				var MyShipLoaned = [];
-				var owned_ship = [];
-				
 				$(ship_matrix).each((index, ship) => {
 					sorted_name = ship.manufacturer.name.toLowerCase() + ' - ' + ship.name.toLowerCase();
 					ship.sorted_name = sorted_name;
 					
 					ship_matrix[index] = ship;
+					
+					if (!Manufacturers.find(x => x.id == ship.manufacturer.id)) Manufacturers.push({name: ship.manufacturer.name, code: ship.manufacturer.code});
 				});
 				
 				// return Ship List
@@ -722,63 +749,150 @@ function getShipList(LIVE_Token, callback)
 					url: base_LIVE_Url + "api/ship-upgrades/setContextToken",
 					success: (result) => {
 						
-						// return owned ship list (well, actually the ship list mark with a "owned" attribute (true/false)
-						$.ajax({ // request a page of members
-							async: true,
-							type: "post",
-							contentType: 'application/json',
-							url: base_LIVE_Url + "pledge-store/api/upgrade",
-							success: (ship_upgrade_result) => {
-								if (ship_upgrade_result[0].data.ships.length > 0)
-								{
-									var ship_upgrade = ship_upgrade_result[0].data.ships;
-									$(ship_upgrade).each( (index, ship) => {
-										if (ship.owned) owned_ship.push(ship.id);
-									});
-
-									$(ship_matrix).each((index, ship) => {
-										if (owned_ship.includes(parseInt(ship.id))) ship.owned = true;
-										else ship.owned = false;
-										
-										ship_matrix[index] = ship;
-									});
+						getHangar(LIVE_Token, 1, (HangarData) => {
+							if (HangarData.success == 1)
+							{								
+								my_ships = HangarData.data.join('###');
+								// Comes now, let's try to fix all ships name...
+								
+								$(Manufacturers).each((code, value) => {
+									my_ships = my_ships.replace(value.code, '');
+									my_ships = my_ships.replace(value.code.toLowerCase(), '');
+									my_ships = my_ships.replace(value.code.toUpperCase(), '');
+									my_ships = my_ships.replace(value.name, '');
+									my_ships = my_ships.replace(value.name.toLowerCase(), '');
+									my_ships = my_ships.replace(value.name.toUpperCase(), '');
 									
-									// return loaned matrix
-									$.ajax({
-										async: true,
-										type: "get",
-										contentType: 'application/json',
-										url: "https://rsi-companion.s3.eu-west-3.amazonaws.com/loan.json",
-										cache : true,
-										success: (result) => {
-											var ship_loaners = result.data
-										
-											$(ship_matrix).each((index, ship) => {											
-												if (ship.owned) {											
-													if (typeof ship_loaners[ship.id] !== "undefined") {
-														$(ship_loaners[ship.id]).each(function (index, value) {
-															if (MyShipLoaned.includes(value) === false) MyShipLoaned.push(value);
-														});
-													} else {
-														if (MyShipLoaned.includes(ship.id) === false) MyShipLoaned.push(ship.id);
-													}
-												}
-											});
-											
-											result.data = {ships: ship_matrix, loaners: MyShipLoaned};
-											
-											callback(result);
-										},
-										error: (request, status, error) => {
-											callback({success: 0, code: "KO", msg: request.responseText});
+									names = value.name.split(' ');
+									if (names.length > 0)
+									{
+										$(names).each((index, split_name) => {
+											my_ships = my_ships.replace(split_name, '');
+											my_ships = my_ships.replace(split_name.toLowerCase(), '');
+											my_ships = my_ships.replace(split_name.toUpperCase(), '');
+										});
+									}
+								});
+								
+								/*
+								my_ships = my_ships.replace('315p Explorer', '315p');
+								my_ships = my_ships.replace('325a Fighter', '325a');
+								my_ships = my_ships.replace('350r Racer', '350r');
+								my_ships = my_ships.replace('600i Exploration Module', '600i Explorer');
+								my_ships = my_ships.replace('600i Touring', '600i Touring Module');
+								my_ships = my_ships.replace('890 JUMP', '890 Jump');
+								my_ships = my_ships.replace('Hercules Starlifter A2', 'A2 Hercules');
+								my_ships = my_ships.replace('Ballista', 'Anvil Ballista');
+								my_ships = my_ships.replace('Ballista Dunestalker', 'Anvil Ballista Dunestalker');
+								my_ships = my_ships.replace('Ballista Snowblind', 'Anvil Ballista Snowblind');
+								my_ships = my_ships.replace('Defender', 'Banu Defender');
+								my_ships = my_ships.replace('Hercules Starlifter C2', 'C2 Hercules');
+								my_ships = my_ships.replace('Pisces', 'C8 Pisces');
+								my_ships = my_ships.replace('Pisces - Expedition', 'C8X Pisces Expedition ');
+								my_ships = my_ships.replace('Cutlass 2949 Best In Show', 'Cutlass Black');
+								my_ships = my_ships.replace('Cyclone ', 'Cyclone-');
+								my_ships = my_ships.replace('Hornet F7C', 'F7C Hornet');
+								my_ships = my_ships.replace('Hornet F7C Wildfire', 'F7C Hornet Wildfire');
+								my_ships = my_ships.replace('Hornet F7C-M Super', 'F7C-M Super Hornet');
+								my_ships = my_ships.replace('Hornet F7C-M Super Heartseeker', 'F7C-M Super Hornet Heartseeker');
+								my_ships = my_ships.replace('Hornet F7C-R Tracker', 'F7C-R Hornet Tracker');
+								my_ships = my_ships.replace('Hornet F7C-S Ghost', 'F7C-S Hornet Ghost');
+								my_ships = my_ships.replace('M2 Hercules', 'Hercules Starlifter M2');
+								my_ships = my_ships.replace('M50 Interceptor', 'M50');
+								my_ships = my_ships.replace('Crusader Mercury Star Runner', 'Mercury Star Runner');
+								my_ships = my_ships.replace('Mustang Omega : AMD Edition', 'Mustang Omega');
+								my_ships = my_ships.replace('Nova Tank', 'Nova');
+								my_ships = my_ships.replace('P-72 Archimedes', 'P72 Archimedes');
+								my_ships = my_ships.replace('Reclaimer 2949 Best in Show', 'Reclaimer');
+								my_ships = my_ships.replace('Reliant Kore - Mini Hauler', 'Reliant Kore');
+								my_ships = my_ships.replace('Reliant Sen - Researcher', 'Reliant Sen');
+								my_ships = my_ships.replace('Reliant Tana - Skirmisher', 'Reliant Tana');
+								my_ships = my_ships.replace('X1', 'X1 Base');
+								my_ships = my_ships.replace('X1 - FORCE', 'X1 Force');
+								my_ships = my_ships.replace('X1 - VELOCITY', 'X1 Velocity');
+								*/
+								
+								my_ships = my_ships.split('###');
+								
+								var ship_found;
+								$(my_ships).each((index, my_ship) => {
+									my_ship = my_ship.trim();
+									ship_found = false;
+									$(ship_matrix).each((index, ship) => {
+										if (!ship_found && ship.name == my_ship)
+										{
+											ship_found = true;
+											ship_matrix[index].owned = true;
 										}
 									});
-								}
-								else callback({success: 1, code: "OK", msg: "OKKKKKKKKKKK", data: {ships: ship_matrix, loaners: MyShipLoaned}});
-							},
-							headers: { "x-rsi-token": LIVE_Token },
-							data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      price\\n      upgradePrice\\n      unlimitedStock\\n      showStock\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]"
+									if (!ship_found)
+									{
+										my_ships_not_found.push(my_ship);
+									}
+								});
+								
+							}
+							
+							// return owned ship list (well, actually the ship list mark with a "owned" attribute (true/false)
+							$.ajax({
+								async: true,
+								type: "post",
+								contentType: 'application/json',
+								url: base_LIVE_Url + "pledge-store/api/upgrade",
+								success: (ship_upgrade_result) => {
+									if (ship_upgrade_result[0].data.ships.length > 0)
+									{
+										var ship_upgrade = ship_upgrade_result[0].data.ships;
+										$(ship_upgrade).each( (index, ship) => {
+											if (ship.owned) owned_ship.push(ship.id);
+										});
+
+										$(ship_matrix).each((index, ship) => {
+											if (owned_ship.includes(parseInt(ship.id))) ship.owned = true;
+											else ship.owned = false;
+											
+											ship_matrix[index] = ship;
+										});
+										
+										// return loaned matrix
+										$.ajax({
+											async: true,
+											type: "get",
+											contentType: 'application/json',
+											url: "https://rsi-companion.kamille.ovh/getLoan",
+											cache : true,
+											success: (result) => {
+												var ship_loaners = result.data
+											
+												$(ship_matrix).each((index, ship) => {											
+													if (ship.owned) {											
+														if (typeof ship_loaners[ship.id] !== "undefined") {
+															$(ship_loaners[ship.id]).each(function (index, value) {
+																if (MyShipLoaned.includes(value) === false) MyShipLoaned.push(value);
+															});
+														} else {
+															if (MyShipLoaned.includes(ship.id) === false) MyShipLoaned.push(ship.id);
+														}
+													}
+												});
+												
+												result.data = {ships: ship_matrix, loaners: MyShipLoaned, ships_not_found: my_ships_not_found, report: local_storage.report};
+												
+												callback(result);
+											},
+											error: (request, status, error) => {
+												callback({success: 0, code: "KO", msg: request.responseText});
+											}
+										});
+									}
+									else callback({success: 1, code: "OK", msg: "OK", data: {ships: ship_matrix, loaners: MyShipLoaned, ships_not_found: my_ships_not_found, report: local_storage.report}});
+								},
+								headers: { "x-rsi-token": LIVE_Token },
+								data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      price\\n      upgradePrice\\n      unlimitedStock\\n      showStock\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]"
+							});
 						});
+						
+						
 					},
 					error: (request, status, error) => {
 						callback({success: 0, code: "KO", msg: request.responseText});
@@ -787,7 +901,7 @@ function getShipList(LIVE_Token, callback)
 					data: "{}"
 				});
 			}
-			else callback({success: 1, code: "OK", msg: "OK", data: {ships: ship_matrix, loaners: MyShipLoaned}});
+			else callback({success: 0, code: "KO", msg: "KO"});
 		},
 		error: (request, status, error) => {
 			callback({success: 0, code: "KO", msg: request.responseText});
@@ -795,6 +909,43 @@ function getShipList(LIVE_Token, callback)
 		data: JSON.stringify({}),
 		headers: { "x-rsi-token": LIVE_Token },
 		data: "{}"
+	});
+}
+
+var Hangar;
+function getHangar(LIVE_Token, page, callback)
+{	
+	if (page == 1) Hangar = [];
+	
+	$.ajax({
+		async: true,
+		type: "get",
+		url: base_LIVE_Url + "account/pledges",
+		success: (result) => {
+			var html = $.parseHTML( result );
+			
+			last_button_href = $(html).find('a.raquo.btn:eq(0)').attr('href');
+			if (typeof last_button_href != "undefined") max_page = last_button_href.replace('/account/pledges?page=', '').replace('&pagesize=10', '');
+			else max_page = 0;
+			
+			$(html).find('ul.list-items .kind:contains(Ship)').parent().find('.title').each((index, value) => {
+				ship_name = $(value).text().trim();
+				Hangar.push(ship_name);
+			});
+			
+			if (page < max_page)
+			{
+				getHangar(LIVE_Token, page + 1, callback);
+			}
+			else callback({success: 1, code: "OK", msg: "OK", data: Hangar});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: {
+			page: page
+		},
+		headers: { "x-rsi-token": LIVE_Token }
 	});
 }
 
@@ -849,13 +1000,17 @@ function getBoardData(BoardID, BoardLastUpdated, callback)
 	{		
 		$.ajax({
 			async: true,
-			type: "get",
+			type: "post",
 			contentType: 'application/json',
-			url: "https://sc-roadmap.kamille.ovh/get.php?id=" + BoardID + "&last_updated=" + BoardLastUpdated,
+			url: "https://rsi-companion.kamille.ovh/getBoardData",
 			success: (BoardData) => {				
 				session_data[BoardID][BoardLastUpdated] = BoardData;
 				
 				callback(BoardData);
+			},
+			data: {
+				id: BoardID,
+				last_updated: BoardLastUpdated,
 			},
 			error: (request, status, error) => {
 				callback({success: 1, code: "OK", msg: "OK", data: {}});
@@ -993,7 +1148,7 @@ function getOrganizations(callback) {
 			url: base_LIVE_Url + "account/organization",
 			type: 'get',
 			success: ( result, textStatus, jQxhr) => {
-				var html = $.parseHTML( result );			
+				var html = $.parseHTML( result );
 				$(html).find('div.org-card').each(function( index ) {
 					var name = $(this).find('div.info p.entry:nth-child(1) a').text();
 					var SID = $(this).find('div.info div.front p.entry:nth-child(1) strong.value').text();
@@ -1206,7 +1361,37 @@ function getNews (Rsi_LIVE_Token, page, callback) {
 
 
 
+// send Report
+function sendReport (report_type, report_data, callback) {	
+	// 
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: "https://rsi-companion.kamille.ovh/sendReport",
+		success: (result) => {
+			current_timestamp = Math.floor(Date.now() / 1000);
+			
+			data = local_storage.report;
+			if (typeof data == "undefined") data = {};
 
+			data[report_type] = current_timestamp;
+			
+			chrome.storage.local.set({report: data}, function() {
+				local_storage.report = data;
+			});
+			
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			type: report_type,
+			data: report_data
+		})
+	});
+}
 
 
 
@@ -1450,6 +1635,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	else if (message && message.type == 'getSpectrumThreads') {
 		(async () => {
 			getSpectrumThreads (message.LIVE_Token, message.channel_id, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'sendReport') {
+		(async () => {
+			sendReport (message.report_type, message.report_data, (data) => {
 				sendResponse(data);
 			});
 		})();

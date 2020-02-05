@@ -132,7 +132,6 @@ function display_card(current_card, id_changed, extra, previous_card)
 	var progress_now = (current_card.tasks > 0 ? (Math.round(current_card.completed / current_card.tasks * 100)) : 0);
 	
 	if (typeof previous_card == "undefined") previous_card = false;
-	//console.log(previous_card);
 	
 	var progress_one = 0;
 	if (previous_card !== false)
@@ -257,8 +256,6 @@ function get_board(board_id, board_last_updated)
 			{
 				$('#roadmap_roundup').addClass('d-none');
 			}
-			
-			//console.log(missing.previous_cards);
 
 			$('.board-' + board_id).html('').removeClass('d-none');;
 

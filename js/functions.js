@@ -72,55 +72,82 @@ function pre_load_data(hash, callback)
 					Token: Rsi_LIVE_Token
 				}, (ShipList) => {
 					
-					if (hash == "#page_Ships") callback();
-					$('a.nav-link[href="#page_Ships"]').parent().removeClass('d-none');
-					
-					var ships = ShipList.data.ships;
-					var loaners = ShipList.data.loaners;
-					
-					var nb_ships_owned = 0;
-					var Ship_Status = [];
-					var Ship_Focus = [];
-					var Ship_Type = [];
-					var Ship_Manufacturers = [];
-					
-					$(ships).each( (i, ship) => {
-						if (ship.owned) nb_ships_owned++;
-								
-						if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
-						if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
-						if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
-						if (typeof(ship.manufacturer) != "undefined")
+					if (ShipList.success == 1)
+					{
+						if (hash == "#page_Ships") callback();
+						$('a.nav-link[href="#page_Ships"]').parent().removeClass('d-none');
+						
+						var ships = ShipList.data.ships;
+						var loaners = ShipList.data.loaners;
+						var ships_not_found = ShipList.data.ships_not_found;
+						var report = ShipList.data.report;
+						
+						if (typeof report.ships_not_found == "undefined") last_report = 0;
+						else last_report = report.ships_not_found;
+						
+						current_timestamp = Math.floor(Date.now() / 1000);
+				
+						// we don't allow a user to send another report before 7 days
+						if (ships_not_found.length > 0 && (current_timestamp - last_report) > 60*60*24*7)
 						{
-							manufacturer = ship.manufacturer;
-							manufacturer.name_lower = manufacturer.name.toLowerCase();
-							Ship_Manufacturers[manufacturer.id] = manufacturer;
-						}
-					});
-					
-					$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
+							$('button[data-target="#ships_not_found"]').removeClass('d-none').html('<i class="fas fa-exclamation-triangle"></i> ' + ships_not_found.length + ' ship' + (ships_not_found.length>1?'s':'') + ' not detected');
+							
+							$('#ships_not_found .modal-body').html('<p>The script couldn\'t detect everything apparently. Please, use the report button to warn the author about your ships not beeing detected:</p><ol></ol>');
+							
+							$(ships_not_found).each((index, ship_name) => {
+								$('#ships_not_found .modal-body > ol').append('<li>' + ship_name + '</li>');
+							});
+							$('#ships_not_found .modal-body').append('<p class="text-right mb-0"><small>The report will contain only your ship name, nothing more!</small></p>');
+							
+							$('#ships_not_found button.send_report').attr('data-report_type', 'ships_not_found');
+							$('#ships_not_found button.send_report').attr('data-report_data', JSON.stringify(ships_not_found));
+							
+						};
+						
+						var nb_ships_owned = 0;
+						var Ship_Status = [];
+						var Ship_Focus = [];
+						var Ship_Type = [];
+						var Ship_Manufacturers = [];
+						
+						$(ships).each( (i, ship) => {
+							if (ship.owned) nb_ships_owned++;
+									
+							if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
+							if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
+							if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
+							if (typeof(ship.manufacturer) != "undefined")
+							{
+								manufacturer = ship.manufacturer;
+								manufacturer.name_lower = manufacturer.name.toLowerCase();
+								Ship_Manufacturers[manufacturer.id] = manufacturer;
+							}
+						});
+						
+						$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
 
-					Ship_Status.sort();
-					Ship_Focus.sort();
-					Ship_Type.sort();
-					Ship_Manufacturers.sortAscOn('name_lower');
-					
-					$(Ship_Status).each((i, Status) => {
-						$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
-					});
-					$(Ship_Focus).each((i, Focus) => {
-						$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
-					});
-					$(Ship_Type).each((i, Type) => {
-						$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
-					});
-					$(Ship_Manufacturers).each( (i, Manufacturer) => {
-						if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
-					});
-					
-					
-					$('a.nav-link[href="#page_Ships"]').find('.badge').html(nb_ships_owned + "/" + ships.length);
-					
+						Ship_Status.sort();
+						Ship_Focus.sort();
+						Ship_Type.sort();
+						Ship_Manufacturers.sortAscOn('name_lower');
+						
+						$(Ship_Status).each((i, Status) => {
+							$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
+						});
+						$(Ship_Focus).each((i, Focus) => {
+							$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
+						});
+						$(Ship_Type).each((i, Type) => {
+							$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
+						});
+						$(Ship_Manufacturers).each( (i, Manufacturer) => {
+							if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
+						});
+						
+						
+						$('a.nav-link[href="#page_Ships"]').find('.badge').html(nb_ships_owned + "/" + ships.length);
+					}
+						
 					// Collecting Friend List
 					chrome.runtime.sendMessage({
 						type: 'getFriendList',
@@ -189,7 +216,7 @@ function get_notification (notification, message)
 	
 	link_path = notification.link_tokens.link_path.split('.');
 	
-	debug_needed = false;
+	debug_needed = true;
 	
 	link_url = base_LIVE_Url+'spectrum';
 	$(link_path).each(function(index, value){
@@ -197,28 +224,34 @@ function get_notification (notification, message)
 		{
 			case "community":
 				link_url += '/community/' + notification.link_tokens.community_slug;
+				debug_needed = false;
 				break;
 			case "channel":
 				link_url += '/forum/' + notification.link_tokens.channel_id;
+				debug_needed = false;
 				break;
 			case "thread":
 				link_url += '/thread/' + notification.link_tokens.thread_slug;
+				debug_needed = false;
 				break;
 			case "reply":
 				link_url += '/' + notification.link_tokens.reply_id;
+				debug_needed = false;
 				break;
 			case "lobby":
 				link_url += '/lobby/' + notification.link_tokens.lobby_id;
+				debug_needed = false;
 				break;
 			case "private":
+			case "messages":
 				link_url += '/messages/member/' + notification.link_tokens.member_id;
+				debug_needed = false;
 				break;
 			case "friend":
 				link_url += '/settings/friend-requests';
+				debug_needed = false;
 				break;
 			default:
-				console.log('MISSING case => "' + value);
-				debug_needed = true;
 				break;
 		}
 	});

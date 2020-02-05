@@ -2,7 +2,7 @@
 	"manifest_version": 2,
 	"name": "RSI Companion",
 	"description": "Improve your RSI experience.",
-	"version": "0.1.19",
+	"version": "0.1.20",
 	"author": "Kamille92",
 	"permissions": [
 		"cookies",
@@ -12,8 +12,8 @@
 		"management",
 		"https://ptu.cloudimperiumgames.com/*",
 		"https://robertsspaceindustries.com/*",
-		"https://rsi-companion.s3.eu-west-3.amazonaws.com/*",
-		"https://sc-roadmap.kamille.ovh/*"
+		"https://rsi-companion.kamille.ovh/*",
+		"https://www.googleapis.com/*"
 	],
 	"background": {
 		"scripts": [
