@@ -825,21 +825,24 @@ function getShipList(LIVE_Token, callback)
 										var ship_found;
 										$(my_ships).each((index, my_ship) => {
 											my_ship = my_ship.trim();
-											ship_found = false;
-											
-											for (let [index, ship] of Object.entries(ship_matrix_id)) {
-												if (!ship_found && ship.name == my_ship)
+											if (my_ship.length > 0)
+											{
+												ship_found = false;
+												for (let [index, ship] of Object.entries(ship_matrix_id)) {
+													if (!ship_found && ship.name == my_ship)
+													{
+														ship_found = true;
+														show_log('FOUND ' + ship_matrix_id[index].name);
+														ship_matrix_id[index].owned = true;
+														ship_matrix_id[index].nb = ship_matrix_id[index].nb + 1;
+													}
+												}
+												if (!ship_found)
 												{
-													ship_found = true;
-													show_log('FOUND ' + ship_matrix_id[index].name);
-													ship_matrix_id[index].owned = true;
-													ship_matrix_id[index].nb = ship_matrix_id[index].nb + 1;
+													my_ships_to_be_checked.push(my_ship);
 												}
 											}
-											if (!ship_found)
-											{
-												my_ships_to_be_checked.push(my_ship);
-											}
+											
 										});
 										
 										if (my_ships_to_be_checked)
