@@ -182,18 +182,30 @@ function pre_load_data(hash, callback)
 								$('a.nav-link[href="#page_Roadmap"]').parent().removeClass('d-none');
 								$('a.nav-link[href="#page_Roadmap"]').find('.badge').html(Boards.data.boards.length);
 								
-								/*
-								// Get Telemetry information
+								// Collecting RSI Companion Release Notes
 								chrome.runtime.sendMessage({
-									type: 'getTelemetry',
-									LIVE_Token: Rsi_LIVE_Token,
-								}, (Telemetry) => {
-									if (hash == "#page_Telemetry") callback();
+									type: 'getReleaseNotes',
+								}, (ReleaseNotes) => {
+									if (ReleaseNotes.success == 1)
+									{										
+										if (hash == "#page_ReleaseNotes") callback();
+										$('a.nav-link[href="#page_ReleaseNotes"]').parent().removeClass('d-none');
+										$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html(ReleaseNotes.data.releases.length);
+									}
 									
-									
-									if (typeof Telemetry !== "undefined" && Telemetry.success == 1 && Telemetry.data.length > 0) $('a.nav-link[href="#page_Telemetry"]').parent().removeClass('d-none');
+									/*
+									// Get Telemetry information
+									chrome.runtime.sendMessage({
+										type: 'getTelemetry',
+										LIVE_Token: Rsi_LIVE_Token,
+									}, (Telemetry) => {
+										if (hash == "#page_Telemetry") callback();
+										
+										
+										if (typeof Telemetry !== "undefined" && Telemetry.success == 1 && Telemetry.data.length > 0) $('a.nav-link[href="#page_Telemetry"]').parent().removeClass('d-none');
+									});
+									*/
 								});
-								*/
 							});
 						});
 					});

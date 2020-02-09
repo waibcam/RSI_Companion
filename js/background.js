@@ -925,9 +925,6 @@ function getShipList(LIVE_Token, callback)
 						callback({success: 0, code: "KO", msg: request.responseText});
 					}
 				});
-				
-				
-				
 			}
 			else callback({success: 0, code: "KO", msg: "KO"});
 		},
@@ -1398,8 +1395,8 @@ function getNews (Rsi_LIVE_Token, page, callback) {
 
 
 // send Report
-function sendReport (report_type, report_data, callback) {	
-	// 
+function sendReport (report_type, report_data, callback) {
+
 	$.ajax({
 		async: true,
 		type: "post",
@@ -1426,6 +1423,24 @@ function sendReport (report_type, report_data, callback) {
 			type: report_type,
 			data: report_data
 		})
+	});
+}
+
+
+// get Release Notes from RSI Companion
+function getReleaseNotes (callback) {
+	$.ajax({
+		async: true,
+		type: "get",
+		contentType: 'application/json',
+		url: "https://rsi-companion.kamille.ovh/getReleaseNotes",
+		cache : true,
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		}
 	});
 }
 
@@ -1684,4 +1699,13 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 		})();
 		return true; // keep the messaging channel open for sendResponse
     }
+	else if (message && message.type == 'getReleaseNotes') {
+		(async () => {
+			getReleaseNotes ((data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	
 });
