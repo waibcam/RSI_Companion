@@ -752,7 +752,91 @@ function getShipList(LIVE_Token, callback)
 			var my_ships_to_be_checked = [];
 			var my_ships_not_found = [];
 			if (typeof local_storage.report == "undefined") local_storage.report = {};
-				
+			
+			ship_matrix.push({
+				'id': 1000,
+				'name': 'Dragonfly Star Kitten Edition',
+				'production_status': 'flight-ready',
+				'type': 'competition',
+				'focus': 'Racing',
+				'url': '/pledge/extras?product_id=72',
+				'media': {
+					0: {
+						'images':{
+							'slideshow': 'https://i.imgur.com/cfhyazG.jpg',
+						}
+					}
+				},
+				'manufacturer':{
+					'id': 5,
+					'name': 'Drake Interplanetary',
+					'code': 'DRAK',
+				},
+			});
+			
+			ship_matrix.push({
+				'id': 1001,
+				'name': 'F8C Lightning Civilian',
+				'production_status': 'in-concept',
+				'type': 'combat',
+				'focus': 'Heavy Fighter',
+				'url': '/pledge/extras?product_id=72',
+				'media': {
+					0: {
+						'images':{
+							'slideshow': 'https://i.imgur.com/YoEgAs1.png',
+						}
+					}
+				},
+				'manufacturer':{
+					'id': 3,
+					'name': 'Anvil Aerospace',
+					'code': 'ANVL',
+				},
+			});
+			
+			ship_matrix.push({
+				'id': 1002,
+				'name': 'F8C Lightning Executive Edition',
+				'production_status': 'in-concept',
+				'type': 'combat',
+				'focus': 'Heavy Fighter',
+				'url': '/pledge/extras?product_id=72',
+				'media': {
+					0: {
+						'images':{
+							'slideshow': 'https://i.imgur.com/LmmtsYq.jpg',
+						}
+					}
+				},
+				'manufacturer':{
+					'id': 3,
+					'name': 'Anvil Aerospace',
+					'code': 'ANVL',
+				},
+			});
+			
+			ship_matrix.push({
+				'id': 1003,
+				'name': 'Greycat',
+				'production_status': 'flight-ready',
+				'type': 'transport',
+				'focus': '',
+				'url': '/pledge/Standalone-Ships/Greycat-PTV-Buggy',
+				'media': {
+					0: {
+						'images':{
+							'slideshow': 'https://i.imgur.com/8cfQ32V.jpg',
+						}
+					}
+				},
+				'manufacturer':{
+					'id': 1000,
+					'name': 'Greycat Industrial',
+					'code': 'GRIN',
+				},
+			});
+			
 			if (ship_matrix_result.success == 1 && ship_matrix_result.data.length > 0)
 			{
 				for (let [index, ship] of Object.entries(ship_matrix)) {
@@ -797,9 +881,10 @@ function getShipList(LIVE_Token, callback)
 									
 									if (HangarShips.length > 0)
 									{
+										// Comes now, let's try to fix all ships name...
+										
 										var separator = '######'
 										my_ships = HangarShips.join(separator);
-										// Comes now, let's try to fix all ships name...
 										
 										$(Manufacturers).each((code, value) => {
 											my_ships = my_ships.replace(value.code, '');
