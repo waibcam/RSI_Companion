@@ -30,7 +30,7 @@ $(document).ready(function () {
 		AppVersion  = result.AppVersion;
 		
 		$('nav a.navbar-brand span').text(AppSmallTitle + ' (v'+AppVersion+')');
-		$('#cnx_status h5.card-title').text(AppTitle);
+		$('#cnx_status h5.card-title, .AppTitle').text(AppTitle);
 		
 		document.title = AppTitle;
 	});

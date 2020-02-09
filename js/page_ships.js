@@ -29,7 +29,7 @@ function LeftMenu_Click_Ships(elem, href)
 
 				nb_ships_owned = 0;
 				$(ships).each(function (i, ship) {
-					if (ship.owned) nb_ships_owned++;
+					if (ship.owned) nb_ships_owned = nb_ships_owned + ship.nb;
 					
 					var span_ship_production_status = '';
 					if (ship.production_status !== null) {
@@ -63,11 +63,13 @@ function LeftMenu_Click_Ships(elem, href)
 					$(href + ' .ship_list > .row').append('' +
 						'<div class="col mb-4 d-none">' +
 							'<a href="' + base_LIVE_Url + ship.url.substr(1) + '" target="_blank">' +
-								'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + ship.owned + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
+								'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + ship.owned + '" data-nb="' + ship.nb + '"  data-loaner="' + ship.loaner + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
 									'<img class="card-img-top" src="' + ship_image + '" alt="' + ship.name + '" />' +
+									(ship.owned?'<span class="owner badge badge-success">x' + ship.nb + '</span>':'') +
+									(ship.loaner?'<span class="owner badge badge-warning">Loaner</span>':'') +
 									'<div class="card-body p-1 m-0">' +
 										'<div class="pb-2">' +
-											'<h6 class="m-0">' + ship.name + '</h6>' +
+											'<h6 class="m-0">' + (ShipList.data.dev?'[' + ship.id + '] - ':'') + ship.name + '</h6>' +
 										'</div>' +
 										'<p class="card-text">' +
 											'' + span_ship_production_status.trim() + '' +

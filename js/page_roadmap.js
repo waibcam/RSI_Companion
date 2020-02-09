@@ -171,7 +171,7 @@ function display_card(current_card, id_changed, extra, previous_card)
 						'</div>' +
 					'</div>' +
 				'</div>' +
-				(current_card.thumbnail != null && current_card.thumbnail.urls != null && current_card.thumbnail.urls.rect != null ? '<img src="' + base_LIVE_Url + current_card.thumbnail.urls.rect + '" class="img-fluid rounded img_roadmap_card d-none" alt="' + current_card.name + '">' : '') +
+				(current_card.thumbnail != null && current_card.thumbnail.urls != null && current_card.thumbnail.urls.rect != null ? '<img src="' + base_LIVE_Url + current_card.thumbnail.urls.rect + '" class="img-fluid rounded img_roadmap_card mt-1 d-none" alt="' + current_card.name + '">' : '') +
 				'<div class="card-body p-1 m-0 description d-none">' +
 					'<div class="progress bg-dark' + (progress_now == 0 || progress_now == 0 ? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
 						'<div class="progress-bar ' + (progress_now == 100 ? 'bg-success' : (progress_now > 75 ? 'bg-info' : (progress_now > 50 ? 'bg-warning' : 'bg-danger'))) + '" role="progressbar" style="width: ' + progress_now + '%;" aria-valuenow="' + progress_now + '" aria-valuemin="0" aria-valuemax="100">' +
@@ -210,10 +210,6 @@ function get_board(board_id, board_last_updated)
 			var current = result.data.curr.data;
 			var current_releases = current.releases;
 			var current_categories = current.categories;
-			/*
-			var current_tags = current.tags;
-			var current_chapters = current.chapters;
-			*/
 			
 			var previous = result.data.prev.data;
 			if (typeof previous == "undefined")
@@ -225,10 +221,6 @@ function get_board(board_id, board_last_updated)
 			
 			var previous_releases = previous.releases;
 			var previous_categories = previous.categories;
-			/*
-			var previous_tags = previous.tags;
-			var previous_chapters = previous.chapters;
-			*/
 			
 			var next = result.data.next.data;
 			
@@ -323,6 +315,11 @@ function get_board(board_id, board_last_updated)
 
 			$('[data-released="0"]:gt(0) > .card > .card-body').removeClass('d-none');
 
+		}
+		else
+		{
+			// Roadmap is beeing updated.
+			$('#page_Roadmap nav > ol > li:eq(0)').click();
 		}
 	});
 }

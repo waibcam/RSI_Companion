@@ -42,6 +42,11 @@ function pre_load_data(hash, callback)
 	if (hash == "#page_Spectrum") callback();
 	$('a.nav-link[href="#page_Spectrum"]').parent().removeClass('d-none');
 	
+	if (hash == "#page_ReleaseNotes") callback();
+	$('a.nav-link[href="#page_ReleaseNotes"]').parent().removeClass('d-none');
+	$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html($('#page_ReleaseNotes').find('pre > code').length);
+
+	
 	var elem = $('a.nav-link[href="#page_Comm_Link"]');
 	elem.find('.badge').text(0);
 	
@@ -761,6 +766,10 @@ function LeftMenu_Click(elem) {
 
 			case "#page_Roadmap":
 				LeftMenu_Click_Roadmap(elem, href);
+				break;
+				
+			case "#page_ReleaseNotes":
+				LeftMenu_Click_ReleaseNotes(elem, href);
 				break;
 
 			case "#page_Telemetry":

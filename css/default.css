@@ -265,6 +265,13 @@ main {
     top: 5px;
     z-index: 2;
 }
+#page_Ships .card span.badge.owner {
+    position: absolute;
+	right: 5;
+	top: 5;
+	z-index: 2;
+}
+	
 
 #page_Roadmap .release .card-header>div.card_title {
 	height: 1.5rem;
