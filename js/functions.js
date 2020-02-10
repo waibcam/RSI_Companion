@@ -39,180 +39,230 @@ function pre_load_data(hash, callback)
 {
 	PreLoaded = true;
 	
-	if (hash == "#page_Spectrum") callback();
-	$('a.nav-link[href="#page_Spectrum"]').parent().removeClass('d-none');
+	chrome.runtime.sendMessage({type: 'GetAppTitle'}, function(result){		
+		AppTitle  = result.AppTitle;
+		AppSmallTitle  = result.AppSmallTitle;
+		AppVersion  = result.AppVersion;
+		
+		$('nav a.navbar-brand span').text(AppSmallTitle + ' (v'+AppVersion+')');
+		$('#cnx_status h5.card-title, .AppTitle').text(AppTitle);
+		
+		document.title = AppTitle;
+	});
 	
-	if (hash == "#page_ReleaseNotes") callback();
-	$('a.nav-link[href="#page_ReleaseNotes"]').parent().removeClass('d-none');
-	$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html($('#page_ReleaseNotes').find('pre > code').length);
-
+	chrome.runtime.sendMessage({type: 'getCrowdfundStats'}, function(result){		
+		$('#fans').text(numberWithCommas(result.data.fans));
+		
+		
+		var funds = parseInt(result.data.funds);
+		funds = (funds-(funds%100))/100;
+		$('#funds').text("$" + numberWithCommas(funds));
+	});	
 	
-	var elem = $('a.nav-link[href="#page_Comm_Link"]');
-	elem.find('.badge').text(0);
+	chrome.runtime.sendMessage({
+		type: 'getReferrals',
+		Token: Rsi_LIVE_Token,
+	}, function(Referrals){
+		// Ranking Ladder: https://robertsspaceindustries.com/referral-program#ladder
+		$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.start + '/' + Referrals.data.end + ' (' + Referrals.data.prospects + ' propect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
+		console.log(Referrals)
+	});
 	
+	
+	news_li_a = $('a.nav-link[href="#page_Comm_Link"]');
+	news_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
 	// Collecting Comm-Links (News)
 	for (var page = 1; page <= max_news_page; page++) {
-		
 		chrome.runtime.sendMessage({
 			type: 'getNews',
 			Token: Rsi_LIVE_Token,
 			page: page,
 		}, (news_result) => {
-			
-			if (typeof news_result != "undefined")
+			if (news_result.success == 1)
 			{
-				News[news_result.page] = news_result;
-			}
-			
-			if (news_result.page == max_news_page)
-			{
-				elem.find('.badge').text(max_news_page*10);
-				if (hash == "" || hash == "#page_Comm_Link") callback();
-
-				elem.parent().removeClass('d-none');
+				if (typeof news_result != "undefined")
+				{
+					News[news_result.page] = news_result;
+				}
 				
-				// Get Ship list
-				chrome.runtime.sendMessage({
-					type: 'getShipList',
-					Token: Rsi_LIVE_Token
-				}, (ShipList) => {
-					
-					if (ShipList.success == 1)
-					{
-						if (hash == "#page_Ships") callback();
-						$('a.nav-link[href="#page_Ships"]').parent().removeClass('d-none');
-						
-						var ships = ShipList.data.ships;
-						var loaners = ShipList.data.loaners;
-						var ships_not_found = ShipList.data.ships_not_found;
-						var report = ShipList.data.report;
-						
-						if (typeof report.ships_not_found == "undefined") last_report = 0;
-						else last_report = report.ships_not_found;
-						
-						current_timestamp = Math.floor(Date.now() / 1000);
-				
-						// we don't allow a user to send another report before 7 days
-						if (ships_not_found.length > 0 && (current_timestamp - last_report) > 60*60*24*7)
-						{
-							$('button[data-target="#ships_not_found"]').removeClass('d-none').html('<i class="fas fa-exclamation-triangle"></i> ' + ships_not_found.length + ' ship' + (ships_not_found.length>1?'s':'') + ' not detected');
-							
-							$('#ships_not_found .modal-body').html('<p>The script couldn\'t detect everything apparently. Please, use the report button to warn the author about your ships not beeing detected:</p><ol></ol>');
-							
-							$(ships_not_found).each((index, ship_name) => {
-								$('#ships_not_found .modal-body > ol').append('<li>' + ship_name + '</li>');
-							});
-							$('#ships_not_found .modal-body').append('<p class="text-right mb-0"><small>The report will contain only your ship name, nothing more!</small></p>');
-							
-							$('#ships_not_found button.send_report').attr('data-report_type', 'ships_not_found');
-							$('#ships_not_found button.send_report').attr('data-report_data', JSON.stringify(ships_not_found));
-							
-						};
-						
-						var nb_ships_owned = 0;
-						var Ship_Status = [];
-						var Ship_Focus = [];
-						var Ship_Type = [];
-						var Ship_Manufacturers = [];
-						
-						$(ships).each( (i, ship) => {
-							if (ship.owned) nb_ships_owned++;
-									
-							if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
-							if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
-							if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
-							if (typeof(ship.manufacturer) != "undefined")
-							{
-								manufacturer = ship.manufacturer;
-								manufacturer.name_lower = manufacturer.name.toLowerCase();
-								Ship_Manufacturers[manufacturer.id] = manufacturer;
-							}
-						});
-						
-						$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
+				if (news_result.page == max_news_page)
+				{
+					news_li_a.find('.badge').text(max_news_page*10);
+					if (hash == "" || hash == "#page_Comm_Link") callback();
 
-						Ship_Status.sort();
-						Ship_Focus.sort();
-						Ship_Type.sort();
-						Ship_Manufacturers.sortAscOn('name_lower');
-						
-						$(Ship_Status).each((i, Status) => {
-							$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
-						});
-						$(Ship_Focus).each((i, Focus) => {
-							$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
-						});
-						$(Ship_Type).each((i, Type) => {
-							$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
-						});
-						$(Ship_Manufacturers).each( (i, Manufacturer) => {
-							if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
-						});
-						
-						
-						$('a.nav-link[href="#page_Ships"]').find('.badge').html(nb_ships_owned + "/" + ships.length);
-					}
-						
-					// Collecting Friend List
-					chrome.runtime.sendMessage({
-						type: 'getFriendList',
-						LIVE: true,
-						Token: Rsi_LIVE_Token,
-					}, (FriendList) => {
-						
-						if (hash == "#page_Contacts") callback();
-						$('a.nav-link[href="#page_Contacts"]').parent().removeClass('d-none');
-						$('a.nav-link[href="#page_Contacts"]').find('.badge').html(FriendList.data.length);
-						
-						// Collecting Organization of current user
-						chrome.runtime.sendMessage({
-							type: 'getOrganizations',
-						}, (Organizations) => {
-							
-							if (hash == "#page_Organizations") callback();
-							$('a.nav-link[href="#page_Organizations"]').parent().removeClass('d-none');
-							$('a.nav-link[href="#page_Organizations"]').find('.badge').html(Organizations.organizations.length);
-							
-							// Collecting Roadmap information
-							chrome.runtime.sendMessage({
-								type: 'getBoards',
-							}, (Boards) => {
-								
-								if (hash == "#page_Roadmap") callback();
-								$('a.nav-link[href="#page_Roadmap"]').parent().removeClass('d-none');
-								$('a.nav-link[href="#page_Roadmap"]').find('.badge').html(Boards.data.boards.length);
-								
-								// Collecting RSI Companion Release Notes
-								chrome.runtime.sendMessage({
-									type: 'getReleaseNotes',
-								}, (ReleaseNotes) => {
-									if (ReleaseNotes.success == 1)
-									{										
-										if (hash == "#page_ReleaseNotes") callback();
-										$('a.nav-link[href="#page_ReleaseNotes"]').parent().removeClass('d-none');
-										$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html(ReleaseNotes.data.releases.length);
-									}
-									
-									/*
-									// Get Telemetry information
-									chrome.runtime.sendMessage({
-										type: 'getTelemetry',
-										LIVE_Token: Rsi_LIVE_Token,
-									}, (Telemetry) => {
-										if (hash == "#page_Telemetry") callback();
-										
-										
-										if (typeof Telemetry !== "undefined" && Telemetry.success == 1 && Telemetry.data.length > 0) $('a.nav-link[href="#page_Telemetry"]').parent().removeClass('d-none');
-									});
-									*/
-								});
-							});
-						});
-					});
-				});
+					news_li_a.parent().removeClass('d-none');
+				}
 			}
 		});
 	}
+	
+	
+	if (hash == "#page_Spectrum") callback();
+	
+	
+	ship_li_a = $('a.nav-link[href="#page_Ships"]');
+	ship_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Get Ship list
+	chrome.runtime.sendMessage({
+		type: 'getShipList',
+		Token: Rsi_LIVE_Token
+	}, (ShipList) => {
+		
+		if (ShipList.success == 1)
+		{
+			if (hash == "#page_Ships") callback();
+			
+			var ships = ShipList.data.ships;
+			var loaners = ShipList.data.loaners;
+			var ships_not_found = ShipList.data.ships_not_found;
+			var report = ShipList.data.report;
+			
+			if (typeof report.ships_not_found == "undefined") last_report = 0;
+			else last_report = report.ships_not_found;
+			
+			current_timestamp = Math.floor(Date.now() / 1000);
+	
+			// we don't allow a user to send another report before 7 days
+			if (ships_not_found.length > 0 && (current_timestamp - last_report) > 60*60*24*7)
+			{
+				$('button[data-target="#ships_not_found"]').removeClass('d-none').html('<i class="fas fa-exclamation-triangle"></i> ' + ships_not_found.length + ' ship' + (ships_not_found.length>1?'s':'') + ' not detected');
+				
+				$('#ships_not_found .modal-body').html('<p>The script couldn\'t detect everything apparently. Please, use the report button to warn the author about your ships not beeing detected:</p><ol></ol>');
+				
+				$(ships_not_found).each((index, ship_name) => {
+					$('#ships_not_found .modal-body > ol').append('<li>' + ship_name + '</li>');
+				});
+				$('#ships_not_found .modal-body').append('<p class="text-right mb-0"><small>The report will contain only your ship name, nothing more!</small></p>');
+				
+				$('#ships_not_found button.send_report').attr('data-report_type', 'ships_not_found');
+				$('#ships_not_found button.send_report').attr('data-report_data', JSON.stringify(ships_not_found));
+				
+			};
+			
+			var nb_ships_owned = 0;
+			var Ship_Status = [];
+			var Ship_Focus = [];
+			var Ship_Type = [];
+			var Ship_Manufacturers = [];
+			
+			$(ships).each( (i, ship) => {
+				if (ship.owned) nb_ships_owned++;
+						
+				if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
+				if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
+				if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
+				if (typeof(ship.manufacturer) != "undefined")
+				{
+					manufacturer = ship.manufacturer;
+					manufacturer.name_lower = manufacturer.name.toLowerCase();
+					Ship_Manufacturers[manufacturer.id] = manufacturer;
+				}
+			});
+			
+			$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
+
+			Ship_Status.sort();
+			Ship_Focus.sort();
+			Ship_Type.sort();
+			Ship_Manufacturers.sortAscOn('name_lower');
+			
+			$(Ship_Status).each((i, Status) => {
+				$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
+			});
+			$(Ship_Focus).each((i, Focus) => {
+				$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
+			});
+			$(Ship_Type).each((i, Type) => {
+				$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
+			});
+			$(Ship_Manufacturers).each( (i, Manufacturer) => {
+				if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
+			});
+			
+			
+			ship_li_a.find('.badge').html(nb_ships_owned + "/" + ships.length);
+		}
+		else ship_li_a.parent().addClass('d-none');
+	});
+	
+	
+	contacts_li_a = $('a.nav-link[href="#page_Contacts"]');
+	contacts_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Collecting Friend List
+	chrome.runtime.sendMessage({
+		type: 'getFriendList',
+		LIVE: true,
+		Token: Rsi_LIVE_Token,
+	}, (FriendList) => {
+		if (FriendList.success == 1)
+		{
+			if (hash == "#page_Contacts") callback();
+			contacts_li_a.find('.badge').html(FriendList.data.length);
+		}
+		else contacts_li_a.parent().addClass('d-none');
+	});
+	
+	
+	organizations_li_a = $('a.nav-link[href="#page_Organizations"]');
+	organizations_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Collecting Organization of current user
+	chrome.runtime.sendMessage({
+		type: 'getOrganizations',
+	}, (Organizations) => {
+		if (Organizations.success == 1)
+		{
+			if (hash == "#page_Organizations") callback();
+			organizations_li_a.find('.badge').html(Organizations.organizations.length);
+		}
+		else organizations_li_a.parent().addClass('d-none');
+	});
+	
+	
+	roadmap_li_a = $('a.nav-link[href="#page_Roadmap"]');
+	roadmap_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Collecting Roadmap information
+	chrome.runtime.sendMessage({
+		type: 'getBoards',
+	}, (Boards) => {
+		
+		if (Boards.success == 1)
+		{
+			if (hash == "#page_Roadmap") callback();
+			roadmap_li_a.find('.badge').html(Boards.data.boards.length);
+		}
+		else roadmap_li_a.parent().addClass('d-none');
+	});
+	
+	
+	releasenotes_li_a = $('a.nav-link[href="#page_ReleaseNotes"]');
+	releasenotes_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Collecting RSI Companion Release Notes
+	chrome.runtime.sendMessage({
+		type: 'getReleaseNotes',
+	}, (ReleaseNotes) => {
+		if (ReleaseNotes.success == 1)
+		{
+			if (hash == "#page_ReleaseNotes") callback();
+			releasenotes_li_a.find('.badge').html(ReleaseNotes.data.releases.length);
+		}
+		else releasenotes_li_a.parent().addClass('d-none');
+	});
+	
+	/*
+	telemetry_li_a = $('a.nav-link[href="#page_Telemetry"]');
+	telemetry_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
+	// Get Telemetry information
+	chrome.runtime.sendMessage({
+		type: 'getTelemetry',
+		LIVE_Token: Rsi_LIVE_Token,
+	}, (Telemetry) => {
+		if (Telemetry.success == 1 && Telemetry.data.length > 0)
+		{
+			if (hash == "#page_Telemetry") callback();
+		}
+		else telemetry_li_a.parent().addClass('d-none');
+	});
+	*/
 }
 
 

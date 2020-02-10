@@ -1534,6 +1534,47 @@ function getReleaseNotes (callback) {
 
 
 
+function getReferrals(LIVE_Token, callback) {
+	$.ajax({
+		async: true,
+		type: "get",
+		url: base_LIVE_Url + "account/referral-program",
+		cache : true,
+		success: (result) => {
+			var html = $.parseHTML( result );
+			
+			var url = base_LIVE_Url + 'enlist?referral=' + $(html).find('form#share-referral-form input[name="code"]').val();
+			if (typeof url == "undefined") url = false;
+			
+			var start = $(html).find('.referral-rank-wrapper .progress span.start').text();
+			if (typeof start == "undefined") start = false;
+			var end = $(html).find('.referral-rank-wrapper .progress span.end').text();
+			if (typeof end == "undefined") end = false;
+			var next_rank = $(html).find('.referral-rank-wrapper .progress div.next-rank').text();
+			if (typeof next_rank == "undefined") next_rank = false;
+			
+			var prospects = $(html).find('form#recruits-list-form a[data-type="pending"]').text();
+			show_log(prospects);
+			if (typeof prospects == "undefined") prospects = false;
+			else
+			{
+				var matches = prospects.match(/(\d+)/);
+				if (matches) prospects = matches[0];
+				else prospects = false;
+			}
+			
+			
+			callback({success: 1, code: "OK", msg: "OK", data: {url: url, start: start, end: end, next_rank: next_rank, prospects: prospects}});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		headers: {
+			"x-rsi-token": LIVE_Token,
+		}
+	});
+}
+
 
 
 
@@ -1790,6 +1831,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	else if (message && message.type == 'getReleaseNotes') {
 		(async () => {
 			getReleaseNotes ((data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'getReferrals') {
+		(async () => {
+			getReferrals (message.Token, (data) => {
 				sendResponse(data);
 			});
 		})();
