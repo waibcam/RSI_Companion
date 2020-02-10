@@ -20,11 +20,14 @@ function LeftMenu_Click_ReleaseNotes(elem, href)
 				});
 				
 				$(ReleaseNotes.data.releases).each((index, release) => {
-					$('#page_ReleaseNotes .content > pre').append('\n<span class="text-warning">' + release.version + ' - Released ' + timeSince(release.date) + ':</span>\n');
-					$('#page_ReleaseNotes .content > pre').append('------------------------------------\n');
-					$(release.features).each((index, feature) => {
-						$('#page_ReleaseNotes .content > pre').append(feature + '\n');
-					});
+					if (release.date !== false)
+					{
+						$('#page_ReleaseNotes .content > pre').append('\n<span class="text-warning">' + release.version + ' - Released ' + timeSince(release.date) + ':</span>\n');
+						$('#page_ReleaseNotes .content > pre').append('------------------------------------\n');
+						$(release.features).each((index, feature) => {
+							$('#page_ReleaseNotes .content > pre').append(feature + '\n');
+						});
+					}
 				});
 				
 			}
