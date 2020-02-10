@@ -25,7 +25,10 @@ function LeftMenu_Click_Roadmap(elem, href)
 						'<div class="col mb-4">' +
 							'<div class="card bg-dark cursor getboard" data-id="' + board.id + '" data-name="' + board.name + '" data-last_updated="' + board.last_updated + '">' +
 								'<div class="card-header p-1 m-0">' + board.name + '</div>' +
-								'<img class="img-fluid img_roadmap" src="' + base_LIVE_Url + board.thumbnail.urls.square + '" alt="' + board.name + '" />' +
+								'<div class="card-body text-center text-warning">' +
+									'<img class="img-fluid img_roadmap" src="' + base_LIVE_Url + board.thumbnail.urls.square + '" alt="' + board.name + '" />' +
+									'<div class="update_in_progress d-none">CIG is most likely updating the Roadmap right now. Come back in few minutes.</div>' +
+								'</div>' +
 								'<div class="card-footer p-1 m-0 text-right" title="' + board.last_updated + '"><i>Updated ' + timeSince(board.last_updated) + '</i></div>' +
 							'</div>' +
 						'</div>' +
@@ -207,6 +210,8 @@ function get_board(board_id, board_last_updated)
 		BoardLastUpdated: board_last_updated,
 	}, function (result) {
 		if (result.success == 1) {
+			$('div.card[data-id="' + board_id + '"] .update_in_progress').addClass('d-none');
+			
 			var current = result.data.curr.data;
 			var current_releases = current.releases;
 			var current_categories = current.categories;
@@ -318,8 +323,9 @@ function get_board(board_id, board_last_updated)
 		}
 		else
 		{
-			// Roadmap is beeing updated.
+			// Roadmap is being updated.
 			$('#page_Roadmap nav > ol > li:eq(0)').click();
+			$('div.card[data-id="' + board_id + '"] .update_in_progress').removeClass('d-none');
 		}
 	});
 }
