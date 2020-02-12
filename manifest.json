@@ -13,8 +13,7 @@
 		"https://ptu.cloudimperiumgames.com/*",
 		"https://robertsspaceindustries.com/*",
 		"https://rsi-companion.kamille.ovh/*",
-		"https://www.googleapis.com/*",
-		"https://www.youtube.com/*"
+		"https://www.googleapis.com/*"
 	],
 	"background": {
 		"scripts": [
