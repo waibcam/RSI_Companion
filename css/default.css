@@ -25,7 +25,7 @@
 	color: #D6DEE9;
 }
 .border-highlighted {
-	border: 1px solid #14e6fa;
+	border: 1px solid #14e6fa !important;
 }
 
 .card-header {
@@ -243,12 +243,15 @@ main {
 	margin-left: 220px;
 }
 
-.Comm_Link a:hover, .ship_list a:hover {
+.Comm_Link a:hover, .ship_list a:hover , .buyback_list a:hover {
 	text-decoration: none;
 }
 
-.Comm_Link a:hover h6, .ship_list a:hover h6 {
-	/*color: #60A0F0;*/
+.ship_list a > div.card[data-owned="true"] {
+	border: 1px solid #42ca61;
+}
+.ship_list a > div.card[data-loaner="true"] {
+	border: 1px solid #FFA953;
 }
 
 
@@ -271,9 +274,24 @@ main {
 	top: 5;
 	z-index: 2;
 }
-	
 
-#page_Roadmap .release .card-header>div.card_title {
+#page_BuyBack .card .card_image
+{
+	position: relative;
+}
+#page_BuyBack .card .card_image > span.badge {
+    position: absolute;
+	top: 5;
+	z-index: 2;
+}
+#page_BuyBack .card .card_image > span.badge:nth-child(2) {
+	right: 5;
+}
+#page_BuyBack .card .card_image > span.badge:nth-child(3) {
+	left: 5;
+}
+
+#page_Roadmap .release .card-header > div.card_title {
 	height: 1.5rem;
 	overflow: hidden;
 }

@@ -18,6 +18,8 @@ function LeftMenu_Click_Roadmap(elem, href)
 			//elem.find('.badge').html('');
 
 			if (result.success == 1) {
+				window.scrollTo(0, 0);
+				
 				$(href + ' .content').html('<div class="boards row col row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-3 row-cols-xl-4 row-cols-xxl-5 row-cols-xxxl-6"></div>');
 				boards = result.data.boards;
 				$(boards).each(function (index, board) {
@@ -210,6 +212,8 @@ function get_board(board_id, board_last_updated)
 		BoardLastUpdated: board_last_updated,
 	}, function (result) {
 		if (result.success == 1) {
+			window.scrollTo(0, 0);
+			
 			$('div.card[data-id="' + board_id + '"] .update_in_progress').addClass('d-none');
 			
 			var current = result.data.curr.data;
@@ -364,7 +368,7 @@ $(document).ready(function () {
 
 		$('#page_Roadmap nav > ol > li:eq(0)').removeClass('active');
 		$('#page_Roadmap nav > ol > li:gt(0)').remove();
-		$('#page_Roadmap nav > ol').append('<li class="breadcrumb-item active"><a href="#page_Roadmap">' + board_name + '</a></li>');
+		$('#page_Roadmap nav > ol').append('<li class="breadcrumb-item active"><span>' + board_name + '</span></li>');
 		
 		//$('#page_Roadmap nav button').removeClass('d-none');
 

@@ -5,17 +5,6 @@
 		<meta name="description" content="Improve your RSI experience.">
 		<meta name="author" content="Kamille92">
 		<title></title>
-		<!--
-		<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
-		<link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.12.0/css/all.css" integrity="sha384-ekOryaXPbeCpWQNxMwSWVvQ0+1VrStoPJq54shlYhR8HzQgig1v5fas6YgOqLoKz" crossorigin="anonymous">
-		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.12/dist/css/bootstrap-select.min.css">
-		<link rel="stylesheet" href="../css/default.css">
-		
-		<script src="../js/jquery-3.4.1.min.js"></script>
-		<script src="../js/bootstrap.bundle.min.js"></script>
-		<script src="../js/popper.min.js"></script>
-		<script src="../js/bootstrap-select.min.js"></script>
-		-->
 		
 		<link rel="stylesheet" href="../css/bootstrap.min.css">
 		<link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.12.0/css/all.css" integrity="sha384-ekOryaXPbeCpWQNxMwSWVvQ0+1VrStoPJq54shlYhR8HzQgig1v5fas6YgOqLoKz" crossorigin="anonymous">
@@ -32,13 +21,15 @@
 		
 		<script src="../js/page_comm_link.js"></script>
 		<script src="../js/page_spectrum.js"></script>
+		<script src="../js/page_ships.js"></script>
+		<script src="../js/page_buyback.js"></script>
+		<script src="../js/page_store.js"></script>
 		<script src="../js/page_contacts.js"></script>
 		<script src="../js/page_organizations.js"></script>
 		<script src="../js/page_roadmap.js"></script>
-		<script src="../js/page_ships.js"></script>
-		<script src="../js/page_store.js"></script>
-		<script src="../js/page_telemetry.js"></script>
 		<script src="../js/page_releasenotes.js"></script>
+		<script src="../js/page_telemetry.js"></script>
+		
 	</head>
 	<body class="bg">
 		<!-- TOP Nav bar -->
@@ -48,7 +39,7 @@
 					<img src="../img/icon_64.png" width="30" height="30" class="d-inline-block align-top" alt="RSI" />
 					<span></span> <small><i class="fas fa-sync fa-spin text-warning d-none"></i></small>
 				</a>
-				<span class="d-none d-sm-inline">Star Citizens: <strong id="fans" class="mr-4"></strong>Funds raised: <strong id="funds" class="mr-4"></strong>Referral program: <strong id="referal" class="mr-4"></strong></span>
+				<div class="d-none d-inline d-sm-inline"><span class="d-none">Star Citizens: <strong id="fans" class="mr-4"></span></strong><span class="d-none">Funds raised: <strong id="funds" class="mr-4"></strong></span><span class="d-none">Referral program: <strong id="referal" class="mr-4"></strong></span><span class="d-none" title="Buy Back token available">BB Token: <strong id="buybacktoken" class="mr-4"></strong></span></div>
 			</div>
 			<div class="d-flex">
 				<div class="mt-2 mr-4">
@@ -125,6 +116,11 @@
 							<li class="nav-item">
 								<a class="nav-link" href="#page_Ships">
 								<i class="fas fa-rocket"></i> Ships <span class="badge badge-light badge-pill"></span>
+								</a>
+							</li>
+							<li class="nav-item">
+								<a class="nav-link" href="#page_BuyBack">
+								<i class="fas fa-trash-restore"></i> Buy Back <span class="badge badge-light badge-pill"></span>
 								</a>
 							</li>
 							<li class="nav-item d-none">
@@ -213,7 +209,13 @@
 					</div>
 					<div id="page_Ships" class="page d-none">
 						<div class="pt-3 pb-2 mb-3 border-bottom">
-							<h1 class="h2">Ships<span><span></h1>
+							<div class="d-flex justify-content-between">
+								<div><h1 class="h2">Ships<span><span></h1></div>
+								<div class="mt-1">
+									<small class="d-none cached_since">Cached done: <code></code></small>
+									<button class="ml-2 btn btn-success btn-sm" id="ShipListRefresh">Refresh <i class="fas fa-sync"></i></button>
+								</div>
+							</div>
 						</div>
 						<div class="content">
 							<div class="page-content mt-3">
@@ -226,7 +228,7 @@
 										<div class="input-group-prepend">
 											<span class="input-group-text bg-dark text-white">Search</span>
 										</div>
-										<input type="text" class="form-control" placeholder="Ex: Constellation" id="ships_search">
+										<input type="text" class="form-control" placeholder="Ex: &quot;Constellation&quot; or &quot;Owned&quot; or &quot;Loaner&quot; or &quot;Transport&quot;, etc." id="ships_search">
 									</div>
 								</div>
 								<div class="row">
@@ -274,6 +276,39 @@
 								<div class="clearfix"></div>
 								<div class="ship_list"></div>
 							</div>
+						</div>
+					</div>
+					<div id="page_BuyBack" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<div class="d-flex justify-content-between">
+								<div><h1 class="h2">Buy Back<span><span></h1></div>
+								<div class="mt-1">
+									<small class="d-none cached_since">Cached done: <code></code></small>
+									<button class="ml-2 btn btn-success btn-sm" id="BuyBackRefresh">Refresh <i class="fas fa-sync"></i></button>
+								</div>
+							</div>
+						</div>
+						<div class="content">
+							<div class="page-content mt-3">
+								<div class="mb-3 col-12 col-md-4 col-lg-6 col-xl-6 float-left">
+									<span class="d-none">Total Buy Back value: <strong class="total_price"></strong> <strong class="currency"></strong></span>
+								</div>
+								<div id="input_search_buyback"class="input-group mb-3 col-12 col-xs-12 col-sm-12 col-md-8 col-lg-6 col-xl-6 float-right d-none">
+									<div class="input-group-prepend">
+										<span class="input-group-text bg-dark text-white">Search</span>
+									</div>
+									<input type="text" class="form-control" placeholder="Ex: &quot;Lifetime&quot; or &quot;LTI&quot; or &quot;Origin&quot; or &quot;Armor&quot; or &quot;>40 <75&quot; , etc." id="buyback_search">
+								</div>
+								<div class="clearfix"></div>
+							</div>
+							<div class="buyback_list row row-cols-1 row-cols-xxs-2 row-cols-xs-2 row-cols-sm-3 row-cols-md-4 row-cols-lg-5 row-cols-xl-5 row-cols-xxxxl-6"></div>
+						</div>
+					</div>
+					<div id="page_Store" class="page d-none">
+						<div class="pt-3 pb-2 mb-3 border-bottom">
+							<h1 class="h2">Store<span><span></h1>
+						</div>
+						<div class="content">
 						</div>
 					</div>
 					<div id="page_Contacts" class="page d-none">
@@ -363,13 +398,6 @@
 						</div>
 						<div class="content">
 							<div class="my_organizations row row-cols-1"></div>
-						</div>
-					</div>
-					<div id="page_Store" class="page d-none">
-						<div class="pt-3 pb-2 mb-3 border-bottom">
-							<h1 class="h2">Store<span><span></h1>
-						</div>
-						<div class="content">
 						</div>
 					</div>
 					<div id="page_Roadmap" class="page d-none">

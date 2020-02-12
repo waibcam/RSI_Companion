@@ -39,33 +39,15 @@ function pre_load_data(hash, callback)
 {
 	PreLoaded = true;
 	
-	chrome.runtime.sendMessage({type: 'GetAppTitle'}, function(result){		
-		AppTitle  = result.AppTitle;
-		AppSmallTitle  = result.AppSmallTitle;
-		AppVersion  = result.AppVersion;
-		
-		$('nav a.navbar-brand span').text(AppSmallTitle + ' (v'+AppVersion+')');
-		$('#cnx_status h5.card-title, .AppTitle').text(AppTitle);
-		
-		document.title = AppTitle;
-	});
-	
-	chrome.runtime.sendMessage({type: 'getCrowdfundStats'}, function(result){		
-		$('#fans').text(numberWithCommas(result.data.fans));
-		
-		
-		var funds = parseInt(result.data.funds);
-		funds = (funds-(funds%100))/100;
-		$('#funds').text("$" + numberWithCommas(funds));
-	});	
-	
 	chrome.runtime.sendMessage({
 		type: 'getReferrals',
 		Token: Rsi_LIVE_Token,
 	}, function(Referrals){
-		// Ranking Ladder: https://robertsspaceindustries.com/referral-program#ladder
-		$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.start + '/' + Referrals.data.end + ' (' + Referrals.data.prospects + ' propect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
-		console.log(Referrals)
+		if (Referrals.success == 1)
+		{
+			$('#referal').parent().removeClass('d-none');
+			$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.start + '/' + Referrals.data	.end + ' (' + Referrals.data.prospects + ' propect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
+		}
 	});
 	
 	
@@ -99,91 +81,22 @@ function pre_load_data(hash, callback)
 	
 	if (hash == "#page_Spectrum") callback();
 	
-	
-	ship_li_a = $('a.nav-link[href="#page_Ships"]');
-	ship_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
-	// Get Ship list
+	// Check if ShipList cache already done.
 	chrome.runtime.sendMessage({
-		type: 'getShipList',
-		Token: Rsi_LIVE_Token
-	}, (ShipList) => {
+		type: 'getShipListCachedSince',
+	}, function(ShipListCachedSince){
+		if (ShipListCachedSince.success == 1) refresh_ShipList_data("#page_Ships", false);
 		
-		if (ShipList.success == 1)
-		{
-			if (hash == "#page_Ships") callback();
-			
-			var ships = ShipList.data.ships;
-			var loaners = ShipList.data.loaners;
-			var ships_not_found = ShipList.data.ships_not_found;
-			var report = ShipList.data.report;
-			
-			if (typeof report.ships_not_found == "undefined") last_report = 0;
-			else last_report = report.ships_not_found;
-			
-			current_timestamp = Math.floor(Date.now() / 1000);
-	
-			// we don't allow a user to send another report before 7 days
-			if (ships_not_found.length > 0 && (current_timestamp - last_report) > 60*60*24*7)
-			{
-				$('button[data-target="#ships_not_found"]').removeClass('d-none').html('<i class="fas fa-exclamation-triangle"></i> ' + ships_not_found.length + ' ship' + (ships_not_found.length>1?'s':'') + ' not detected');
-				
-				$('#ships_not_found .modal-body').html('<p>The script couldn\'t detect everything apparently. Please, use the report button to warn the author about your ships not beeing detected:</p><ol></ol>');
-				
-				$(ships_not_found).each((index, ship_name) => {
-					$('#ships_not_found .modal-body > ol').append('<li>' + ship_name + '</li>');
-				});
-				$('#ships_not_found .modal-body').append('<p class="text-right mb-0"><small>The report will contain only your ship name, nothing more!</small></p>');
-				
-				$('#ships_not_found button.send_report').attr('data-report_type', 'ships_not_found');
-				$('#ships_not_found button.send_report').attr('data-report_data', JSON.stringify(ships_not_found));
-				
-			};
-			
-			var nb_ships_owned = 0;
-			var Ship_Status = [];
-			var Ship_Focus = [];
-			var Ship_Type = [];
-			var Ship_Manufacturers = [];
-			
-			$(ships).each( (i, ship) => {
-				if (ship.owned) nb_ships_owned++;
-						
-				if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
-				if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
-				if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
-				if (typeof(ship.manufacturer) != "undefined")
-				{
-					manufacturer = ship.manufacturer;
-					manufacturer.name_lower = manufacturer.name.toLowerCase();
-					Ship_Manufacturers[manufacturer.id] = manufacturer;
-				}
-			});
-			
-			$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
-
-			Ship_Status.sort();
-			Ship_Focus.sort();
-			Ship_Type.sort();
-			Ship_Manufacturers.sortAscOn('name_lower');
-			
-			$(Ship_Status).each((i, Status) => {
-				$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
-			});
-			$(Ship_Focus).each((i, Focus) => {
-				$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
-			});
-			$(Ship_Type).each((i, Type) => {
-				$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
-			});
-			$(Ship_Manufacturers).each( (i, Manufacturer) => {
-				if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
-			});
-			
-			
-			ship_li_a.find('.badge').html(nb_ships_owned + "/" + ships.length);
-		}
-		else ship_li_a.parent().addClass('d-none');
+		// Check if BB cache already done.
+		chrome.runtime.sendMessage({
+			type: 'getBuyBackCachedSince',
+		}, function(BuyBackCachedSince){
+			if (BuyBackCachedSince.success == 1) refresh_BB_data("#page_BuyBack", false);
+		});
 	});
+	
+	
+	
 	
 	
 	contacts_li_a = $('a.nav-link[href="#page_Contacts"]');
@@ -798,7 +711,7 @@ function LeftMenu_Click(elem) {
 	href = elem.attr('href');
 
 	//elem.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
-	if (href.length > 1) {
+	if (typeof href != "undefined" && href.length > 1) {
 		$('nav.sidebar ul > li > a').removeClass('active');
 		elem.addClass('active');
 		$('main .page').addClass('d-none');
@@ -817,6 +730,11 @@ function LeftMenu_Click(elem) {
 			case "#page_Ships":
 				LeftMenu_Click_Ships(elem, href);
 				break;
+			
+			case "#page_BuyBack":
+				LeftMenu_Click_BuyBack(elem, href);
+				break;			
+			
 
 			case "#page_Contacts":
 				LeftMenu_Click_Contacts(elem, href);

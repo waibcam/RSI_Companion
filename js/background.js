@@ -26,7 +26,6 @@ chrome.management.getSelf((ExtensionInfo) => {
 	{
 		display_log = true;
 	}
-	show_log (ExtensionInfo);
 });
 
 
@@ -34,7 +33,6 @@ var local_storage = {};
 
 var FrienList = {live: [], ptu: []};
 var AddedMembers = [];
-var ShipList = [];
 var OrgList = [];
 var Boards = [];
 var BoardData = [];
@@ -42,6 +40,8 @@ var Telemetry = [];
 var Manufacturers = [];
 var News = [];
 var OrgMembers = [];
+var ShipList = {};
+var BuyBack = {};
 
 var application_tab = false;
 
@@ -51,7 +51,7 @@ var max_periodInMinutes = 10;
 
 var caching_data = false;
 
-var google_api_key = "AIzaSyAQCGuWt-QbXdl2noNSpRiRxVSBMrMr3XI";
+var google_api_key = false;
 
 
 var live_cnx = {
@@ -71,8 +71,6 @@ var connection_status = {
 	ptu: ptu_cnx,
 };
 
-
-
 // When browser is started
 chrome.runtime.onStartup.addListener(() => {
 	setAlarm('CheckConnection', 1);
@@ -90,9 +88,20 @@ chrome.runtime.onStartup.addListener(() => {
 // Extension is installed / upgraded
 chrome.runtime.onInstalled.addListener((details) => {
 	
-	// Clear local storage on new install / upgrade
-	chrome.storage.local.clear(function (callback){
-		local_storage = [];
+	// We clear all cache but BuyBack
+	chrome.storage.local.get(['ShipList', 'BuyBack'], function (result){
+		if (typeof result.ShipList != "undefined") ShipList = result.ShipList;
+		if (typeof result.BuyBack != "undefined") BuyBack = result.BuyBack;
+		
+		// Clear local storage on new install / upgrade
+		chrome.storage.local.clear(function (callback){
+			local_storage = {};
+
+			chrome.storage.local.set({ShipList: ShipList, BuyBack: BuyBack}, () => {
+				local_storage.ShipList = ShipList;
+				local_storage.BuyBack = BuyBack;
+			});
+		});
 	});
 
 	// check if user is connected on RSI
@@ -120,7 +129,6 @@ chrome.runtime.onInstalled.addListener((details) => {
 		});
 		
 	});
-	
 });
 
 
@@ -146,21 +154,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 						show_log("Caching => [Ended]");
 					});
 				});
-				
 			});
 			break;
-			
 		default:
 			break;
 	}
-	
 });
 
 
 // When user click on the Application icon
 chrome.browserAction.onClicked.addListener(function callback(tabs){
 	if (application_tab !== false)
-	{
+	{		
 		// check if Application is already opened
 		chrome.tabs.get( application_tab.id, function callback(tab){
 			if (typeof tab == "undefined")
@@ -297,13 +302,16 @@ function cache_data(connection_status, callback)
 		current_timestamp = Math.floor(Date.now() / 1000);
 		
 		// Add ShipList into cache
-		if (ShipList.length == 0 || (current_timestamp - ShipList.cached_since) > cache_expiration_after_sec)
+		if (OrgList.length == 0 || (current_timestamp - OrgList.cached_since) > cache_expiration_after_sec)
 		{
 			// Add FrienList into cache
 			show_log("Caching FriendList");
 			getFriendList(true, connection_status.live.token, 1, "", (data) => {
 				data.cached_since = current_timestamp;
 				FrienList.live = data;
+				
+				caching_data = false;
+				callback();
 			});
 			
 			// Add OrgList into cache
@@ -313,6 +321,7 @@ function cache_data(connection_status, callback)
 				OrgList = data;
 			})
 			
+			/*
 			show_log("Caching ShipList");
 			getShipList (connection_status.live.token, (data) => {
 				data.cached_since = current_timestamp;
@@ -322,6 +331,7 @@ function cache_data(connection_status, callback)
 				// this part is the most longer, usually.
 				callback();
 			});
+			*/
 		}
 		else
 		{
@@ -582,29 +592,6 @@ function CheckConnection (force, callback)
 }
 
 
-
-
-// Collect RSI lastest youtube videos
-function getYouTubeVideo (channelId, callback)
-{
-	$.ajax({
-		async: true,
-		type: "get",
-		contentType: 'application/json',
-		url: "https://www.googleapis.com/youtube/v3/search?key=" + google_api_key + "&channelId=" + channelId + "&part=snippet,id&order=date&maxResults=25",
-		success: (result) => {
-			callback(result);
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText});
-		}
-	});
-}
-/*
-getYouTubeVideo('UCTeLqJq1mXUX5WWoNXLmOIA', (result) => {
-	console.log(result);
-});
-*/
 
 
 // Mark a topic as read in Spectrum
@@ -917,7 +904,7 @@ function getShipList(LIVE_Token, callback)
 													if (!ship_found && ship.name == my_ship)
 													{
 														ship_found = true;
-														show_log('FOUND ' + ship_matrix_id[index].name);
+														//show_log('FOUND ' + ship_matrix_id[index].name);
 														ship_matrix_id[index].owned = true;
 														ship_matrix_id[index].nb = ship_matrix_id[index].nb + 1;
 													}
@@ -942,7 +929,7 @@ function getShipList(LIVE_Token, callback)
 																if (!ship_found && ship.id == ship_id)
 																{
 																	ship_found = true;
-																	show_log('FOUND ENTRY ONLINE FOR ' + my_ship_to_be_checked + ' with ' + ship_matrix_id[index].name);
+																	//show_log('FOUND ENTRY ONLINE FOR ' + my_ship_to_be_checked + ' with ' + ship_matrix_id[index].name);
 																	ship_matrix_id[index].owned = true;
 																	ship_matrix_id[index].nb = ship_matrix_id[index].nb + 1;
 																}
@@ -967,7 +954,7 @@ function getShipList(LIVE_Token, callback)
 															MyShipLoaned.push(value);
 														}
 														
-														show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
+														//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
 														if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
 														else ship_matrix_id[value].loaner = false;
 													});
@@ -989,12 +976,12 @@ function getShipList(LIVE_Token, callback)
 										
 										for (let [index, ship] of Object.entries(ship_matrix_id)) {
 											if (ship.owned) {
-												show_log('OWNED => ' + ship.name + ' (' + ship.id + ') => ' + ship.nb);
+												//show_log('OWNED => ' + ship.name + ' (' + ship.id + ') => ' + ship.nb);
 											}
 										}
 										for (let [index, ship] of Object.entries(ship_matrix_id)) {
 											if (ship.loaner) {
-												show_log('LOANER => ' + ship.name + ' (' + ship.id + ')' );
+												//show_log('LOANER => ' + ship.name + ' (' + ship.id + ')' );
 											}
 										}
 										
@@ -1554,7 +1541,6 @@ function getReferrals(LIVE_Token, callback) {
 			if (typeof next_rank == "undefined") next_rank = false;
 			
 			var prospects = $(html).find('form#recruits-list-form a[data-type="pending"]').text();
-			show_log(prospects);
 			if (typeof prospects == "undefined") prospects = false;
 			else
 			{
@@ -1575,6 +1561,237 @@ function getReferrals(LIVE_Token, callback) {
 	});
 }
 
+/*
+// Collect RSI lastest youtube videos
+function getYouTubeVideo (channelId, callback)
+{
+	$.ajax({
+		async: true,
+		type: "get",
+		contentType: 'application/json',
+		url: "https://www.googleapis.com/youtube/v3/search?key=" + google_api_key + "&channelId=" + channelId + "&part=snippet,id&order=date&maxResults=25",
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		}
+	});
+}
+
+getYouTubeVideo('UCTeLqJq1mXUX5WWoNXLmOIA', (result) => {
+	console.log(result);
+});
+
+function getYouTubeVideos(callback) {
+	$.ajax({
+		async: true,
+		type: "get",
+		url: "https://www.youtube.com/channel/UCOTusB9OlUGXIVwx84HQGog/home",
+		cache : true,
+		success: (result) => {
+			var html = $.parseHTML( result );
+			
+			callback({success: 1, code: "OK", msg: "OK", data: {}});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		}
+	});
+}
+
+getYouTubeVideos(() => {
+});
+*/
+
+
+function getBuyBack (LIVE_Token, page, callback)
+{	
+	page = page || 1;
+	
+	if (page == 1) BuyBack = [];
+	
+	$.ajax({
+		async: true,
+		type: "get",
+		url: base_LIVE_Url + "account/buy-back-pledges?page=" + page + "&pagesize=100",
+		cache : true,
+		success: (result) => {
+			var html = $.parseHTML( result );
+			
+			var nb_token = $(html).find('p.buy-back-warning > strong').text().trim();
+			
+			var nb_page = 1;
+			var nb_page_href = $(html).find('div.pager a.raquo').attr('href');
+			if (typeof nb_page_href != "undefined" )
+			{
+				var matches = nb_page_href.match(/(\d+)/);
+				if (matches) nb_page = matches[0];
+			}
+
+			var bb_details = [];
+			
+			articles = $(html).find('article.pledge');
+			var cpt = 0;
+			$(articles).each((index, article) => {
+				if (cpt == 0) cpt = $(articles).length;
+				
+				bb_name = $(article).find('div > div > h1').text().trim();
+				bb_date = $(article).find('div > div > dl > dd:eq(0)').text().trim();
+				bb_contained = $(article).find('div > div > dl > dd:eq(2)').text().trim();
+				bb_button_href = $(article).find('a.holosmallbtn').attr('href');
+				if (bb_button_href.substr(0, 4) != 'http')
+				{
+					if (bb_button_href.substr(0, 1) == '/') bb_button_href = bb_button_href.substr(1);
+					bb_button_href = base_LIVE_Url + bb_button_href;
+				}
+				
+				var matches = bb_button_href.match(/(\d+)/);
+				if (matches) bb_id = matches[0];
+				else bb_id = false;
+				
+				found = BuyBack.find(element => element.id == bb_id);
+				
+				if (bb_id !== false && !found && typeof bb_name != "undefined" && bb_name.length > 0 && bb_name.includes(' - '))
+				{					
+					tmp = bb_name.split(' - ');
+					pledge_type = tmp[0];
+					pledge_name = tmp[1];
+					pledge_option = tmp[2];
+					
+					if (typeof pledge_option == "undefined") pledge_option = '';
+					
+					//show_log(pledge_type + ' - ' + pledge_name );
+					
+					data = {id: bb_id, full_name: bb_name, type: pledge_type, name: pledge_name, option: pledge_option, url: bb_button_href, date: bb_date, contained: bb_contained, price: '', currency: '', image: '', ships: {}, items: {}};
+					
+					BuyBack.push(data);
+					
+					getBuyBackDetails(LIVE_Token, bb_button_href, data, (BuyBackDetails) => {
+						data = BuyBackDetails.data;
+						
+						if (BuyBackDetails.success == 1)
+						{
+							var foundIndex = BuyBack.find(element => element.id == bb_id);
+							BuyBack[foundIndex] = data;
+						}
+						
+						bb_details.push(data);
+						if (bb_details.length == cpt)
+						{
+							// page done!
+							if (page < nb_page)
+							{
+								getBuyBack (LIVE_Token, page + 1, callback);
+							}
+							else
+							{
+								// All done !								
+								BuyBack = {success: 1, code: "OK", msg: "OK", data: {BuyBack: BuyBack, nb_token: nb_token}};
+								
+								callback(BuyBack);
+							}
+							
+						}
+					});
+				}
+			});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		headers: {
+			"x-rsi-token": LIVE_Token,
+		}
+	});
+}
+
+
+function getBuyBackDetails (LIVE_Token, url, DATA, callback)
+{
+	tmp = url.charAt(0);
+	if (typeof tmp != "undefined" && tmp == '/')
+	{
+		url = url.substring(1);
+	}
+	
+	$.ajax({
+		async: true,
+		type: "get",
+		url: url,
+		cache : true,
+		success: (result) => {
+			var html = $.parseHTML( result );
+			
+			var image = $(html).find('figure > img').attr('src');
+			if (image.substr(0, 4) != 'http')
+			{
+				if (image.substr(0, 1) == '/') image = image.substr(1);
+				image = base_LIVE_Url + image;
+			}
+			
+			DATA.image = image;
+			
+			const final_price = $(html).find('strong.final-price');
+			DATA.currency = final_price.data('currency');
+			DATA.price = parseInt(final_price.data('value'))/100;			
+			
+			var ships = [];
+			const ships_li = $(html).find('div.ship > ul > li');
+			$(ships_li).each((index, ship) => {
+				ship_image = $(ship).find('img').attr('src');
+				if (ship_image.substr(0, 4) != 'http')
+				{
+					if (ship_image.substr(0, 1) == '/') ship_image = ship_image.substr(1);
+					ship_image = base_LIVE_Url + ship_image;
+				}
+				
+				ship_name = $(ship).find('div.info:eq(0) > span').text().trim();
+				ship_manufacturer = $(ship).find('div.info:eq(1) > span').text().trim();
+				ship_focus = $(ship).find('div.info:eq(2) > span').text().trim();
+				
+				ships.push({ship_image: ship_image, ship_name: ship_name, ship_manufacturer: ship_manufacturer, ship_focus: ship_focus});
+			});
+			
+			const contains = $(html).find('div.package-listing.item > ul > li');
+			var items = [];
+			var insurance = '';
+			$(contains).each((index, contain) => {
+				contain_text = $(contain).text().trim();
+				
+				items.push(contain_text);
+				
+				if (contain_text.includes('Insurance'))
+				{
+					insurance = contain_text.split('Insurance');
+					if (typeof insurance != "undefined" && insurance.length > 0) insurance = insurance[0].trim();
+					else insurance = '';
+				}
+			});
+			DATA.insurance = insurance;
+			DATA.items = items;
+			
+			if (ships.length == 0 && insurance.length > 0)
+			{
+				// PTV ?
+				greycatPTV = $(html).find('div.package-listing.item > ul > li:contains(\'Greycat PTV\')').text().trim();
+				if (typeof greycatPTV != "undefined" && greycatPTV.length > 0)
+				{
+					ships.push({ship_image: false, ship_name: greycatPTV, ship_manufacturer: false, ship_focus: false});
+				}
+			}
+			DATA.ships = ships;
+
+			callback({success: 1, code: "OK", msg: "OK", data: DATA});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		headers: {
+			"x-rsi-token": LIVE_Token,
+		}
+	});
+}
 
 
 
@@ -1775,13 +1992,18 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     }
 	else if (message && message.type == 'getShipList') {
 		(async () => {
-			if (ShipList.length == 0 || (current_timestamp - ShipList.cached_since) > cache_expiration_after_sec)
+			ShipList = local_storage.ShipList;
+			
+			if (message.refresh == true || typeof ShipList.cached_since == "undefined")
 			{
 				getShipList (message.Token, (data) => {
 					data.cached_since = current_timestamp;
 					
-					ShipList = data;					
-					sendResponse(ShipList);
+					chrome.storage.local.set({ShipList: data}, () => {
+						ShipList = data;
+						local_storage.ShipList = ShipList;
+						sendResponse(ShipList);
+					});
 				});
 			}
 			else sendResponse(ShipList);
@@ -1841,6 +2063,44 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 			getReferrals (message.Token, (data) => {
 				sendResponse(data);
 			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'getBuyBack') {
+		(async () => {
+			BuyBack = local_storage.BuyBack;
+			
+			if (message.refresh == true || typeof BuyBack.cached_since == "undefined")
+			{
+				getBuyBack (message.Token, 1, (data) => {
+					data.cached_since = current_timestamp;
+					
+					chrome.storage.local.set({BuyBack: data}, () => {
+						BuyBack = data;
+						local_storage.BuyBack = BuyBack;
+						sendResponse(BuyBack);
+					});
+				});
+			}
+			else sendResponse(BuyBack);
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'getShipListCachedSince') {
+		(async () => {
+			ShipList = local_storage.ShipList;
+			
+			if (typeof ShipList.cached_since != "undefined") sendResponse({success: 1, code: "OK", msg: "OK", cached_since: ShipList.cached_since});
+			else sendResponse({success: 0, code: "KO", msg: "KO"});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'getBuyBackCachedSince') {
+		(async () => {
+			BuyBack = local_storage.BuyBack;
+			
+			if (typeof BuyBack.cached_since != "undefined") sendResponse({success: 1, code: "OK", msg: "OK", cached_since: BuyBack.cached_since});
+			else sendResponse({success: 0, code: "KO", msg: "KO"});
 		})();
 		return true; // keep the messaging channel open for sendResponse
     }
