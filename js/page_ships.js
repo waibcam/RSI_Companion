@@ -14,6 +14,7 @@ function LeftMenu_Click_Ships(elem, href)
 				cached_since = timeSince(ShipListCachedSince.cached_since);
 				refresh_ShipList_data(href, false);
 			}
+			else refresh_ShipList_data(href, true);
 			$(href + ' .cached_since').removeClass('d-none').find('code').text(cached_since);
 		});
 	}

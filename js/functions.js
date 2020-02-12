@@ -86,12 +86,14 @@ function pre_load_data(hash, callback)
 		type: 'getShipListCachedSince',
 	}, function(ShipListCachedSince){
 		if (ShipListCachedSince.success == 1) refresh_ShipList_data("#page_Ships", false);
+		else refresh_ShipList_data("#page_Ships", true);
 		
 		// Check if BB cache already done.
 		chrome.runtime.sendMessage({
 			type: 'getBuyBackCachedSince',
 		}, function(BuyBackCachedSince){
 			if (BuyBackCachedSince.success == 1) refresh_BB_data("#page_BuyBack", false);
+			else refresh_BB_data("#page_BuyBack", true);
 		});
 	});
 	

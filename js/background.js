@@ -1672,7 +1672,7 @@ function getBuyBack (LIVE_Token, page, callback)
 						
 						if (BuyBackDetails.success == 1)
 						{
-							var foundIndex = BuyBack.find(element => element.id == bb_id);
+							var foundIndex = BuyBack.find(element => element.id == data.id);
 							BuyBack[foundIndex] = data;
 						}
 						

@@ -14,6 +14,7 @@ function LeftMenu_Click_BuyBack(elem, href)
 				cached_since = timeSince(BuyBackCachedSince.cached_since);
 				refresh_BB_data(href, false);
 			}
+			else refresh_BB_data(href, true);
 			$('#page_BuyBack .cached_since').removeClass('d-none').find('code').text(cached_since);
 		});
 	}
