@@ -27,18 +27,15 @@ function get_Threads(connection_data)
 		
 		if (typeof channel_groups != "undefined")
 		{
-			var Official_Threads = channel_groups.find(elem => elem.id == 1).channels;
-			var StarCitizen_Threads = channel_groups.find(elem => elem.id == 2).channels;
-			
 			var all_forums = [];
 			var all_threads = [];
+			// Official => 2, StarCitizen => 2, PTU => 63927
+			var forums = [1, 2, 63927];
 			
-			$(Official_Threads).each((index, value) => {
-				all_forums.push(value);
-			});
-			
-			$(StarCitizen_Threads).each((index, value) => {
-				all_forums.push(value);
+			$(forums).each((index, forum) => {
+				$(channel_groups.find(elem => elem.id == forum).channels).each((index, value) => {
+					all_forums.push(value);
+				});
 			});
 			
 			var done = 0;
@@ -60,8 +57,6 @@ function get_Threads(connection_data)
 								all_threads.push(thread)
 							}
 						});
-						
-						
 					}
 					
 					done ++;
