@@ -46,7 +46,7 @@ function pre_load_data(hash, callback)
 		if (Referrals.success == 1)
 		{
 			$('#referal').parent().removeClass('d-none');
-			$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.start + '/' + Referrals.data	.end + ' (' + Referrals.data.prospects + ' propect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
+			$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.recruits + '/' + Referrals.data	.end + ' (' + Referrals.data.prospects + ' prospect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
 		}
 	});
 	

@@ -63,19 +63,29 @@ function refresh_BB_data(href, refresh)
 				currency = BB.currency;
 				contained = '<small><ul class="mb-0 pl-4">';
 				$(BB.ships).each((index, ship) => {
-					if (ship.ship_name.length > 0) contained = contained + '<li><span class="badge badge-info">Ship</span> ' + ship.ship_name + '</li>';
+					if (typeof ship.ship_name != "undefined" && ship.ship_name.length > 0) contained = contained + '<li><span class="badge badge-info">Ship</span> ' + ship.ship_name + '</li>';
 				});
 				$(BB.items).each((index, item) => {
-					if (item.length > 0)
+					if (typeof item != "undefined" && item.length > 0)
 					{
 						contained = contained + '<li>' + (item.includes('Upgrade')?'<span class="badge badge-warning">Upgrade</span> ':(item.includes('Star Citizen Digital Download')?'<span class="badge badge-warning">SC Game Package</span> ':'')) + item + '</li>';
 					}
 				});
 				contained = contained + '</ul></small>';
 				
+				if(BB.url !== false) bb_url = BB.url.trim();
+				else bb_url = '';
+				if (bb_url.length == 0) bb_url = '#';
+				
+				label_price = '';
+				if (BB.price > 0) label_price = '<span class="badge badge-primary">' + numberWithCommas(Math.round((BB.price + Number.EPSILON) * 100) / 100) + ' ' + BB.currency + '</span>';
+				
+				label_assurance = '';
+				if (BB.insurance.length > 0) label_assurance = '<span class="badge badge-' + (BB.insurance == "Lifetime"?'danger':(BB.insurance.includes("Month")?'light':'warning')) + '">' + BB.insurance + '</span>';
+				
 				$(href + ' .buyback_list').append('' +
 					'<div class="col mb-4">' +
-						'<a href="' + BB.url + '" target="_blank">' +
+						'<a href="' + bb_url + '" target="_blank">' +
 							'<div class="card bg-dark" data-id="' + BB.id + '" data-full_name="' + BB.full_name + '" data-name="' + BB.name + '" data-type="' + BB.type + '" data-option="' + BB.option + '" data-date="' + BB.date + '" data-contained="' + BB.contained + '" data-price="' + BB.price + '" data-currency="' + BB.currency + '" data-insurance="' + BB.insurance + '">' +
 								'<div class="card-header p-0 p-1 pl-2 m-0">' +
 									BB.name +
@@ -83,8 +93,8 @@ function refresh_BB_data(href, refresh)
 								'<div class="card-body tex-light p-0">' +
 									'<div class="card_image">' +
 										'<img src="' + BB.image + '" class="card-img-top" alt="' + BB.contained + '">' +
-										'<span class="badge badge-primary">' + numberWithCommas(Math.round((BB.price + Number.EPSILON) * 100) / 100) + ' ' + BB.currency + '</span>' +
-										'<span class="badge badge-' + (BB.insurance == "Lifetime"?'danger':(BB.insurance.includes("Month")?'light':'warning')) + '">' + BB.insurance + '</span>' +
+										label_price + 
+										label_assurance + 
 									'</div>' +
 									'<div class="p-1">' +
 										contained +

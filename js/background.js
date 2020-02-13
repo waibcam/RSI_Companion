@@ -1549,8 +1549,17 @@ function getReferrals(LIVE_Token, callback) {
 				else prospects = false;
 			}
 			
+			var recruits = $(html).find('form#recruits-list-form a[data-type="active"]').text();
+			if (typeof recruits == "undefined") recruits = false;
+			else
+			{
+				var matches = recruits.match(/(\d+)/);
+				if (matches) recruits = matches[0];
+				else recruits = false;
+			}
 			
-			callback({success: 1, code: "OK", msg: "OK", data: {url: url, start: start, end: end, next_rank: next_rank, prospects: prospects}});
+			
+			callback({success: 1, code: "OK", msg: "OK", data: {url: url, start: start, end: end, next_rank: next_rank, prospects: prospects, recruits: recruits}});
 		},
 		error: (request, status, error) => {
 			callback({success: 0, code: "KO", msg: request.responseText});
@@ -1620,6 +1629,7 @@ function getBuyBack (LIVE_Token, page, callback)
 			var html = $.parseHTML( result );
 			
 			var nb_token = $(html).find('p.buy-back-warning > strong').text().trim();
+			if (nb_token.length == 0) nb_token = 0;
 			
 			var nb_page = 1;
 			var nb_page_href = $(html).find('div.pager a.raquo').attr('href');
@@ -1640,6 +1650,7 @@ function getBuyBack (LIVE_Token, page, callback)
 				bb_date = $(article).find('div > div > dl > dd:eq(0)').text().trim();
 				bb_contained = $(article).find('div > div > dl > dd:eq(2)').text().trim();
 				bb_button_href = $(article).find('a.holosmallbtn').attr('href');
+				
 				if (bb_button_href.substr(0, 4) != 'http')
 				{
 					if (bb_button_href.substr(0, 1) == '/') bb_button_href = bb_button_href.substr(1);
@@ -1647,12 +1658,19 @@ function getBuyBack (LIVE_Token, page, callback)
 				}
 				
 				var matches = bb_button_href.match(/(\d+)/);
-				if (matches) bb_id = matches[0];
-				else bb_id = false;
+				if (matches) pledgeid = matches[0];
+				else pledgeid = false;
 				
-				found = BuyBack.find(element => element.id == bb_id);
+				if (pledgeid == false)
+				{
+					bb_button_href = false;
+					pledgeid = $(article).find('a.holosmallbtn').data('pledgeid');
+					if ($(pledgeid).length == 0) pledgeid = false;
+				}
 				
-				if (bb_id !== false && !found && typeof bb_name != "undefined" && bb_name.length > 0 && bb_name.includes(' - '))
+				found = BuyBack.find(element => element.id == pledgeid);
+				
+				if (pledgeid !== false && !found && typeof bb_name != "undefined" && bb_name.length > 0 && bb_name.includes(' - '))
 				{					
 					tmp = bb_name.split(' - ');
 					pledge_type = tmp[0];
@@ -1663,7 +1681,7 @@ function getBuyBack (LIVE_Token, page, callback)
 					
 					//show_log(pledge_type + ' - ' + pledge_name );
 					
-					data = {id: bb_id, full_name: bb_name, type: pledge_type, name: pledge_name, option: pledge_option, url: bb_button_href, date: bb_date, contained: bb_contained, price: '', currency: '', image: '', ships: {}, items: {}};
+					data = {id: pledgeid, full_name: bb_name, type: pledge_type, name: pledge_name, option: pledge_option, url: bb_button_href, date: bb_date, contained: bb_contained, price: '', currency: '', insurance: '', image: '/img/Image_not_found.png', ships: {}, items: {}};
 					
 					BuyBack.push(data);
 					
@@ -1695,6 +1713,7 @@ function getBuyBack (LIVE_Token, page, callback)
 						}
 					});
 				}
+				else cpt--;
 			});
 		},
 		error: (request, status, error) => {
@@ -1709,88 +1728,97 @@ function getBuyBack (LIVE_Token, page, callback)
 
 function getBuyBackDetails (LIVE_Token, url, DATA, callback)
 {
-	tmp = url.charAt(0);
-	if (typeof tmp != "undefined" && tmp == '/')
-	{
-		url = url.substring(1);
-	}
 	
-	$.ajax({
-		async: true,
-		type: "get",
-		url: url,
-		cache : true,
-		success: (result) => {
-			var html = $.parseHTML( result );
-			
-			var image = $(html).find('figure > img').attr('src');
-			if (image.substr(0, 4) != 'http')
-			{
-				if (image.substr(0, 1) == '/') image = image.substr(1);
-				image = base_LIVE_Url + image;
-			}
-			
-			DATA.image = image;
-			
-			const final_price = $(html).find('strong.final-price');
-			DATA.currency = final_price.data('currency');
-			DATA.price = parseInt(final_price.data('value'))/100;			
-			
-			var ships = [];
-			const ships_li = $(html).find('div.ship > ul > li');
-			$(ships_li).each((index, ship) => {
-				ship_image = $(ship).find('img').attr('src');
-				if (ship_image.substr(0, 4) != 'http')
-				{
-					if (ship_image.substr(0, 1) == '/') ship_image = ship_image.substr(1);
-					ship_image = base_LIVE_Url + ship_image;
-				}
-				
-				ship_name = $(ship).find('div.info:eq(0) > span').text().trim();
-				ship_manufacturer = $(ship).find('div.info:eq(1) > span').text().trim();
-				ship_focus = $(ship).find('div.info:eq(2) > span').text().trim();
-				
-				ships.push({ship_image: ship_image, ship_name: ship_name, ship_manufacturer: ship_manufacturer, ship_focus: ship_focus});
-			});
-			
-			const contains = $(html).find('div.package-listing.item > ul > li');
-			var items = [];
-			var insurance = '';
-			$(contains).each((index, contain) => {
-				contain_text = $(contain).text().trim();
-				
-				items.push(contain_text);
-				
-				if (contain_text.includes('Insurance'))
-				{
-					insurance = contain_text.split('Insurance');
-					if (typeof insurance != "undefined" && insurance.length > 0) insurance = insurance[0].trim();
-					else insurance = '';
-				}
-			});
-			DATA.insurance = insurance;
-			DATA.items = items;
-			
-			if (ships.length == 0 && insurance.length > 0)
-			{
-				// PTV ?
-				greycatPTV = $(html).find('div.package-listing.item > ul > li:contains(\'Greycat PTV\')').text().trim();
-				if (typeof greycatPTV != "undefined" && greycatPTV.length > 0)
-				{
-					ships.push({ship_image: false, ship_name: greycatPTV, ship_manufacturer: false, ship_focus: false});
-				}
-			}
-			DATA.ships = ships;
-
-			callback({success: 1, code: "OK", msg: "OK", data: DATA});
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText});
-		},
-		headers: {
-			"x-rsi-token": LIVE_Token,
+	if (url != false)
+	{
+		tmp = url.charAt(0);
+		if (typeof tmp != "undefined" && tmp == '/')
+		{
+			url = url.substring(1);
 		}
-	});
+		
+		$.ajax({
+			async: true,
+			type: "get",
+			url: url,
+			cache : true,
+			success: (result) => {
+				var html = $.parseHTML( result );
+				
+				var image = $(html).find('figure > img').attr('src');
+				if (typeof image != "undefined")
+				{
+					if (image.substr(0, 4) != 'http')
+					{
+						if (image.substr(0, 1) == '/') image = image.substr(1);
+						image = base_LIVE_Url + image;
+					}
+				}
+				else image = '';
+				
+				DATA.image = image;
+				
+				const final_price = $(html).find('strong.final-price');
+				DATA.currency = final_price.data('currency');
+				DATA.price = parseInt(final_price.data('value'))/100;			
+				
+				var ships = [];
+				const ships_li = $(html).find('div.ship > ul > li');
+				$(ships_li).each((index, ship) => {
+					ship_image = $(ship).find('img').attr('src');
+					if (ship_image.substr(0, 4) != 'http')
+					{
+						if (ship_image.substr(0, 1) == '/') ship_image = ship_image.substr(1);
+						ship_image = base_LIVE_Url + ship_image;
+					}
+					
+					ship_name = $(ship).find('div.info:eq(0) > span').text().trim();
+					ship_manufacturer = $(ship).find('div.info:eq(1) > span').text().trim();
+					ship_focus = $(ship).find('div.info:eq(2) > span').text().trim();
+					
+					ships.push({ship_image: ship_image, ship_name: ship_name, ship_manufacturer: ship_manufacturer, ship_focus: ship_focus});
+				});
+				
+				const contains = $(html).find('div.package-listing.item > ul > li');
+				var items = [];
+				var insurance = '';
+				$(contains).each((index, contain) => {
+					contain_text = $(contain).text().trim();
+					
+					items.push(contain_text);
+					
+					if (contain_text.includes('Insurance'))
+					{
+						insurance = contain_text.split('Insurance');
+						if (typeof insurance != "undefined" && insurance.length > 0) insurance = insurance[0].trim();
+						else insurance = '';
+					}
+				});
+				DATA.insurance = insurance;
+				DATA.items = items;
+				
+				if (ships.length == 0 && insurance.length > 0)
+				{
+					// PTV ?
+					greycatPTV = $(html).find('div.package-listing.item > ul > li:contains(\'Greycat PTV\')').text().trim();
+					if (typeof greycatPTV != "undefined" && greycatPTV.length > 0)
+					{
+						ships.push({ship_image: false, ship_name: greycatPTV, ship_manufacturer: false, ship_focus: false});
+					}
+				}
+				DATA.ships = ships;
+
+				callback({success: 1, code: "OK", msg: "OK", data: DATA});
+			},
+			error: (request, status, error) => {
+				callback({success: 0, code: "KO", msg: request.responseText, data: DATA});
+			},
+			headers: {
+				"x-rsi-token": LIVE_Token,
+			}
+		});
+	}
+	else callback({success: 1, code: "OK", msg: "OK", data: DATA});
 }
 
 
