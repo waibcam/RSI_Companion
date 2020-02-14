@@ -19,8 +19,10 @@ $(document).ready(function () {
 		{
 			if (!isNaN(parseInt(result.data.fans)))
 			{
+				var fans = parseInt(result.data.fans);
+				
 				$('#fans').parent().removeClass('d-none');
-				$('#fans').text(numberWithCommas(result.data.fans));
+				$('#fans').text(numberWithCommas(fans.toFixed(0)));
 			}
 			
 			if (!isNaN(parseInt(result.data.funds)))
@@ -29,7 +31,7 @@ $(document).ready(function () {
 				funds = (funds-(funds%100))/100;
 			
 				$('#funds').parent().removeClass('d-none');
-				$('#funds').text("$" + numberWithCommas(funds));
+				$('#funds').text("$" + numberWithCommas(funds.toFixed(0)));
 			}
 		}
 	});

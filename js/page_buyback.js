@@ -39,6 +39,7 @@ function refresh_BB_data(href, refresh)
 	}, function(BuyBack){
 		
 		$('#BuyBackRefresh').attr('disabled', false).find('i').removeClass('fa-spin');
+		elem_bb_li_a.find('.badge').html(0);
 		
 		if (BuyBack.success == 1)
 		{
@@ -60,6 +61,7 @@ function refresh_BB_data(href, refresh)
 			
 			$(BuyBack.data.BuyBack).each(function (i, BB) {
 				total_price = total_price + BB.price;
+
 				currency = BB.currency;
 				contained = '<small><ul class="mb-0 pl-4">';
 				$(BB.ships).each((index, ship) => {
@@ -77,11 +79,22 @@ function refresh_BB_data(href, refresh)
 				else bb_url = '';
 				if (bb_url.length == 0) bb_url = '#';
 				
+				price = 0;
+				if (BB.price > 0) price = BB.price.toFixed(2);
+				if (price.includes('.00')) [price] = price.split('.00');
+				if (price.length == 0) price = 0;
+				
 				label_price = '';
-				if (BB.price > 0) label_price = '<span class="badge badge-primary">' + numberWithCommas(Math.round((BB.price + Number.EPSILON) * 100) / 100) + ' ' + BB.currency + '</span>';
+				if (price > 0) label_price = '<span class="ml-1 mb-1 badge badge-primary">' + numberWithCommas(price) + ' ' + BB.currency + '</span>';
 				
 				label_assurance = '';
-				if (BB.insurance.length > 0) label_assurance = '<span class="badge badge-' + (BB.insurance == "Lifetime"?'danger':(BB.insurance.includes("Month")?'light':'warning')) + '">' + BB.insurance + '</span>';
+				if (BB.insurance.length > 0) label_assurance = '<span class="ml-1 mb-1 badge badge-' + (BB.insurance == "Lifetime"?'danger':(BB.insurance.includes("Month")?'light':'warning')) + '">' + BB.insurance + '</span>';
+				
+				label_type = '';
+				if (BB.type.length > 0) label_type = '<span class="ml-1 mb-1 badge badge-success">' + BB.type + '</span>';
+				
+				label_option = '';
+				if (BB.option.length > 0) label_option = '<span class="ml-1 mb-1 badge badge-secondary">' + capitalizeFirstLetter(BB.option) + '</span>';
 				
 				$(href + ' .buyback_list').append('' +
 					'<div class="col mb-4">' +
@@ -93,8 +106,12 @@ function refresh_BB_data(href, refresh)
 								'<div class="card-body tex-light p-0">' +
 									'<div class="card_image">' +
 										'<img src="' + BB.image + '" class="card-img-top" alt="' + BB.contained + '">' +
-										label_price + 
-										label_assurance + 
+										'<div class="d-flex flex-wrap text-right">' +
+											label_type + 
+											label_option +
+											label_assurance + 
+											label_price + 
+										'</div>' +
 									'</div>' +
 									'<div class="p-1">' +
 										contained +
@@ -107,7 +124,7 @@ function refresh_BB_data(href, refresh)
 			});
 			
 			$(href + ' span > strong.total_price').parent().removeClass('d-none');
-			$(href + ' span > strong.total_price').text(numberWithCommas(Math.round((total_price + Number.EPSILON) * 100) / 100));
+			$(href + ' span > strong.total_price').text(numberWithCommas(total_price.toFixed(2)));
 			$(href + ' span > strong.currency').text(currency);
 
 			$('#input_search_buyback').removeClass('d-none');

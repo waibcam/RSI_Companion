@@ -279,16 +279,11 @@ main {
 {
 	position: relative;
 }
-#page_BuyBack .card .card_image > span.badge {
+#page_BuyBack .card .card_image > div {
     position: absolute;
-	top: 5;
 	z-index: 2;
-}
-#page_BuyBack .card .card_image > span.badge:nth-child(2) {
+	top: 5;
 	right: 5;
-}
-#page_BuyBack .card .card_image > span.badge:nth-child(3) {
-	left: 5;
 }
 
 #page_Roadmap .release .card-header > div.card_title {
