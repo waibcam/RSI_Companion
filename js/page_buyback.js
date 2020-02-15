@@ -88,13 +88,13 @@ function refresh_BB_data(href, refresh)
 				if (price > 0) label_price = '<span class="ml-1 mb-1 badge badge-primary">' + numberWithCommas(price) + ' ' + BB.currency + '</span>';
 				
 				label_assurance = '';
-				if (BB.insurance.length > 0) label_assurance = '<span class="ml-1 mb-1 badge badge-' + (BB.insurance == "Lifetime"?'danger':(BB.insurance.includes("Month")?'light':'warning')) + '">' + BB.insurance + '</span>';
+				if (BB.insurance.length > 0) label_assurance = '<span class="ml-1 mb-1 badge badge-light">' + BB.insurance + '</span>';
 				
 				label_type = '';
 				if (BB.type.length > 0) label_type = '<span class="ml-1 mb-1 badge badge-success">' + BB.type + '</span>';
 				
 				label_option = '';
-				if (BB.option.length > 0) label_option = '<span class="ml-1 mb-1 badge badge-secondary">' + capitalizeFirstLetter(BB.option) + '</span>';
+				if (BB.option.length > 0) label_option = '<span class="ml-1 mb-1 badge badge-dark">' + capitalizeFirstLetter(BB.option) + '</span>';
 				
 				$(href + ' .buyback_list').append('' +
 					'<div class="col mb-4">' +

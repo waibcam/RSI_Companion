@@ -134,32 +134,35 @@ function display_card(current_card, id_changed, extra, previous_card)
 		case "MOVED": badge = '<span class="mr-1 badge badge-warning">MOVED from ' + extra + '</span>'; break;
 	}
 	
-	var progress_now = (current_card.tasks > 0 ? (Math.round(current_card.completed / current_card.tasks * 100)) : 0);
+	var current_progress = (current_card.tasks > 0 ? (current_card.completed / current_card.tasks * 100) : 0);
 	
 	if (typeof previous_card == "undefined") previous_card = false;
 	
-	var progress_one = 0;
+	var previous_progress = 0;
 	if (previous_card !== false)
 	{
-		progress_one = (previous_card.tasks > 0 ? (Math.round(previous_card.completed / previous_card.tasks * 100)) : 0);
+		previous_progress = (previous_card.tasks > 0 ? (previous_card.completed / previous_card.tasks * 100) : 0);
 	}
-	var progress_two = progress_now - progress_one;
+	var diff_progress = current_progress - previous_progress;
+	
 	
 	went_back = false;
-	if (progress_two < 0)
+	if (diff_progress < 0)
 	{
 		went_back = true;
-		progress_one = progress_now + progress_two;
-		progress_two = progress_two * -1;
-		
+		first_bar_progress = previous_progress + diff_progress;
+		diff_progress = diff_progress * -1;
 	}
+	else first_bar_progress = previous_progress;
 	
 	var completed = {display_bar: true, text: false};
-	if (progress_now == 100)
+	if (current_progress == 100)
 	{
-		if (progress_two == 0) completed = {display_bar: false, text: '<i class="fas fa-check-square text-light mr-1"></i>'};
+		if (diff_progress == 0) completed = {display_bar: false, text: '<i class="fas fa-check-square text-light mr-1"></i>'};
 		else completed = {display_bar: true, text: '<i class="fas fa-check-square text-success mr-1"></i>'};
 	}
+	
+	var to_do_progress = (100 - previous_progress - diff_progress);
 	
 	return(''+
 		'<div class="col-12 mb-2" data-card>' +
@@ -168,20 +171,47 @@ function display_card(current_card, id_changed, extra, previous_card)
 					'<div class="card_title' + (id_changed == "REMOVED"?" text-danger":(id_changed == "NEW"?" text-success":(id_changed == "MOVED"?" text-warning":''))) + '">' + 
 						(completed.text?completed.text:'') + badge + current_card.name + '<i class="fas fa-plus-hexagon deploy mr-2 float-right text-light"></i>' +
 					'</div>' +
-					'<div class="progress mt-1 bg-light' + (progress_now == 0 || !completed.display_bar? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
-						'<div class="progress-bar bg-one" role="progressbar" style="width: ' + progress_one + '%;" aria-valuenow="' + progress_one + '" aria-valuemin="0" aria-valuemax="100">' +
+					'<div class="progress mt-1 bg-light' + (current_progress == 0 || !completed.display_bar? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
+						'<div class="progress-bar bg-one" role="progressbar" style="width: ' + first_bar_progress + '%;" aria-valuenow="' + first_bar_progress + '" aria-valuemin="0" aria-valuemax="100" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Previous week: ' + previous_card.completed + '/' + previous_card.tasks + '">' +
+							previous_card.completed +
 						'</div>' +
-						'<div class="progress-bar progress-bar-striped ' + (went_back?'bg-three':'bg-two') + '" role="progressbar" style="width: ' + progress_two + '%;" aria-valuenow="' + progress_two + '" aria-valuemin="0" aria-valuemax="100">' +
-							(went_back?'':'NEW') +
+						'<div class="progress-bar progress-bar-striped ' + (went_back?'bg-three':'bg-two') + '" role="progressbar" style="width: ' + (diff_progress) + '%;" aria-valuenow="' + diff_progress + '" aria-valuemin="0" aria-valuemax="100"  data-toggle="popover" data-placement="top" data-trigger="hover" data-content="This week: ' + current_card.completed + '/' + current_card.tasks + '">' +
+							((current_card.completed - previous_card.completed) < 0 ?'':'+') + (current_card.completed - previous_card.completed) +
+						'</div>' +
+						'<div class="progress-bar bg-light" role="progressbar" style="width: ' + to_do_progress + '%;" aria-valuenow="' + diff_progress + '" aria-valuemin="0" aria-valuemax="100" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="To do: ' + (current_card.tasks - current_card.completed) + '/' + current_card.tasks + '">' +
+							+ (current_card.tasks - current_card.completed) +
 						'</div>' +
 					'</div>' +
 				'</div>' +
 				(current_card.thumbnail != null && current_card.thumbnail.urls != null && current_card.thumbnail.urls.rect != null ? '<img src="' + base_LIVE_Url + current_card.thumbnail.urls.rect + '" class="img-fluid rounded img_roadmap_card mt-1 d-none" alt="' + current_card.name + '">' : '') +
 				'<div class="card-body p-1 m-0 description d-none">' +
-					'<div class="progress bg-dark' + (progress_now == 0 || progress_now == 0 ? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
-						'<div class="progress-bar ' + (progress_now == 100 ? 'bg-success' : (progress_now > 75 ? 'bg-info' : (progress_now > 50 ? 'bg-warning' : 'bg-danger'))) + '" role="progressbar" style="width: ' + progress_now + '%;" aria-valuenow="' + progress_now + '" aria-valuemin="0" aria-valuemax="100">' +
-							'' + progress_now + '%' +
+					'<div class="progress bg-dark' + (current_progress == 0 || current_progress == 0 ? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
+						'<div class="progress-bar ' + (current_progress == 100 ? 'bg-success' : (current_progress > 75 ? 'bg-info' : (current_progress > 50 ? 'bg-warning' : 'bg-danger'))) + '" role="progressbar" style="width: ' + current_progress + '%;" aria-valuenow="' + current_progress + '" aria-valuemin="0" aria-valuemax="100">' +
+							'' + current_progress.toFixed(2) + '%' +
 						'</div>' +
+					'</div>' +
+					'<div>' +
+					( (previous_card.tasks > 0 || current_card.tasks > 0 ) ? '' +
+						'<table class="mt-2 table table-dark text-light table-sm">' +
+							'<tbody>' +
+								'<tr>' +
+									'<td class="text-left">Previous week:</td>' +
+									'<td class="text-center">' + previous_card.completed + '/' + previous_card.tasks + ' tasks</td>' +
+									'<td class="text-left">' + previous_progress.toFixed(2) + '%</td>' +
+								'</tr>' +
+								'<tr>' +
+									'<td class="text-left">This week:</td>' +
+									'<td class="text-center">' + current_card.completed + '/' + current_card.tasks + '  tasks</td>' +
+									'<td class="text-left">' + current_progress.toFixed(2) + '%' + ((current_progress - previous_progress)!=0?' (<span class="' + (went_back?'text-danger':'text-success') + '">' + ((current_progress - previous_progress)>0?'+':'') + (current_progress - previous_progress).toFixed(2) + '%</span>)':'') + '</td>' +
+								'</tr>' +
+								'<tr>' +
+									'<td class="text-left">To do:</td>' +
+									'<td class="text-center">' + (current_card.tasks - current_card.completed) + '/' + current_card.tasks + ' tasks</td>' +
+									'<td class="text-left">' + (100 - current_progress).toFixed(2) + '%</td>' +
+								'</tr>' +
+							'</tbody>' +
+						'</table>' +
+						'' : '') +
 					'</div>' +
 					'<div class=" p-1 m-0 text-light"><strong>' + current_card.description + '</strong></div>' +
 					'<div class=" p-1 m-0 text-secondary"><i>' + current_card.body + '</i></div>' +
@@ -315,7 +345,10 @@ function get_board(board_id, board_last_updated)
 						$('.board-' + card.board_id + ' > .row .release-' + card.release_id + ' .card-body .row.release .category-' + card.category_id + ' .row.category').append(display_card(card, difference.id_changed, difference.extra, missing.previous_cards[card.id]));
 					});
 				}
-
+			});
+			
+			$('[data-toggle="popover"]').popover({
+				template: '<div class="popover" role="tooltip"><div class="arrow"></div><h3 class="popover-header"></h3><div class="popover-body"></div></div>'
 			});
 
 			$('.row.category').each(function (index) {
