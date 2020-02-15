@@ -125,7 +125,7 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.production_status !== null) {
 					var ship_production_status = ship.production_status.split('/');
 					$(ship_production_status).each(function (index, val) {
-						span_ship_production_status = span_ship_production_status + '<span class="badge badge-primary mr-1">' + capitalizeFirstLetter(val) + '</span> '
+						span_ship_production_status = span_ship_production_status + '<span class="mr-1 mb-1 badge badge-primary">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
 
@@ -133,7 +133,7 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.type !== null) {
 					var ship_type = ship.type.split('/');
 					$(ship_type).each(function (index, val) {
-						span_ship_type = span_ship_type + '<span class="badge badge-warning mr-1">' + capitalizeFirstLetter(val) + '</span> '
+						span_ship_type = span_ship_type + '<span class="mr-1 mb-1 badge badge-warning">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
 
@@ -142,7 +142,7 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.focus !== null) {
 					var ship_focus = ship.focus.split('/');
 					$(ship_focus).each(function (index, val) {
-						span_ship_focus = span_ship_focus + '<span class="badge badge-danger mr-1">' + capitalizeFirstLetter(val) + '</span> '
+						span_ship_focus = span_ship_focus + '<span class="mr-1 mb-1 badge badge-danger">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
 				
@@ -161,11 +161,11 @@ function refresh_ShipList_data(href, refresh)
 									'<div class="pb-2">' +
 										'<h6 class="m-0">' + (ShipList.data.dev?'[' + ship.id + '] - ':'') + ship.name + '</h6>' +
 									'</div>' +
-									'<p class="card-text">' +
-										'' + span_ship_production_status.trim() + '' +
-										'' + span_ship_type.trim() + '' +
-										'' + span_ship_focus.trim() + '' +
-									'</p>' +
+									'<div class="d-flex flex-wrap">' +
+										span_ship_production_status.trim() +
+										span_ship_type.trim() +
+										span_ship_focus.trim() +
+									'</div>' +
 								'</div>' +
 							'</div>' +
 						'</a>' +

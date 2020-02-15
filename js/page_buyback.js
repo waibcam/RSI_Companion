@@ -85,42 +85,37 @@ function refresh_BB_data(href, refresh)
 				if (price.length == 0) price = 0;
 				
 				label_price = '';
-				if (price > 0) label_price = '<span class="ml-1 mb-1 badge badge-primary">' + numberWithCommas(price) + ' ' + BB.currency + '</span>';
+				if (price > 0) label_price = '<span class="mr-1 mb-1 badge badge-primary">' + numberWithCommas(price) + ' ' + BB.currency + '</span>';
 				
 				label_assurance = '';
-				if (BB.insurance.length > 0) label_assurance = '<span class="ml-1 mb-1 badge badge-light">' + BB.insurance + '</span>';
+				if (BB.insurance.length > 0) label_assurance = '<span class="mr-1 mb-1 badge badge-light">' + BB.insurance + '</span>';
 				
 				label_type = '';
-				if (BB.type.length > 0) label_type = '<span class="ml-1 mb-1 badge badge-success">' + BB.type + '</span>';
+				if (BB.type.length > 0) label_type = '<span class="mr-1 mb-1 badge badge-success">' + BB.type + '</span>';
 				
 				label_option = '';
-				if (BB.option.length > 0) label_option = '<span class="ml-1 mb-1 badge badge-dark">' + capitalizeFirstLetter(BB.option) + '</span>';
+				if (BB.option.length > 0) label_option = '<span class="mr-1 mb-1 badge badge-dark">' + capitalizeFirstLetter(BB.option) + '</span>';
 				
 				$(href + ' .buyback_list').append('' +
 					'<div class="col mb-4">' +
 						'<a href="' + bb_url + '" target="_blank">' +
 							'<div class="card bg-dark" data-id="' + BB.id + '" data-full_name="' + BB.full_name + '" data-name="' + BB.name + '" data-type="' + BB.type + '" data-option="' + BB.option + '" data-date="' + BB.date + '" data-contained="' + BB.contained + '" data-price="' + BB.price + '" data-currency="' + BB.currency + '" data-insurance="' + BB.insurance + '">' +
-								'<div class="card-header p-0 p-1 pl-2 m-0">' +
-									BB.name +
-								'</div>' +  
-								'<div class="card-body tex-light p-0">' +
-									'<div class="card_image">' +
-										'<img src="' + BB.image + '" class="card-img-top" alt="' + BB.contained + '">' +
-										'<div class="d-flex flex-wrap text-right">' +
-											label_type + 
-											label_option +
-											label_assurance + 
-											label_price + 
-										'</div>' +
+								'<img class="card-img-top" src="' + BB.image + '" alt="' + BB.contained + '" />' +
+								'<div class="card-body p-1 m-0">' +
+									'<div class="pb-2">' +
+										'<h6 class="m-0">' + BB.name + '</h6>' +
 									'</div>' +
-									'<div class="p-1">' +
-										contained +
+									'<div class="d-flex flex-wrap">' +
+										label_type + 
+										label_option +
+										label_assurance + 
+										label_price + 
 									'</div>' +
 								'</div>' +
 							'</div>' +
 						'</a>' + 
 					'</div>' +
-					'');
+				'');
 			});
 			
 			$(href + ' span > strong.total_price').parent().removeClass('d-none');
