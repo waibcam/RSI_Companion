@@ -612,10 +612,10 @@ function  CheckConnection(DoPreload, force, from, callback) {
 			
 			handle = data.member.nickname;
 			
-			$('.navbar:eq(0) .avatar').attr('src', data.member.avatar).attr('alt', data.member.displayname);
-			$('.navbar:eq(0) .displayname').text(data.member.displayname);
-			$('.navbar:eq(0) a.nickname').attr('href', base_LIVE_Url + 'citizens/'+handle);
-			$('.navbar:eq(0) a.nickname > span').text(handle);
+			$('div.user_info img.avatar').attr('src', data.member.avatar).attr('alt', data.member.displayname);
+			$('div.user_info div.displayname').text(data.member.displayname);
+			$('div.user_info a.nickname').attr('href', base_LIVE_Url + 'citizens/'+handle);
+			$('div.user_info a.nickname span.handle').text(handle);
 
 			$('#organizations-li').removeClass('d-none');
 			

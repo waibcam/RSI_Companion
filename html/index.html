@@ -45,13 +45,6 @@
 				<div class="mt-2 mr-4">
 					<button type="button" class="btn btn-sm btn-warning d-none" data-toggle="modal" data-target="#ships_not_found"></button>
 				</div>
-				<div class="media user_info">
-					<div class="media-body mr-1">
-						<div class="text-white displayname"></div>
-						<div><small><a href="#" target="_blank" class="nickname"><span class="text-muted"></span></a></small></div>
-					</div>
-					<img class="avatar">
-				</div>
 			</div>
 		</nav>
 		<!-- BOTTOM bar -->
@@ -102,7 +95,18 @@
 				<!-- Side bar -->
 				<nav class="bg-menu sidebar">
 					<div class="sidebar-sticky">
-						<ul class="nav flex-column mb-2">
+						<div class="user_info">
+							<a href="#" target="_blank" class="nickname">
+								<div class="media d-flex">
+									<img class="avatar">
+									<div class="media-body ml-1">
+										<div class="text-white displayname"></div>
+										<div><small><span class="handle text-muted"></span></small></div>
+									</div>
+								</div>
+							</a>
+						</div>
+						<ul class="nav flex-column mb-2 mt-0 border-top">
 							<li class="nav-item d-none">
 								<a class="nav-link" href="#page_Comm_Link">
 								<i class="fas fa-satellite"></i> Comm-Link <span class="badge badge-light badge-pill"></span>
@@ -148,7 +152,7 @@
 								<i class="fas fa-chart-scatter"></i> Telemetry <span class="badge badge-light badge-pill"></span>
 								</a>
 							</li>
-							<li class="nav-item border-top mt-3">
+							<li class="nav-item border-top mt-1">
 								<a class="nav-link" href="#page_ReleaseNotes">
 								<i class="fas fa-list-alt"></i> App. Release Notes <span class="badge badge-light badge-pill"></span>
 								</a>

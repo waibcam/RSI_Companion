@@ -243,8 +243,12 @@ main {
 	margin-left: 220px;
 }
 
-.Comm_Link a:hover, .ship_list a:hover , .buyback_list a:hover {
+.Comm_Link a:hover, .ship_list a:hover , .buyback_list a:hover, div.user_info a:hover {
 	text-decoration: none;
+}
+
+div.user_info a:hover span.handle {
+	color: #14e6fa !important;
 }
 
 .ship_list a > div.card[data-owned="true"] {
