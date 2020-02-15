@@ -196,7 +196,6 @@ $(document).ready(function () {
 					{
 						case "<":
 							price_searched = keyword.substr(1, keyword.length);
-							console.log(price_searched);
 							if (price < price_searched ) {
 								// found
 								nb_found = parseInt($(this_card).attr("data-nb_found")) + 1;

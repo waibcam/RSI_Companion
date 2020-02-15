@@ -37,7 +37,6 @@ function refresh_ShipList_data(href, refresh)
 		Token: Rsi_LIVE_Token,
 		refresh: refresh,
 	}, (ShipList) => {
-		console.log(ShipList);
 		
 		$('#ShipListRefresh').attr('disabled', false).find('i').removeClass('fa-spin');
 		elem_ship_li_a.find('.badge').html(0);
