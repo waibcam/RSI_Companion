@@ -37,8 +37,10 @@ function refresh_ShipList_data(href, refresh)
 		Token: Rsi_LIVE_Token,
 		refresh: refresh,
 	}, (ShipList) => {
-	
+		console.log(ShipList);
+		
 		$('#ShipListRefresh').attr('disabled', false).find('i').removeClass('fa-spin');
+		elem_ship_li_a.find('.badge').html(0);
 		
 		if (ShipList.success == 1)
 		{
@@ -47,10 +49,20 @@ function refresh_ShipList_data(href, refresh)
 			$(href + ' .cached_since').removeClass('d-none').find('code').text(cached_since);
 		
 			var ships = ShipList.data.ships;
+			if (typeof ships == "undefined") ships = [];
 			ships.sortAscOn('sorted_name');
+			
 			var loaners = ShipList.data.loaners;
+			if (typeof loaners == "undefined") loaners = [];
+			
+			var loaners_inversed = ShipList.data.loaners_inversed;
+			if (typeof loaners_inversed == "undefined") loaners_inversed = [];
+			
 			var ships_not_found = ShipList.data.ships_not_found;
+			if (typeof ships_not_found == "undefined") ships_not_found = [];
+			
 			var report = ShipList.data.report;
+			if (typeof report == "undefined") report = {ships_not_found: 0};
 			
 			if (typeof report.ships_not_found == "undefined") last_report = 0;
 			else last_report = report.ships_not_found;
@@ -131,7 +143,7 @@ function refresh_ShipList_data(href, refresh)
 							'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + ship.owned + '" data-nb="' + ship.nb + '"  data-loaner="' + ship.loaner + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
 								'<img class="card-img-top" src="' + ship_image + '" alt="' + ship.name + '" />' +
 								(ship.owned?'<span class="owner badge badge-success">x' + ship.nb + '</span>':'') +
-								(ship.loaner?'<span class="owner badge badge-warning">Loaner</span>':'') +
+								(ship.loaner?'<span class="owner loaner badge badge-warning">Loaner</span>':'') +
 								'<div class="card-body p-1 m-0">' +
 									'<div class="pb-2">' +
 										'<h6 class="m-0">' + (ShipList.data.dev?'[' + ship.id + '] - ':'') + ship.name + '</h6>' +
@@ -150,7 +162,35 @@ function refresh_ShipList_data(href, refresh)
 			$(href + ' .ship_list > .row').append('</div>');
 			
 			$(loaners).each(function (i, ship_id) {
-				$(href + ' .ship_list > .row .card[data-id="' + ship_id + '"]').attr("data-loaned", true);
+				ship_card = $(href + ' .ship_list > .row .card[data-id="' + ship_id + '"]');
+				
+				var loaner_from_name = [];
+				// Searching from which ship this loaner is coming from:
+				if (typeof loaners_inversed[ship_id] != "undefined" && loaners_inversed[ship_id] != null)
+				{
+					// get loaner info
+					ship_loner_info = ships.find(element => element.id == ship_id);
+					if (typeof ship_loner_info != "undefined")
+					{
+						$(loaners_inversed[ship_id]).each(function (i, ship_id_from) {
+							// get original ship info
+							ship_info = ships.find(element => element.id == ship_id_from);
+							
+							if (typeof ship_info != "undefined" && ship_info.id != ship_id)
+							{
+								loaner_from_name.push(ship_info.name);
+							}
+						});
+					}
+				}
+				
+				if (loaner_from_name.length > 0)
+				{
+					ship_card.find('span.loaner').text('Loaner from: ');
+					ship_card.find('span.loaner').append('<i class="text-dark">' + loaner_from_name.join(', ') + '</i>');
+				}
+				
+				ship_card.attr("data-loaned", true);
 			});
 			
 			$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');

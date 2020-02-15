@@ -734,6 +734,7 @@ function getShipList(LIVE_Token, callback)
 			var ship_matrix = ship_matrix_result.data;
 			var ship_matrix_id = [];
 			var MyShipLoaned = [];
+			var MyShipLoanedInversed = [];
 			var owned_ship = [];
 			var Manufacturers = [];
 			var my_ships_to_be_checked = [];
@@ -944,7 +945,6 @@ function getShipList(LIVE_Token, callback)
 											});
 										}
 										
-										
 										for (let [index, ship] of Object.entries(ship_matrix_id)) {
 											if (ship.owned) {
 												if (typeof Loaners[ship.id] !== "undefined") {
@@ -953,6 +953,8 @@ function getShipList(LIVE_Token, callback)
 														{
 															MyShipLoaned.push(value);
 														}
+														if (typeof MyShipLoanedInversed[value] == "undefined") MyShipLoanedInversed[value] = [];
+														MyShipLoanedInversed[value].push(ship.id);
 														
 														//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
 														if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
@@ -972,18 +974,7 @@ function getShipList(LIVE_Token, callback)
 											ship_matrix.push(ship);
 										}
 										
-										result.data = {ships: ship_matrix, loaners: MyShipLoaned, ships_not_found: my_ships_not_found, report: local_storage.report, dev: display_log};
-										
-										for (let [index, ship] of Object.entries(ship_matrix_id)) {
-											if (ship.owned) {
-												//show_log('OWNED => ' + ship.name + ' (' + ship.id + ') => ' + ship.nb);
-											}
-										}
-										for (let [index, ship] of Object.entries(ship_matrix_id)) {
-											if (ship.loaner) {
-												//show_log('LOANER => ' + ship.name + ' (' + ship.id + ')' );
-											}
-										}
+										result.data = {ships: ship_matrix, loaners: MyShipLoaned, loaners_inversed: MyShipLoanedInversed, ships_not_found: my_ships_not_found, report: local_storage.report, dev: display_log};
 										
 										callback(result);
 										
