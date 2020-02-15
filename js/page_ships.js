@@ -71,48 +71,12 @@ function refresh_ShipList_data(href, refresh)
 				
 				$('#ships_not_found button.send_report').attr('data-report_type', 'ships_not_found');
 				$('#ships_not_found button.send_report').attr('data-report_data', JSON.stringify(ships_not_found));
-				
 			};
 			
-			var nb_ships_owned = 0;
 			var Ship_Status = [];
 			var Ship_Focus = [];
 			var Ship_Type = [];
 			var Ship_Manufacturers = [];
-			
-			$(ships).each( (i, ship) => {
-				if (ship.owned) nb_ships_owned++;
-				if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
-				if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
-				if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
-				if (typeof(ship.manufacturer) != "undefined")
-				{
-					manufacturer = ship.manufacturer;
-					manufacturer.name_lower = manufacturer.name.toLowerCase();
-					Ship_Manufacturers[manufacturer.id] = manufacturer;
-				}
-			});
-			
-			$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
-
-			Ship_Status.sort();
-			Ship_Focus.sort();
-			Ship_Type.sort();
-			Ship_Manufacturers.sortAscOn('name_lower');
-			
-			$(Ship_Status).each((i, Status) => {
-				$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
-			});
-			$(Ship_Focus).each((i, Focus) => {
-				$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
-			});
-			$(Ship_Type).each((i, Type) => {
-				$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
-			});
-			$(Ship_Manufacturers).each( (i, Manufacturer) => {
-				if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
-			});
-			
 
 			$(href + ' h1.h2 span').text(' (' + $(ships).length + ')');
 			$(href + ' .ship_list').html('<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6">');
@@ -120,6 +84,19 @@ function refresh_ShipList_data(href, refresh)
 			nb_ships_owned = 0;
 			$(ships).each(function (i, ship) {
 				if (ship.owned) nb_ships_owned = nb_ships_owned + ship.nb;
+				
+				if (ship.production_status !== null && ! Ship_Status.includes(ship.production_status.trim())) Ship_Status.push(ship.production_status.trim());
+				
+				if (ship.focus !== null && ! Ship_Focus.includes(ship.focus.trim())) Ship_Focus.push(ship.focus.trim());
+				
+				if (ship.type !== null && ! Ship_Type.includes(ship.type.trim())) Ship_Type.push(ship.type.trim());
+				
+				if (typeof(ship.manufacturer) != "undefined")
+				{
+					manufacturer = ship.manufacturer;
+					manufacturer.name_lower = manufacturer.name.toLowerCase();
+					Ship_Manufacturers[manufacturer.id] = manufacturer;
+				}
 				
 				var span_ship_production_status = '';
 				if (ship.production_status !== null) {
@@ -137,7 +114,6 @@ function refresh_ShipList_data(href, refresh)
 					})
 				}
 
-
 				var span_ship_focus = '';
 				if (ship.focus !== null) {
 					var ship_focus = ship.focus.split('/');
@@ -148,7 +124,6 @@ function refresh_ShipList_data(href, refresh)
 				
 				ship_image = ship.media[0].images.slideshow;
 				if (! ship_image.includes('http')) ship_image = base_LIVE_Url + ship_image;
-
 
 				$(href + ' .ship_list > .row').append('' +
 					'<div class="col mb-4 d-none">' +
@@ -170,21 +145,40 @@ function refresh_ShipList_data(href, refresh)
 							'</div>' +
 						'</a>' +
 					'</div>' +
-					'');
+				'');
 			});
-
+			$(href + ' .ship_list > .row').append('</div>');
+			
 			$(loaners).each(function (i, ship_id) {
 				$(href + ' .ship_list > .row .card[data-id="' + ship_id + '"]').attr("data-loaned", true);
 			});
+			
+			$('select#Ship_Status, select#Ship_Focus, select#Ship_Type, select#Ship_Manufacturers').html('<option value="0" selected>None</option>');
 
-			$(href + ' .ship_list > .row').append('</div>');
+			Ship_Status.sort();
+			Ship_Focus.sort();
+			Ship_Type.sort();
+			Ship_Manufacturers.sortAscOn('name_lower');
+			
+			$(Ship_Status).each((i, Status) => {
+				$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
+			});
+			$(Ship_Focus).each((i, Focus) => {
+				$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
+			});
+			$(Ship_Type).each((i, Type) => {
+				$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
+			});
+			$(Ship_Manufacturers).each( (i, Manufacturer) => {
+				if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
+			});
 
 			$('#input_search_ships').removeClass('d-none');
+			
 			if (nb_ships_owned > 0) $('button#my_ships').removeClass('d-none');
 			if (loaners.length > 0) $('button#my_loans').removeClass('d-none');
 
 			if (nb_ships_owned > 1) {
-				//$('button#my_ships span.plurial').text('s');
 				$('button#my_ships span.nb').text('(' + nb_ships_owned + ')');
 			}
 
@@ -194,7 +188,6 @@ function refresh_ShipList_data(href, refresh)
 			}
 
 			elem_ship_li_a.find('.badge').text(nb_ships_owned + "/" + $(ships).length);
-
 		}
 		else
 		{
@@ -203,7 +196,6 @@ function refresh_ShipList_data(href, refresh)
 		}
 		
 		$('#ships_search').keyup();
-
 	});
 }
 
