@@ -158,7 +158,12 @@ function pre_load_data(hash, callback)
 		if (ReleaseNotes.success == 1)
 		{
 			if (hash == "#page_ReleaseNotes") callback();
-			releasenotes_li_a.find('.badge').html(ReleaseNotes.data.releases.length);
+			
+			var nb_release = 0;
+			$(ReleaseNotes.data.releases).each((index, release) => {
+				if (release.date !== false) nb_release++;
+			});
+			releasenotes_li_a.find('.badge').html(nb_release);
 		}
 		else releasenotes_li_a.parent().addClass('d-none');
 	});
