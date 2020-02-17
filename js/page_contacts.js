@@ -260,7 +260,7 @@ $(document).ready(function () {
 	});
 
 	// Click on button (to filter the search only for the contact you owned or from Citizen search)
-	$(document).on('click', '#page_Contacts button.btn:not(".contacts_sort")', function () {
+	$(document).on('click', '#page_Contacts .page-content button.btn:not(".contacts_sort")', function () {
 		$('#page_Contacts .page-content button.btn:not(".contacts_sort")').attr('class', 'btn btn-secondary');
 		$(this).toggleClass('btn-secondary').toggleClass('btn-success');
 		
