@@ -23,7 +23,6 @@ function LeftMenu_Click_Ships(elem, href)
 
 function refresh_ShipList_data(href, refresh)
 {
-	//$(href + ' .ship_list').html('<div class="text-center text-secondary mt-4"><i class="fas fa-spinner fa-spin fa-5x"></i></center>');
 	$('#ShipListRefresh').attr('disabled', true).find('i').addClass('fa-spin');
 	
 	elem_ship_li_a = $('a.nav-link[href="' + href + '"]');

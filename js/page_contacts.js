@@ -5,59 +5,29 @@ function LeftMenu_Click_Contacts(elem, href)
 			LeftMenu_Click(elem);
 		}, 250);
 	} else {
-		$(href + ' .content .my_contacts_list').html('');
-
+		var my_contacts = $(href + ' .content .my_contacts');
+		
 		// Collecting Organization of current user
 		chrome.runtime.sendMessage({
 			type: 'getFriendList',
 			LIVE: true,
 			Token: Rsi_LIVE_Token,
-		}, (result) => {
-			if (result.success == 1) {
-				var friendlist = result.data;
-				friendlist.sortAscOn('displayname');
+		}, (FriendList) => {
+			my_contacts_row = my_contacts.find('.row');
+			my_contacts_row.html('');
+			
+			if (FriendList.success == 1) {
+				var friendlist = FriendList.data.reverse();
+				//friendlist.sortAscOn('displayname');
 
 				elem.find('.badge').text($(friendlist).length);
-
-				var nb_contacts = 0;
-				$(friendlist).each(function (i, friend) {
-					nb_contacts++;
-
-					$(href + ' .content .my_contacts_list').append('' +
-						'<div class="col mb-4">' +
-							'' +
-								'<div class="card bg-dark" data-nickname="' + friend.nickname + '" data-displayname="' + friend.displayname + '">' +
-									'<div class="card-header p-1">' +
-										'<div class="media-body">' +
-											'<div class="displayname">' +
-												'<a href="' + base_LIVE_Url + 'citizens/' + friend.nickname + '" target="_blank">' + friend.displayname + '</a>' +
-											'</div>' +
-											'<div>'+
-												'<small><span class="nickname text-secondary">' + friend.nickname + '</span></small>' +
-											'</div>' +
-										'</div>' +
-									'</div>' +
-									'<div class="card-body p-2">' +
-										'<div class="media">' +
-											'<img src="' + base_LIVE_Url + friend.avatar + '" class="align-self-start mr-3 rounded" alt="' + friend.displayname + '">' +
-											'<div class="media-body align-self-center">' +
-												'<button type="button" class="btn btn-dark btn-sm follow" data-nickname="' + friend.nickname + '" data-action="unfollow"><i class="fas fa-user-minus"></i><span class="d-md-none d-lg-inline"> Unfollow</span></button>' +
-											'</div>' +
-										'</div>' +
-									'</div>' +
-								'</div>' +
-							'' +
-						'</div>' +
-						'');
+				
+				$(friendlist).each(function (id, friend) {
+					friend.following = true;
+					append_contact(my_contacts_row, id, friend);
 				});
 
 				$('#input_search_contacts').removeClass('d-none');
-
-				$('button#my_contacts').removeClass('d-none').addClass('active').addClass('btn-success');
-				if (nb_contacts > 1) {
-					$('button#my_contacts span.plurial').text('s');
-					$('button#my_contacts span.nb_my_contacts').text('(' + nb_contacts + ')');
-				}
 
 				$('#contacts_search').val('');
 				$('#contacts_search').keyup();
@@ -66,113 +36,191 @@ function LeftMenu_Click_Contacts(elem, href)
 	}
 }
 
+function append_contact(elem, id, friend)
+{
+	elem.append('' +
+		'<div class="col mb-4" data-date="' + id + '" data-handle="' + friend.nickname + '" data-displayname="' + friend.displayname + '">' +
+			'<div class="card bg-dark">' +
+				'<div class="card-header p-1">' +
+					'<div class="media-body">' +
+						'<div class="displayname">'+
+							'<a href="' + base_LIVE_Url + 'citizens/' + friend.nickname + '" target="_blank">' + friend.displayname + '</a>'+
+						'</div>' +
+						'<div>' +
+							'<small><span class="nickname text-secondary">' + friend.nickname + '</span></small>' +
+						'</div>' +
+					'</div>' +
+				'</div>' +
+				'<div class="card-body p-2">' +
+					'<div class="media">' +
+						'<img src="' + base_LIVE_Url + friend.avatar + '" class="align-self-start mr-3 rounded" alt="' + friend.displayname + '">' +
+						'<div class="media-body align-self-center">' +
+							'<button type="button" class="btn btn-' + (friend.following ? 'dark' : 'success') + ' btn-sm follow" data-nickname="' + friend.nickname + '" data-action="' + (friend.following ? 'unfollow' : 'follow') + '"><i class="fas fa-user-' + (friend.following ? 'minus' : 'plus') + '"></i><span class="d-md-none d-lg-inline"> ' + (friend.following ? 'Unfollow' : 'Follow') + '</span></button>' +
+						'</div>' +
+					'</div>' +
+				'</div>' +
+			'</div>' +
+		'</div>' +
+	'');
+}
+
+function sort_card(sort_by, sort_type)
+{
+	all_contacts_elem = $('.my_contacts > .row, .live_contacts > .row');
+	
+	all_contacts_elem.each((index_all_contacts, contact_content) => {
+		var contacts = $(contact_content).find('div.col');
+		if (contacts.length > 0)
+		{
+			var contact_array = [];
+			contacts.each((index_contact, contact) => {
+				var sort = $(contact).data(sort_by);
+				if (typeof sort == "undefined") sort = '';
+				
+				var data = [];
+				data['sort'] = sort.toString().toLowerCase();
+				data['html'] = contact.outerHTML;
+				contact_array.push(data);
+			});
+			
+			switch (sort_type)
+			{
+				case 'asc':
+					contact_array.sortAscOn('sort');
+					break;
+				case 'desc':
+					contact_array.sortDescOn('sort');
+					break;
+				default:
+					break;
+			}
+			
+			$(contact_content).html('');
+			$(contact_array).each((index_contact, contact) => {
+				$(contact_content).append('' + contact.html + '');
+			});
+		}
+	});
+}
+
 $(document).ready(function () {
-	// Contact ships
+	
+	// Contact search
 	$(document).on('keyup', '#contacts_search', function () {
+		var found_my_contacts;
+		var found_contacts;
+		
 		var only_my_contacts = false;
-		if ($('button#my_contacts').hasClass('active')) only_my_contacts = true;
+		if ($('button#my_contacts').hasClass('btn-success')) only_my_contacts = true;
 
 		var search_input = $(this).val().trim().toLowerCase();
+		
+		var my_contacts = $('.my_contacts');
+		my_contacts.addClass('d-none');
+		var my_contacts_row = my_contacts.find('.row');
+		var my_contacts_no_search = $(my_contacts).find('.alert');
+		my_contacts_no_search.addClass('d-none');
+		
+		var live_contacts = $('.live_contacts');
+		live_contacts.addClass('d-none');
+		var live_row = live_contacts.find('.row');
+		live_row.html('');
+		var live_contacts_no_search = $(live_contacts).find('.alert');
+		live_contacts_no_search.addClass('d-none');
+		
 
+		if (only_my_contacts)
+		{
+			my_contacts.removeClass('d-none');
+		}
+		else
+		{
+			live_contacts.removeClass('d-none');
+		}
+		
+		
+		/////////////////////////////////
+		// LOCAL SEARCH ON MY CONTACTS //
+		/////////////////////////////////
+		var my_contacts_div = my_contacts_row.children();
+		
+		my_contacts_div.attr("data-nb_found", 0).addClass('d-none');
+		var keywords = search_input.split(' ');
 
-		if (only_my_contacts) {
-			$('.contacts_list').addClass('d-none')
-			var contact_form = $('.my_contacts_list');
+		$(my_contacts_div).each(function (i, contact_div) {
+			var nickname = $(contact_div).data('handle');
+			if (nickname != 'null') nickname = nickname.toLowerCase();
+			else nickname = '';
 
-			contact_form.children().addClass('d-none');
+			var displayname = $(contact_div).data('displayname');
+			if (displayname != 'null') displayname = displayname.toLowerCase();
+			else displayname = '';
 
-			contact_form.find('.card').attr("data-nb_found", 0);
+			$(keywords).each(function (index, keyword) {
+				if (
+					nickname.includes(keyword) ||
+					displayname.includes(keyword)
+				) {
+					// keyword found
+					nb_found = parseInt($(contact_div).attr("data-nb_found")) + 1;
 
-			keywords = search_input.split(' ');
+					$(contact_div).attr("data-nb_found", nb_found);
+				}
 
-			contact_form.find('.card').each(function (i, this_card) {
-				var nickname = $(this_card).data('nickname');
-				if (nickname != 'null') nickname = nickname.toLowerCase();
-				else nickname = '';
-
-				var displayname = $(this_card).data('displayname');
-				if (displayname != 'null') displayname = displayname.toLowerCase();
-				else displayname = '';
-
-				$(keywords).each(function (index, keyword) {
-					if (
-						nickname.includes(keyword) ||
-						displayname.includes(keyword)
-					) {
-						// keyword found
-						nb_found = parseInt($(this_card).attr("data-nb_found")) + 1;
-
-						$(this_card).attr("data-nb_found", nb_found);
-					}
-
-				});
 			});
+		});
 
-			var found_contacts = contact_form.find('.card[data-nb_found="' + keywords.length + '"]');
-
-			if (found_contacts.length == 0) $('button#my_contacts').click();
-
-			found_contacts.parent().removeClass('d-none');
-
-			if (only_my_contacts) $('button#my_contacts span.nb_my_contacts').text('(' + found_contacts.length + ')');
-			else $('button#my_contacts span.nb_my_contacts').text('');
-
-		} else {
-			$('.my_contacts_list').addClass('d-none')
-			var contact_form = $('.contacts_list')
-			$(contact_form).html('');
-
-			if (search_input.length >= 3) {
-				chrome.runtime.sendMessage({
-					type: 'SearchContact',
-					LIVE_Token: Rsi_LIVE_Token,
-					Query: search_input,
-				}, function (result) {
-					contact_form.addClass('row row-cols-1 row-cols-xs-1 row-cols-md-3 row-cols-lg-4 row-cols-xl-8').html('');
-					if (result.success == 1) {
-						var contacts_found = result.data.resultset;
-
-						var nb_contacts = 0;
-						$(contacts_found).each(function (i, friend) {
-							nb_contacts++;
-
-							contact_form.append('' +
-								'<div class="col mb-4">' +
-									'' +
-									'<div class="card bg-dark" data-nickname="' + friend.nickname + '" data-displayname="' + friend.displayname + '">' +
-										'<div class="card-header p-1">' +
-											'<div class="media-body">' +
-												'<div class="displayname">'+
-													'<a href="' + base_LIVE_Url + 'citizens/' + friend.nickname + '" target="_blank">' + friend.displayname + '</a>'+
-												'</div>' +
-												'<div>' +
-													'<small><span class="nickname text-dark">' + friend.nickname + '</span></small>' +
-												'</div>' +
-											'</div>' +
-										'</div>' +
-										'<div class="card-body p-2">' +
-											'<div class="media">' +
-												'<img src="' + base_LIVE_Url + friend.avatar + '" class="align-self-start mr-3 rounded" alt="' + friend.displayname + '">' +
-												'<div class="media-body align-self-center">' +
-													'<button type="button" class="btn btn-' + (friend.following ? 'dark' : 'success') + ' btn-sm follow" data-nickname="' + friend.nickname + '" data-action="' + (friend.following ? 'unfollow' : 'follow') + '"><i class="fas fa-user-' + (friend.following ? 'minus' : 'plus') + '"></i><span class="d-md-none d-lg-inline"> ' + (friend.following ? 'Unfollow' : 'Follow') + '</span></button>' +
-												'</div>' +
-											'</div>' +
-										'</div>' +
-									'</div>' +
-									'' +
-								'</div>' +
-								'');
-						});
-					}
-				});
-			} else if (search_input.length >= 1) {
-				$(contact_form).attr('class', 'contacts_list').html('<div class="alert alert-warning" role="alert">You need to type 3 characters minimum</div>')
-			}
+		found_my_contacts = my_contacts.find('div[data-nb_found="' + keywords.length + '"]').removeClass('d-none');
+		
+		$('button#my_contacts span.nb_contacts').text('(' + $(found_my_contacts).length + ')');
+		if ($(found_my_contacts).length > 1) $('button#my_contacts span.plurial').text('s');
+		else if ($(found_my_contacts).length == 0)
+		{
+			my_contacts_no_search.removeClass('d-none alert-warning').addClass('alert-danger').html('No result.');
 		}
 
-		contact_form.removeClass('d-none');
+		/////////////////
+		// LIVE SEARCH //
+		/////////////////
+		if (search_input.length >= 3) {
+			live_row.html('<div class="text-center text-secondary mt-4"><i class="fas fa-spinner fa-spin fa-5x"></i></center>');
+			chrome.runtime.sendMessage({
+				type: 'SearchContact',
+				LIVE_Token: Rsi_LIVE_Token,
+				Query: search_input,
+			}, function (result) {
+				live_row.html('');
+				if (result.success == 1) {
+					found_contacts = result.data.resultset;
 
-
+					$(found_contacts).each(function (id, friend) {							
+						append_contact(live_row, id, friend);
+					});
+					
+					$('button#live_contacts span.nb_contacts').text('(' + $(found_contacts).length + ')');
+					if ($(found_contacts).length > 1) $('button#live_contacts span.plurial').text('s');
+					else
+					{
+						live_row.html('');
+						if (!only_my_contacts) live_contacts_no_search.removeClass('d-none alert-warning').addClass('alert-danger').html('No result.');
+					}
+					
+					if (only_my_contacts && $(found_my_contacts).length == 0 && $(found_contacts).length > 1) $('button#live_contacts').click();
+				}
+				else
+				{
+					live_row.html('');
+					live_contacts_no_search.removeClass('d-none alert-warning').addClass('alert-danger').html('Unexpected Error.');
+				}
+			});
+		}
+		else
+		{
+			live_row.html('');
+			live_contacts_no_search.removeClass('d-none alert-danger').addClass('alert-warning').html('You need to enter 3 characters minimum to enable live search.');
+			
+			if (search_input.length == 0) $('button#live_contacts span.nb_contacts').text('(0)');
+		}
 	});
 
 
@@ -211,11 +259,26 @@ $(document).ready(function () {
 
 	});
 
-	// Click "My contacts only" button (to filter the search only for the contact you owned)
-	$(document).on('click', 'button#my_contacts', function () {
-		$(this).toggleClass('active').toggleClass('btn-secondary').toggleClass('btn-success');
+	// Click on button (to filter the search only for the contact you owned or from Citizen search)
+	$(document).on('click', 'button.btn:not(".contacts_sort")', function () {
+		$('#page_Contacts .page-content button.btn:not(".contacts_sort")').attr('class', 'btn btn-secondary');
+		$(this).toggleClass('btn-secondary').toggleClass('btn-success');
+		
+		$('.my_contacts, .live_contacts').addClass('d-none');
+		$('.'+$(this).attr('id')).removeClass('d-none');
 
-		$('#contacts_search').keyup();
+		//$('#contacts_search').keyup();
+	});
+	
+	// Click to sort contacts by type
+	$(document).on('click', 'button.contacts_sort', function () {
+		$('button.contacts_sort').removeClass('active').addClass('btn-secondary').removeClass('btn-primary');
+		$(this).addClass('active').removeClass('btn-secondary').addClass('btn-primary');
+		
+		var sort_by =$(this).data('sort_by');
+		var sort_type =$(this).data('sort_type');
+		
+		sort_card(sort_by, sort_type)
 	});
 	
 	

@@ -381,19 +381,35 @@
 						</div>
 						<div class="content">
 							<div class="page-content mt-3">
-								<div class="mb-3 col-12 col-md-4 col-lg-6 col-xl-6 float-left">
-									<button id="my_contacts" type="button" class="btn d-none">My contact<span class="plurial"></span> only <span class="nb_my_contacts"></span></button>
+								<div class="mb-3 col-12 col-md-4 float-left">
+									<button id="my_contacts" type="button" class="btn btn-success">My contact<span class="plurial"></span> <span class="nb_contacts"></span></button>
+									<button id="live_contacts" type="button" class="btn btn-secondary">LIVE Citizen<span class="plurial"></span> <span class="nb_contacts"></span></button>
+									<button type="button" class="btn-sm btn btn-primary contacts_sort" data-sort_by="date" data-sort_type="asc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Latest added contact first"><i class="fas fa-sort-numeric-down"></i></button>
+									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="date"data-sort_type="desc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Oldest added contact first"><i class="fas fa-sort-numeric-up"></i></button>
+									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="displayname" data-sort_type="asc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Ascending by Display Name"><i class="fas fa-sort-alpha-down"></i></button>
+									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="displayname"data-sort_type="desc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Descending by Display Name"><i class="fas fa-sort-alpha-up"></i></button>
 								</div>
-								<div id="input_search_contacts"class="input-group mb-3 col-12 col-xs-12 col-sm-12 col-md-8 col-lg-6 col-xl-6 float-right d-none">
+								<div id="input_search_contacts" class="input-group mb-3 col-12 col-md-8 float-right d-none">
 									<div class="input-group-prepend">
 										<span class="input-group-text bg-dark text-white">Search</span>
 									</div>
 									<input type="text" class="form-control" placeholder="Ex: Kamille92" id="contacts_search">
 								</div>
 								<div class="clearfix"></div>
-								<div class="contacts_list"></div>
 							</div>
-							<div class="my_contacts_list row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
+							
+							<div class="my_contacts d-none">
+								<div class="d-none ml-2 mr-2 alert" role="alert"></div>
+								<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
+								</div>
+							</div>
+							
+							<div class="live_contacts d-none">
+								<div class="d-none ml-2 mr-2 alert" role="alert"></div>
+								<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
+								</div>
+							</div>
+							
 						</div>
 					</div>
 					<div id="page_Organizations" class="page d-none">
