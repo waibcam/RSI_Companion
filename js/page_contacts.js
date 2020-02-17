@@ -260,18 +260,16 @@ $(document).ready(function () {
 	});
 
 	// Click on button (to filter the search only for the contact you owned or from Citizen search)
-	$(document).on('click', 'button.btn:not(".contacts_sort")', function () {
+	$(document).on('click', '#page_Contacts button.btn:not(".contacts_sort")', function () {
 		$('#page_Contacts .page-content button.btn:not(".contacts_sort")').attr('class', 'btn btn-secondary');
 		$(this).toggleClass('btn-secondary').toggleClass('btn-success');
 		
 		$('.my_contacts, .live_contacts').addClass('d-none');
 		$('.'+$(this).attr('id')).removeClass('d-none');
-
-		//$('#contacts_search').keyup();
 	});
 	
 	// Click to sort contacts by type
-	$(document).on('click', 'button.contacts_sort', function () {
+	$(document).on('click', '#page_Contacts button.contacts_sort', function () {
 		$('button.contacts_sort').removeClass('active').addClass('btn-secondary').removeClass('btn-primary');
 		$(this).addClass('active').removeClass('btn-secondary').addClass('btn-primary');
 		
