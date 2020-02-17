@@ -173,10 +173,10 @@ function display_card(current_card, id_changed, extra, previous_card)
 					'</div>' +
 					'<div class="progress mt-1 bg-light' + (current_progress == 0 || !completed.display_bar? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
 						(previous_card !== false ? '<div class="progress-bar bg-one" role="progressbar" style="width: ' + first_bar_progress + '%;" aria-valuenow="' + first_bar_progress + '" aria-valuemin="0" aria-valuemax="100" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Previous week: ' + previous_card.completed + '/' + previous_card.tasks + '">' +
-							previous_card.completed +
+							(previous_card.completed > 0 ? previous_card.completed : '') +
 						'</div>' : '' ) +
 						'<div class="progress-bar progress-bar-striped ' + (went_back?'bg-three':'bg-two') + '" role="progressbar" style="width: ' + (diff_progress) + '%;" aria-valuenow="' + diff_progress + '" aria-valuemin="0" aria-valuemax="100"  data-toggle="popover" data-placement="top" data-trigger="hover" data-content="This week: ' + current_card.completed + '/' + current_card.tasks + '">' +
-							((current_card.completed - (previous_card !== false ? previous_card.completed : 0) ) < 0 ?'':'+') + (current_card.completed - (previous_card !== false ? previous_card.completed : 0)) +
+							((current_card.completed - (previous_card !== false ? previous_card.completed : 0) ) > 0 ? '+' + (current_card.completed - (previous_card !== false ? previous_card.completed : 0)) : '') +
 						'</div>' +
 						'<div class="progress-bar bg-light" role="progressbar" style="width: ' + to_do_progress + '%;" aria-valuenow="' + diff_progress + '" aria-valuemin="0" aria-valuemax="100" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="To do: ' + (current_card.tasks - current_card.completed) + '/' + current_card.tasks + '">' +
 							+ (current_card.tasks - current_card.completed) +

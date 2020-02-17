@@ -334,6 +334,9 @@ div.user_info a:hover span.handle {
 #page_Roadmap .release .progress-bar.bg-one {background-color: #4A66B8}
 #page_Roadmap .release .progress-bar.bg-two {background-color: #42ca61; color: #212529}
 #page_Roadmap .release .progress-bar.bg-three {background-color: #FF6453; color: #212529}
+#page_Roadmap .release .progress-bar:nth-child(1){z-index: 3; overflow: visible;}
+#page_Roadmap .release .progress-bar:nth-child(2){z-index: 2; overflow: visible;}
+#page_Roadmap .release .progress-bar:nth-child(3){z-index: 1;}
 
 #page_Roadmap .card.bg-dark > h2 {color: #8BDFFF;}
 
