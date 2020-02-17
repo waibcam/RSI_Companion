@@ -291,12 +291,17 @@ div.user_info a:hover span.handle {
 }
 
 #page_Contacts .card img{
-	width:75px
+	width:75px;
 }
 
 #page_Roadmap .release .card-header > div.card_title {
 	height: 1.5rem;
 	overflow: hidden;
+}
+
+#page_ReleaseNotes .content > pre
+{
+	white-space: pre-line;
 }
 
 .noselect {
