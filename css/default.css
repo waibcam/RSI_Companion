@@ -220,9 +220,9 @@ img.avatar {
 }
 
 .category .card-header .progress {
-	height: .5rem;
-	font-size: .5rem;
-	border-radius: .15rem;
+	height: .7rem;
+    font-size: .6rem;
+    line-height: .6rem;
 }
 .category .card-body .progress {
 	height: .7rem;
