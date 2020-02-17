@@ -1762,16 +1762,25 @@ function getBuyBackDetails (LIVE_Token, url, DATA, callback)
 				
 				DATA.image = image;
 				
+				
+				currency = '';
+				price = 0;
+				
 				var final_price = $(html).find('strong.final-price');				
+				if (typeof final_price != "undefined")
+				{
+					currency = final_price.data('currency');
+					if (typeof currency == "undefined") currency = '';
+					
+					price = final_price.data('value');
+					if (typeof price == "undefined") price = 0;
+					else price = final_price.data('value')/100;
+				}
 				
-				currency = final_price.data('currency');
-				if (typeof currency == "undefined") currency = '';
 				DATA.currency = currency;
-				
-				price = final_price.data('value');
-				if (typeof price == "undefined") price = '';
-				else price = final_price.data('value')/100;
 				DATA.price = price;
+
+
 				
 				var ships = [];
 				const ships_li = $(html).find('div.ship > ul > li');

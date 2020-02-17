@@ -60,7 +60,10 @@ function refresh_BB_data(href, refresh)
 			$(href + ' .buyback_list').html('');
 			
 			$(BuyBack.data.BuyBack).each(function (i, BB) {
-				total_price = total_price + BB.price;
+				price = parseFloat(BB.price);
+				
+				if (!isNaN(price)) total_price = total_price + price;
+				else price = 0;
 
 				currency = BB.currency;
 				contained = '<small><ul class="mb-0 pl-4">';
@@ -78,11 +81,14 @@ function refresh_BB_data(href, refresh)
 				if(BB.url !== false) bb_url = BB.url.trim();
 				else bb_url = '';
 				if (bb_url.length == 0) bb_url = '#';
-				
-				price = 0;
-				if (BB.price > 0) price = BB.price.toFixed(2);
+
+
+				if (price > 0) price = price.toFixed(2);
+				price = '' + price + '';
 				if (price.includes('.00')) [price] = price.split('.00');
 				if (price.length == 0) price = 0;
+				price = parseFloat(BB.price);
+				if (isNaN(price)) price = 0;
 				
 				label_price = '';
 				if (price > 0) label_price = '<span class="mr-1 mb-1 badge badge-primary">' + numberWithCommas(price) + ' ' + BB.currency + '</span>';
