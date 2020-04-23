@@ -38,7 +38,7 @@ var Boards = [];
 var BoardData = [];
 var Telemetry = [];
 var Manufacturers = [];
-var News = [];
+var News = {success: 1, code: "OK", msg: "OK", data: [], total: 0, last_read: false};
 var OrgMembers = [];
 var ShipList = {};
 var BuyBack = {success: 0, code: "KO", msg: "KO", data: {}};
@@ -89,7 +89,8 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.runtime.onInstalled.addListener((details) => {
 	
 	// We clear all cache but BuyBack
-	chrome.storage.local.get(['ShipList', 'BuyBack'], function (result){
+	chrome.storage.local.get(['News', 'ShipList', 'BuyBack'], function (result){
+		if (typeof result.News != "undefined") News = result.News;
 		if (typeof result.ShipList != "undefined") ShipList = result.ShipList;
 		if (typeof result.BuyBack != "undefined") BuyBack = result.BuyBack;
 		
@@ -97,7 +98,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 		chrome.storage.local.clear(function (callback){
 			local_storage = {};
 
-			chrome.storage.local.set({ShipList: ShipList, BuyBack: BuyBack}, () => {
+			chrome.storage.local.set({News: News, ShipList: ShipList, BuyBack: BuyBack}, () => {
+				local_storage.News = News;
 				local_storage.ShipList = ShipList;
 				local_storage.BuyBack = BuyBack;
 			});
@@ -163,40 +165,49 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 
 // When user click on the Application icon
-chrome.browserAction.onClicked.addListener(function callback(tabs){
-	if (application_tab !== false)
-	{		
-		// check if Application is already opened
-		chrome.tabs.get( application_tab.id, function callback(tab){
-			if (typeof tab == "undefined")
-			{
-				// Open the Application
-				OpenApp();
-			}
-			else
-			{
-				// highlight tab
-				if (tabs.windowId == application_tab.windowId)
+chrome.browserAction.onClicked.addListener(function callback(tabs){	
+	chrome.browserAction.getBadgeText ({tabId: tabs.id}, (BadgeText) => {
+		var nb_notification = parseInt(BadgeText);
+		if (isNaN(nb_notification)) nb_notification = 0;
+		
+		var new_url = "html/index.html" + (nb_notification > 0 ? '#page_Spectrum': '');
+		
+		if (application_tab !== false)
+		{		
+			// check if Application is already opened
+			chrome.tabs.get( application_tab.id, function callback(tab){
+				if (typeof tab == "undefined")
 				{
-					if (!tab.highlighted) chrome.tabs.highlight({windowId: tab.windowId, tabs: tab.index});
+					// Open the Application
+					OpenApp(nb_notification);
 				}
 				else
 				{
-					// if we press the icon on a different browser window where the application is currently opened, let's move it to new window
-					chrome.tabs.move(application_tab.id, {windowId: tabs.windowId, index: -1}, function callback(tab){
-						application_tab.windowId = tab.windowId;
+					// highlight tab
+					if (tabs.windowId == application_tab.windowId)
+					{
 						if (!tab.highlighted) chrome.tabs.highlight({windowId: tab.windowId, tabs: tab.index});
-					});
+						chrome.tabs.update(application_tab.id, {url: new_url});
+					}
+					else
+					{
+						// if we press the icon on a different browser window where the application is currently opened, let's move it to new window
+						chrome.tabs.move(application_tab.id, {windowId: tabs.windowId, index: -1}, function callback(tab){
+							application_tab.windowId = tab.windowId;
+							if (!tab.highlighted) chrome.tabs.highlight({windowId: tab.windowId, tabs: tab.index});
+							chrome.tabs.update(application_tab.id, {url: new_url});
+						});
+					}
 				}
-			}
-		});
-	}
-	else
-	{
-		// Open the Application
-		OpenApp();
-	}
-	
+			});
+		}
+		else
+		{
+			// Open the Application
+			OpenApp(nb_notification);
+		}
+		
+	});
 });
 
 
@@ -239,14 +250,14 @@ chrome.tabs.onActivated.addListener(function callback(activeInfo){
 
 
 // Open the Application
-function OpenApp() {
+function OpenApp(nb_notification) {
 	setAlarm('CheckConnection', 1);
 	
 	var open = function(){
 		if (checking_connection === false && caching_data === false){
 			// run when condition is met
 			chrome.tabs.create({
-				url: "html/index.html",
+				url: "html/index.html" + (nb_notification > 0 ? '#page_Spectrum': ''),
 				active: true
 			}, (tab) => {
 				application_tab = tab;
@@ -285,6 +296,20 @@ function setBadge (text, bg_color = false) {
 	else chrome.browserAction.setBadgeBackgroundColor({color: '#28a745'});
 	
 	chrome.browserAction.setBadgeText ( { text: "" + text + "" } );
+}
+
+function getBadgeNumber () {
+	
+	if (application_tab !== false)
+	{
+		chrome.browserAction.getBadgeText ({tabId: application_tab.id}, (BadgeText) => {
+			BadgeNumber = parseInt(BadgeText);
+			if (isNaN(BadgeNumber)) BadgeNumber = 0;
+			
+			return BadgeNumber;
+		});
+	}
+	else return 0;
 }
 
 
@@ -364,7 +389,6 @@ function Identify (LIVE, base_Url, Token, callback)
 			contentType: 'application/json',
 			url: base_Url + "api/spectrum/auth/identify",
 			success: (result) => {
-				//update_notification (result);
 				callback (result);
 			},
 			error: (request, status, error) => {
@@ -374,7 +398,6 @@ function Identify (LIVE, base_Url, Token, callback)
 			headers: this_headers
 		});
 	}
-	
 }
 
 function CheckConnection (force, callback)
@@ -422,122 +445,22 @@ function CheckConnection (force, callback)
 					cnx = live_cnx;
 					cnx.connected = true;
 					cnx.token = cookie;
+					
 					var data = result.data;
-					
-					///////////////////////////////////////////////////////
-					/////////////// UPDATE NOTIFICATION ///////////////////
-					///////////////////////////////////////////////////////
-					my_user_id = data.member.id
-	
-					nb_private_lobbies_unread = 0;
-					$(data.private_lobbies).each((index, value) => {
-						last_sender_id = value.last_message.member_id;
-						
-						if (value.new_messages && last_sender_id != my_user_id)
-						{
-							nb_private_lobbies_unread++;
-							
-							sender = false;
-							
-							$(value.members).each((i, member) => {
-								if (member.id == last_sender_id) sender = member;
-							});
-							
-							if (sender !== false)
-							{
-								data.notifications.push({
-									id: "private-" + value.id + "-new-message",
-									type: "private-new-message",
-									grouped: false,
-									time: value.last_message.time_modified,
-									thumbnail: sender.avatar,
-									text_tokens: {
-										displayname: sender.displayname,
-										plaintext: value.last_message.plaintext,
-									},
-									link_tokens: {
-										link_path: "private", member_id: sender.id
-									},
-									subscription: {
-										
-									},
-									unread: value.new_messages
-								});
-							}	
-						}
-					});
-					
-					nb_friend_request = 0;
-					$(data.friend_requests).each((index, value) => {
-						
-						if (value.requesting_member_id != my_user_id)
-						{
-							nb_friend_request++;
-							
-							sender = false;
-							
-							$(value.members).each((i, member) => {
-								if (member.id != my_user_id) sender = member;
-							});
-							
-							if (sender !== false)
-							{
-								data.notifications.push({
-									id: "friend-" + value.id + "-new-request",
-									type: "friend-new-request",
-									grouped: false,
-									time: value.time_modified,
-									thumbnail: sender.avatar,
-									text_tokens: {
-										displayname: sender.displayname,
-										plaintext: value.status,
-									},
-									link_tokens: {
-										link_path: "friend"
-									},
-									subscription: {
-										
-									},
-									unread: true
-								});
-							}	
-						}
-					});
-
-					nb_notification = parseInt(data.notifications_unread) + nb_private_lobbies_unread + nb_friend_request;
-					
-					data.nb_notification = nb_notification;
-					
+					data.nb_Spectrum_notification = 0;
+					GetNotifications(data);
 					cnx.data = data;
 					
-					if (nb_notification > 0) setBadge(nb_notification);
-					else setBadge("0");
-					
+					connection_status.live = cnx;
+
 					chrome.browserAction.setTitle({title: browser_action_default_title}, () => {
 					});
-					
-					///////////////////////////////////////////////////////
-					///////////////////////////////////////////////////////
-					///////////////////////////////////////////////////////
-					
-					connection_status.live = cnx;
 				}
 				else
 				{
 					chrome.browserAction.setTitle({title: 'Disconnected. Click to log in.'}, () => {
 					});
 					setBadge(" ", "#FF6453");
-					
-					if (cookie.length > 0)
-					{					
-						/*
-						// we remove the Token so we don't check anymore if the cookie value is not working. The check for cookie length is done in the Identify function.
-						chrome.cookies.remove({
-							"url": base_LIVE_Url,
-							"name": "Rsi-Token"
-						});
-						*/
-					}
 				}
 				
 				/////////////////////////
@@ -563,16 +486,6 @@ function CheckConnection (force, callback)
 							
 							connection_status.ptu = cnx;
 						}
-						else if (cookie.length > 0)
-						{
-							/*
-							// As the Token is not correct, we remove the cookie. The check for cookie length is done in the Identify function.
-							chrome.cookies.remove({
-								"url": base_PTU_Url,
-								"name": "Rsi-PTU-Token"
-							});
-							*/
-						}
 						
 						show_log("CheckConnection => [Ended]");
 						
@@ -592,6 +505,151 @@ function CheckConnection (force, callback)
 }
 
 
+
+function GetNotifications(data)
+{
+	///////////////////////////////////////////////////////
+	/////////////// UPDATE NOTIFICATION ///////////////////
+	///////////////////////////////////////////////////////
+	my_user_id = data.member.id
+	
+	data.nb_private_lobbies_unread = 0;
+	data.nb_NewTopics = 0;
+	data.nb_friend_request = 0;
+	
+	var done = 0;
+	
+	$(data.private_lobbies).each((index, value) => {
+		last_sender_id = value.last_message.member_id;
+		
+		if (value.new_messages && last_sender_id != my_user_id)
+		{
+			data.nb_private_lobbies_unread++;
+			
+			sender = false;
+			
+			$(value.members).each((i, member) => {
+				if (member.id == last_sender_id) sender = member;
+			});
+			
+			if (sender !== false)
+			{
+				data.notifications.push({
+					id: "private-" + value.id + "-new-message",
+					type: "private-new-message",
+					grouped: false,
+					time: value.last_message.time_modified,
+					thumbnail: sender.avatar,
+					text_tokens: {
+						displayname: sender.displayname,
+						plaintext: value.last_message.plaintext,
+					},
+					link_tokens: {
+						link_path: "private", member_id: sender.id
+					},
+					subscription: {
+					},
+					unread: value.new_messages
+				});
+			}	
+		}
+	});
+
+	$(data.friend_requests).each((index, value) => {
+		
+		if (value.requesting_member_id != my_user_id)
+		{
+			data.nb_friend_request++;
+			
+			sender = false;
+			
+			$(value.members).each((i, member) => {
+				if (member.id != my_user_id) sender = member;
+			});
+			
+			if (sender !== false)
+			{
+				data.notifications.push({
+					id: "friend-" + value.id + "-new-request",
+					type: "friend-new-request",
+					grouped: false,
+					time: value.time_modified,
+					thumbnail: sender.avatar,
+					text_tokens: {
+						displayname: sender.displayname,
+						plaintext: value.status,
+					},
+					link_tokens: {
+						link_path: "friend"
+					},
+					subscription: {
+					},
+					unread: true
+				});
+			}	
+		}
+	});
+	
+	
+	var community = data.communities.find(elem => elem.id == 1);
+	var channel_groups = community.forum_channel_groups;
+
+	var all_forums = [];
+	var all_threads = [];
+		
+	if (typeof channel_groups != "undefined")
+	{
+		// Official => 2, StarCitizen => 2, PTU => 63927
+		var forums = [1, 2, 63927];
+		
+		$(forums).each((index, forum) => {
+			$(channel_groups.find(elem => elem.id == forum).channels).each((index, value) => {
+				all_forums.push(value);
+			});
+		});
+
+		$(all_forums).each((index, channel) => {
+			getSpectrumThreads (cnx.token, channel.id, (result) => {
+				if (result.success == 1)
+				{
+					$(result.data.threads).each( (i, thread) => {
+						if (thread.highlight_role_id == "2")
+						{
+							thread.community = community;
+							thread.channel = channel;
+							all_threads.push(thread)
+						}
+					});
+				}
+				
+				done ++;
+				
+				if (done == all_forums.length) {
+					$(all_threads).each((index, thread) => {
+						if (thread.is_new) data.nb_NewTopics++;
+					});
+					
+					data.nb_Spectrum_notification = parseInt(data.notifications_unread) + data.nb_private_lobbies_unread + data.nb_friend_request;
+					
+					data.total_notification = data.nb_Spectrum_notification + data.nb_NewTopics;
+	
+					if (data.total_notification > 0) setBadge(data.total_notification);
+					else setBadge("0");
+
+					if (application_tab !== false)
+					{
+						chrome.tabs.sendMessage(
+							application_tab.id, {
+								type: "UpdateSpectrumNotifications",
+								data: data,
+							}
+						);
+					}
+				}
+			});
+		});
+	}
+}
 
 
 // Mark a topic as read in Spectrum
@@ -747,7 +805,7 @@ function getShipList(LIVE_Token, callback)
 				'production_status': 'flight-ready',
 				'type': 'competition',
 				'focus': 'Racing',
-				'url': '/pledge/extras?product_id=72',
+				'url': '/referral-contest#star-kitten',
 				'media': {
 					0: {
 						'images':{
@@ -768,7 +826,7 @@ function getShipList(LIVE_Token, callback)
 				'production_status': 'in-concept',
 				'type': 'combat',
 				'focus': 'Heavy Fighter',
-				'url': '/pledge/extras?product_id=72',
+				'url': '/galactapedia/article/0Gz5LW2ekd-f8c-lightning',
 				'media': {
 					0: {
 						'images':{
@@ -789,7 +847,7 @@ function getShipList(LIVE_Token, callback)
 				'production_status': 'in-concept',
 				'type': 'combat',
 				'focus': 'Heavy Fighter',
-				'url': '/pledge/extras?product_id=72',
+				'url': '/galactapedia/article/0Gz5LW2ekd-f8c-lightning',
 				'media': {
 					0: {
 						'images':{
@@ -949,16 +1007,19 @@ function getShipList(LIVE_Token, callback)
 											if (ship.owned) {
 												if (typeof Loaners[ship.id] !== "undefined") {
 													$(Loaners[ship.id]).each(function (index, value) {
-														if (MyShipLoaned.includes(value) === false)
+														if (typeof ship_matrix_id[value] !== "undefined")
 														{
-															MyShipLoaned.push(value);
+															if (MyShipLoaned.includes(value) === false)
+															{
+																MyShipLoaned.push(value);
+															}
+															if (typeof MyShipLoanedInversed[value] == "undefined") MyShipLoanedInversed[value] = [];
+															MyShipLoanedInversed[value].push(ship.id);
+															
+															//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
+															if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
+															else ship_matrix_id[value].loaner = false;
 														}
-														if (typeof MyShipLoanedInversed[value] == "undefined") MyShipLoanedInversed[value] = [];
-														MyShipLoanedInversed[value].push(ship.id);
-														
-														//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
-														if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
-														else ship_matrix_id[value].loaner = false;
 													});
 												} else {
 													if (MyShipLoaned.includes(ship.id) === false)
@@ -1391,7 +1452,9 @@ function addOrganizationMembers (Rsi_LIVE_Token, SID, user_handle, add, page, ca
 function getNews (Rsi_LIVE_Token, page, callback) {	
 	page = page || 1;
 	
-	var NewsArticles = [];
+	var current_timestamp = Math.floor(Date.now() / 1000);
+	
+	News.page_data = [];
 	
 	// return Ship List
 	$.ajax({
@@ -1428,16 +1491,29 @@ function getNews (Rsi_LIVE_Token, page, callback) {
 						article_size: article_size,
 						comments: comments,
 						section: section,
-						
+						page: page,
 					}
 					
-					NewsArticles.push(article);
+					article_index = News.data.findIndex(element => element.href == href);
 					
+					if (article_index < 0)
+					{
+						// new article
+						article.timestamp = current_timestamp - i - (60*(page-1));
+						News.data.push(article);
+					}
+					else
+					{
+						// existing article
+						article.timestamp = News.data[article_index].timestamp;
+						News.data[article_index] = article;
+					}
+					
+					News.page_data.push(article);
 				});
-				
-				callback({success: 1, code: "OK", msg: "OK", data: NewsArticles, page: page});
 			}
-			else callback({success: 1, code: "OK", msg: "OK", data: NewsArticles});
+			
+			callback(News);
 		},
 		error: (request, status, error) => {
 			callback({success: 0, code: "KO", msg: request.responseText});
@@ -1642,6 +1718,7 @@ function getBuyBack (LIVE_Token, page, callback)
 					bb_contained = $(article).find('div > div > dl > dd:eq(2)').text().trim();
 					
 					
+					
 					bb_button_href = $(article).find('a.holosmallbtn').attr('href');
 					if (typeof bb_button_href == "undefined") bb_button_href = false;
 					
@@ -1654,7 +1731,10 @@ function getBuyBack (LIVE_Token, page, callback)
 					}
 					
 					
-					pledgeid = false;
+					var fromshipid = false;
+					var toshipid = false;
+					var toskuid = false;
+					var pledgeid = false;
 					
 					if (bb_button_href !== false && bb_button_href.substr(0, 4) == 'http')
 					{
@@ -1663,16 +1743,30 @@ function getBuyBack (LIVE_Token, page, callback)
 						if (matches != null) pledgeid = matches[0];
 					}
 					
+					var bb_url = bb_button_href;
+					
 					if (pledgeid == false)
 					{
+						//////////////////
+						// Upgrade case //
+						//////////////////
 						bb_button_href = false;
+						
+						fromshipid = $(article).find('a.holosmallbtn').data('fromshipid');
+						if (typeof fromshipid == "undefined") fromshipid = false;
+						toshipid = $(article).find('a.holosmallbtn').data('toshipid');
+						if (typeof toshipid == "undefined") toshipid = false;
+						toskuid = $(article).find('a.holosmallbtn').data('toskuid');
+						if (typeof toskuid == "undefined") toskuid = false;
 						pledgeid = $(article).find('a.holosmallbtn').data('pledgeid');
 						if (typeof pledgeid == "undefined") pledgeid = false;
+						
+						bb_url = base_LIVE_Url + "pledge?openshipupgrade=1&fromshipid=" + fromshipid + "&toshipid=" + toshipid + "&toskuid=" + toskuid + "";
 					}
 					
-					found = BuyBack_data.find(element => element.id == pledgeid);
+					found = BuyBack_data.findIndex(element => element.id == pledgeid);
 					
-					if (!found && pledgeid !== false && bb_name.length > 0)
+					if (found < 0 && pledgeid !== false && bb_name.length > 0)
 					{
 						var pledge_type, pledge_name, pledge_option; 
 						if (bb_name.includes(' - ')) var [pledge_type, pledge_name, pledge_option] = bb_name.split(' - ');
@@ -1681,7 +1775,7 @@ function getBuyBack (LIVE_Token, page, callback)
 						if (typeof pledge_name == "undefined") pledge_name = '';
 						if (typeof pledge_option == "undefined") pledge_option = '';
 						
-						data = {id: pledgeid, full_name: bb_name, type: pledge_type, name: pledge_name, option: pledge_option, url: bb_button_href, date: bb_date, contained: bb_contained, price: '', currency: '', insurance: '', image: '/img/Image_not_found.png', ships: {}, items: {}};
+						data = {id: pledgeid, upgrade: {fromshipid: fromshipid, toshipid: toshipid, toskuid: toskuid}, full_name: bb_name, type: pledge_type, name: pledge_name, option: pledge_option, url: bb_url, date: bb_date, contained: bb_contained, price: '', currency: '', insurance: '', image: '/img/Image_not_found.png', ships: {}, items: {}};
 						
 						BuyBack_data.push(data);
 						
@@ -1690,7 +1784,7 @@ function getBuyBack (LIVE_Token, page, callback)
 							
 							if (BuyBackDetails.success == 1)
 							{
-								var foundIndex = BuyBack_data.find(element => element.id == data.id);
+								var foundIndex = BuyBack_data.findIndex(element => element.id == data.id);
 								BuyBack_data[foundIndex] = data;
 							}
 							
@@ -1705,6 +1799,7 @@ function getBuyBack (LIVE_Token, page, callback)
 								{
 									// There are still some pages to check
 									getBuyBack (LIVE_Token, page + 1, callback);
+									//callback(BuyBack);
 								}
 								else
 								{
@@ -1736,15 +1831,15 @@ function getBuyBack (LIVE_Token, page, callback)
 }
 
 
-function getBuyBackDetails (LIVE_Token, url, DATA, callback)
+function getBuyBackDetails (LIVE_Token, bb_button_href, DATA, callback)
 {
 	
-	if (url != false)
+	if (bb_button_href != false)
 	{
 		$.ajax({
 			async: true,
 			type: "get",
-			url: url,
+			url: bb_button_href,
 			cache : true,
 			success: (result) => {
 				var html = $.parseHTML( result );
@@ -1762,7 +1857,7 @@ function getBuyBackDetails (LIVE_Token, url, DATA, callback)
 				
 				DATA.image = image;
 				
-				
+
 				currency = '';
 				price = 0;
 				
@@ -1847,7 +1942,180 @@ function getBuyBackDetails (LIVE_Token, url, DATA, callback)
 			}
 		});
 	}
+	else if (DATA.upgrade.fromshipid !== false && DATA.upgrade.toshipid !== false && DATA.upgrade.toskuid !== false && DATA.id !== false)
+	{
+		$.ajax({
+			async: true,
+			type: "post",
+			url: base_LIVE_Url + "api/account/v2/setAuthToken",
+			success: (result) => {									
+				$.ajax({
+					async: true,
+					type: "post",
+					url: base_LIVE_Url + "api/ship-upgrades/setContextToken",
+					success: (result) => {
+						$.ajax({
+							async: true,
+							type: "post",
+							contentType: 'application/json',
+							url: base_LIVE_Url + "pledge-store/api/upgrade",
+							success: (result) => {
+								currency = result[0].data.app.pricing.currencyCode;
+								if (typeof currency == "undefined") currency = '';
+								
+								DATA.currency = currency;
+								
+								$.ajax({
+									async: true,
+									type: "post",
+									contentType: 'application/json',
+									url: base_LIVE_Url + "pledge-store/api/upgrade",
+									success: (result) => {
+
+										var price = 0;
+										if (result[0].data.price != null) price = result[0].data.price.amount;
+										if (typeof price == "undefined") price = 0;
+										
+										if (price == 0)
+										{
+											console.log(result);
+											console.log(DATA);
+										}
+										
+										DATA.price = price/100;
+										
+										callback({success: 1, code: "OK", msg: "OK", data: DATA});
+									},
+									error: (request, status, error) => {
+										callback({success: 0, code: "KO", msg: request.responseText, data: DATA});
+									},
+									data: "[{\"operationName\":\"getPrice\",\"variables\":{\"from\": " + DATA.upgrade.fromshipid + ",\"to\": " + DATA.upgrade.toskuid + "},\"query\":\"query getPrice($from: Int!, $to: Int!) {\\n  price(from: $from, to: $to) {\\n    amount\\n  }\\n}\\n\"}]",
+									headers: { "x-rsi-token": LIVE_Token }
+								});
+							},
+							error: (request, status, error) => {
+								callback({success: 0, code: "KO", msg: request.responseText, data: DATA});
+							},
+							data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      title\\n      available\\n      price\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    isAnonymous\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]",
+							headers: { "x-rsi-token": LIVE_Token }
+						});
+						
+						
+					},
+					error: (request, status, error) => {
+						callback({success: 0, code: "KO", msg: request.responseText, data: DATA});
+					},
+					data: {
+						"fromShipId": DATA.upgrade.fromshipid,
+						"toShipId": DATA.upgrade.toshipid,
+						"toSkuId": DATA.upgrade.toskuid,
+						"pledgeId": DATA.upgrade.id
+					},
+					headers: { "x-rsi-token": LIVE_Token }
+				});
+			},
+			error: (request, status, error) => {
+				callback({success: 0, code: "KO", msg: request.responseText, data: DATA});
+			},
+			data: {
+				"fromShipId": DATA.upgrade.fromshipid,
+				"toShipId": DATA.upgrade.toshipid,
+				"toSkuId": DATA.upgrade.toskuid,
+				"pledgeId": DATA.upgrade.id
+			},
+			headers: { "x-rsi-token": LIVE_Token }
+		});
+	}
 	else callback({success: 1, code: "OK", msg: "OK", data: DATA});
+}
+
+
+
+function addToCart (LIVE_Token, fromShipId, toShipId, toSkuId, pledgeId, callback)
+{
+	$.ajax({
+		async: true,
+		type: "post",
+		url: base_LIVE_Url + "api/account/v2/setAuthToken",
+		success: (result) => {									
+			$.ajax({
+				async: true,
+				type: "post",
+				url: base_LIVE_Url + "api/ship-upgrades/setContextToken",
+				success: (result) => {
+					$.ajax({
+						async: true,
+						type: "post",
+						contentType: 'application/json',
+						url: base_LIVE_Url + "pledge-store/api/upgrade",
+						success: (result) => {
+							
+							$.ajax({
+								async: true,
+								type: "post",
+								contentType: 'application/json',
+								url: base_LIVE_Url + "pledge-store/api/upgrade",
+								success: (result) => {
+									$.ajax({
+										async: true,
+										type: "post",
+										contentType: 'application/json',
+										url: base_LIVE_Url + "pledge-store/api/upgrade",
+										success: (result) => {
+											$.ajax({
+												async: true,
+												type: "post",
+												contentType: 'application/json',
+												url: base_LIVE_Url + "api/store/v2/cart/token",
+												success: (result) => {
+													callback({success: 1, code: "OK", msg: "OK", data: {}});
+												},
+												error: (request, status, error) => {
+													callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+												},
+												data: "{\"jwt\":\"" + result[0].data.addToCart.jwt + "\"}",
+												headers: { "x-rsi-token": LIVE_Token }
+											});
+										},
+										error: (request, status, error) => {
+											callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+										},
+										data: "[{\"operationName\":\"addToCart\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"mutation addToCart($from: Int!, $to: Int!) {\\n  addToCart(from: $from, to: $to) {\\n    jwt\\n  }\\n}\\n\"}]",
+										headers: { "x-rsi-token": LIVE_Token }
+									});
+								},
+								error: (request, status, error) => {
+									callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+								},
+								data: "[{\"operationName\":\"getPrice\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"query getPrice($from: Int!, $to: Int!) {\\n  price(from: $from, to: $to) {\\n    amount\\n  }\\n}\\n\"}]",
+								headers: { "x-rsi-token": LIVE_Token }
+							});
+						},
+						error: (request, status, error) => {
+							callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+						},
+						data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      title\\n      available\\n      price\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    isAnonymous\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]",
+						headers: { "x-rsi-token": LIVE_Token }
+					});
+				},
+				error: (request, status, error) => {
+					callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+				},
+				data: {
+					"fromShipId": fromShipId,
+					"toShipId": toShipId,
+					"toSkuId": toSkuId,
+					"pledgeId": pledgeId
+				},
+				headers: { "x-rsi-token": LIVE_Token }
+			});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+		},
+		data: {},
+		headers: { "x-rsi-token": LIVE_Token }
+	});
 }
 
 
@@ -2007,8 +2275,17 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
     }
 	else if (message && message.type == 'getNews') {
 		(async () => {
-			getNews (message.Token, message.page, (data) => {
-				sendResponse(data);
+			getNews (message.Token, message.page, (getNews) => {				
+				if (message.page == 1) getNews.last_read = current_timestamp;
+				getNews.total = $(getNews.data).length;
+					
+				chrome.storage.local.set({News: getNews}, () => {
+					News = getNews;
+					local_storage.News = News;
+					News.page = message.page;
+					
+					sendResponse(News);
+				});
 			});
 		})();
 		return true; // keep the messaging channel open for sendResponse
@@ -2158,6 +2435,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 			
 			if (typeof ShipList.cached_since != "undefined") sendResponse({success: 1, code: "OK", msg: "OK", cached_since: ShipList.cached_since});
 			else sendResponse({success: 0, code: "KO", msg: "KO"});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'addToCart') {
+		(async () => {
+			addToCart(message.Token, message.fromShipId, message.toShipId, message.toSkuId, message.pledgeId, (data) => {
+				sendResponse(data);
+			});
 		})();
 		return true; // keep the messaging channel open for sendResponse
     }

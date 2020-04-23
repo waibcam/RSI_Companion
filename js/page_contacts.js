@@ -199,7 +199,7 @@ $(document).ready(function () {
 					
 					$('button#live_contacts span.nb_contacts').text('(' + $(found_contacts).length + ')');
 					if ($(found_contacts).length > 1) $('button#live_contacts span.plurial').text('s');
-					else
+					else if ($(found_contacts).length < 1)
 					{
 						live_row.html('');
 						if (!only_my_contacts) live_contacts_no_search.removeClass('d-none alert-warning').addClass('alert-danger').html('No result.');

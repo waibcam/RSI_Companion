@@ -20,10 +20,11 @@
 	background-color: #D6DEE9 !important;
 	color: #1C2737;
 }
-.bg-menu {
+.bg-menu, .bg-menu > div > ul {
 	background-color: #101723 !important;
 	color: #D6DEE9;
 }
+
 .border-highlighted {
 	border: 1px solid #14e6fa !important;
 }
@@ -86,6 +87,7 @@
 	.sidebar-sticky {
 		position: -webkit-sticky;
 		position: sticky;
+		z-index: 2;
 	}
 }
 
@@ -279,16 +281,29 @@ div.user_info a:hover span.handle {
 	z-index: 2;
 }
 
-#page_BuyBack .card .card_image
+#page_BuyBack .card .bb_image > div
 {
-	position: relative;
+    position: relative;
 }
-#page_BuyBack .card .card_image > div {
+#page_BuyBack .card .bb_image > div > img.image_bb_upgrade
+{
+    width: 100%;
+}
+#page_BuyBack .card .bb_image > div > span
+{
     position: absolute;
-	z-index: 2;
+    z-index: 2;
 	top: 5;
-	right: 5;
 }
+#page_BuyBack .card .bb_image > div:nth-child(1) > span
+{
+    left: 5;
+}
+#page_BuyBack .card .bb_image > div:nth-child(2) > span
+{
+    right: 5;
+}
+
 
 #page_Contacts .card img{
 	width:75px;

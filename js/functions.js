@@ -1,6 +1,6 @@
 // open appropriate page based on url hash
 var max_news_page = 1; // 10 news per page.
-var nb_notification = 0;
+var nb_Spectrum_notification = 0;
 
 const base_LIVE_Url = "https://robertsspaceindustries.com/";
 const base_PTU_Url = "https://ptu.cloudimperiumgames.com/";
@@ -25,6 +25,10 @@ chrome.runtime.onMessage.addListener(
 		{
 			case "CheckConnection":
 				CheckConnection(false, true, 'bgListener');
+				sendResponse({success:true});
+				break;
+			case "UpdateSpectrumNotifications":
+				update_notification(request.data);
 				sendResponse({success:true});
 				break;
 			default:
@@ -60,6 +64,7 @@ function pre_load_data(hash, callback)
 			Token: Rsi_LIVE_Token,
 			page: page,
 		}, (news_result) => {
+			console.log(news_result);
 			if (news_result.success == 1)
 			{
 				if (typeof news_result != "undefined")
@@ -270,26 +275,28 @@ function update_notification(data)
 {
 	elem = "#page_Spectrum";
 	
-	nb_notification = parseInt(data.nb_notification)
-	
-	if (nb_notification > 0)
+	if (typeof data.total_notification != "undefined")
 	{
-		setBadge(nb_notification);
-		$('a.nav-link[href="' + elem + '"]').find('.badge').html(nb_notification);
-	}
-	else
-	{
-		setBadge("0");
-		$('a.nav-link[href="' + elem + '"]').find('.badge').html('');
+		if (data.total_notification > 0)
+		{
+			setBadge(data.total_notification);
+			$('a.nav-link[href="' + elem + '"]').find('.badge').html(data.total_notification);
+		}
+		else
+		{
+			setBadge("0");
+			$('a.nav-link[href="' + elem + '"]').find('.badge').html('');
+		}
 	}
 	
 	if (typeof data.notifications != "undefined")
 	{
 		var notifications = data.notifications;
+		var nb_Spectrum_notification = parseInt(data.nb_Spectrum_notification)
 		
 		notifications.sortDescOn("time");
 		
-		$(elem).find('.content .notification .card-title > span').text('(' + nb_notification + '/' + notifications.length + ')');
+		$(elem).find('.content .notification .card-title > span').text('(' + nb_Spectrum_notification + '/' + notifications.length + ')');
 		
 		var container = $(elem).find('.content .notification ul.list-unstyled');
 		container.html('');
@@ -629,13 +636,14 @@ function  CheckConnection(DoPreload, force, from, callback) {
 				PreLoaded = true;
 				pre_load_data(hash, () => {
 					if (force)
-					{						
+					{
 						if (hash.startsWith("#")) var elem = $('nav.sidebar ul > li > a[href="' + hash + '"]');
 						
 						//  If hash doesn't exist
-						if (typeof elem === "undefined")
+						if (typeof elem == "undefined")
 						{
-							if (data.nb_notification > 0)
+							console.log(data.nb_Spectrum_notification);
+							if (data.nb_Spectrum_notification > 0)
 							{
 								// Open Spectrum
 								elem = $('nav.sidebar ul > li > a:eq(1)');

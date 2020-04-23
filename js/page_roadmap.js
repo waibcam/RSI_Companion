@@ -301,7 +301,7 @@ function get_board(board_id, board_last_updated)
 					$('.board-' + board_id + ' > .row').append('' +
 						'<div class="release-' + release.id + (release.released == 1 ? ' d-none' : '') + ' col mb-2 pl-2 pr-0" data-name="' + release.name + '" data-released="' + release.released + '">' +
 							'<div class="card bg-dark mb-2">' +
-								'<h2 class="card-header cursor noselect p-1 m-0 text-center">' + release.name + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i></h2>' +
+								'<h2 class="card-header cursor noselect p-1 m-0 text-center"' + (release.description!= null?' title="' + release.description + '"':'') + '>' + release.name  + '<i class="fas fa-minus-hexagon deploy mr-3 mt-1 float-right text-dark"></i></h2>' +
 								'<div class="card-body p-2 m-0">' +
 									'<div class="row release"></div>' +
 								'</div>' +

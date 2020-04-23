@@ -44,7 +44,7 @@ function display_News(result) {
 		last_page_number = result.page;
 
 		// looking for all organizations of the user
-		$(result.data).each(function (i, news) {
+		$(result.page_data).each(function (i, news) {
 
 			var image_url = "";
 
@@ -74,7 +74,7 @@ function display_News(result) {
 						'</div>' +
 					'</a>' +
 				'</div>' +
-				'');
+			'');
 		});
 	}
 	
