@@ -30,8 +30,7 @@ function addToCart(fromShipId, toShipId, toSkuId, pledgeId)
 		toSkuId: toSkuId,
 		pledgeId: pledgeId,
 	}, (result) => {
-		
-		window.open("https://robertsspaceindustries.com/pledge/cart");
+		window.open(base_LIVE_Url + "pledge/cart");
 	});
 	
 }
@@ -78,7 +77,7 @@ function refresh_BB_data(href, refresh)
 					$('#buybacktoken').parent().removeClass('d-none');
 					$('#buybacktoken').text(BuyBack.data.nb_token);
 					
-					elem_bb_li_a.find('.badge').html(BuyBack.data.BuyBack.length);
+					elem_bb_li_a.find('.badge').html(sanitizeHTML(BuyBack.data.BuyBack.length));
 					
 					var contained;
 					var total_price = 0;
@@ -87,6 +86,21 @@ function refresh_BB_data(href, refresh)
 					$(href + ' .buyback_list').html('');
 					
 					$(BuyBack.data.BuyBack).each(function (i, BB) {
+						BB.price = sanitizeHTML(BB.price);
+						BB.id = sanitizeHTML(BB.id);
+						BB.full_name = sanitizeHTML(BB.full_name);
+						BB.name = sanitizeHTML(BB.name);
+						BB.type = sanitizeHTML(BB.type);
+						BB.option = sanitizeHTML(BB.option);
+						BB.date = sanitizeHTML(BB.date);
+						BB.image = sanitizeHTML(BB.image);
+						BB.contained = sanitizeHTML(BB.contained);
+						BB.currency = sanitizeHTML(BB.currency);
+						BB.insurance = sanitizeHTML(BB.insurance);
+						BB.upgrade.fromshipid = sanitizeHTML(BB.upgrade.fromshipid);
+						BB.upgrade.toshipid = sanitizeHTML(BB.upgrade.toshipid);
+						BB.upgrade.toskuid = sanitizeHTML(BB.upgrade.toskuid);
+						
 						price = parseFloat(BB.price);
 						
 						if (!isNaN(price)) total_price = total_price + price;
@@ -105,7 +119,7 @@ function refresh_BB_data(href, refresh)
 						});
 						contained = contained + '</ul></small>';
 						
-						if(BB.url !== false) bb_url = BB.url.trim();
+						if(BB.url !== false) bb_url = sanitizeHTML(BB.url.trim());
 						else bb_url = '';
 						if (bb_url.length == 0) bb_url = base_LIVE_Url + 'account/buy-back-pledges';
 
@@ -143,10 +157,10 @@ function refresh_BB_data(href, refresh)
 								ship_from = ships[ship_fromIndex];
 								ship_to = ships[ship_toIndex];
 								
-								ship_from_image = ship_from.media[0].images.wsc_event_thumb;
+								ship_from_image = sanitizeHTML(ship_from.media[0].images.wsc_event_thumb);
 								if (! ship_from_image.includes('http')) ship_from_image = base_LIVE_Url + ship_from_image;
 								
-								ship_to_image = ship_to.media[0].images.wsc_event_thumb;
+								ship_to_image = sanitizeHTML(ship_to.media[0].images.wsc_event_thumb);
 								if (! ship_to_image.includes('http')) ship_to_image = base_LIVE_Url + ship_to_image;
 								
 								ship_image = '<div><img class="image_bb_upgrade" src="' + ship_from_image + '" alt="' + BB.contained + '" /><span class="mr-1 mb-1 badge badge-warning">From</span></div>';
@@ -156,7 +170,7 @@ function refresh_BB_data(href, refresh)
 						
 						$(href + ' .buyback_list').append('' +
 							'<div class="col mb-4">' +
-								(BB.price > 0 ? '<a href="' + bb_url + '" target="_blank">' : '') +
+								(BB.price > 0 ? '<a href="' + bb_url + '" target="_blank">' : '<div>') +
 									'<div class="card bg-dark' + (BB.price == 0 ? ' addToCart cursor' : '' ) + '" data-id="' + BB.id + '" data-full_name="' + BB.full_name + '" data-name="' + BB.name + '" data-type="' + BB.type + '" data-option="' + BB.option + '" data-date="' + BB.date + '" data-contained="' + BB.contained + '" data-price="' + BB.price + '" data-currency="' + BB.currency + '" data-insurance="' + BB.insurance + '" data-fromshipid="' + BB.upgrade.fromshipid + '" data-toshipid="' + BB.upgrade.toshipid + '" data-toskuid="' + BB.upgrade.toskuid + '">' +
 										'<div class="bb_image d-flex">' + ship_image + '</div>' +
 										'<div class="card-body p-1 m-0">' +
@@ -171,7 +185,7 @@ function refresh_BB_data(href, refresh)
 											'</div>' +
 										'</div>' +
 									'</div>' +
-								(BB.price>0?'</a>':'') + 
+								(BB.price>0?'</a>':'</div>') + 
 							'</div>' +
 						'');
 					});
@@ -302,10 +316,9 @@ $(document).ready(function () {
 			});
 		});
 
-		$('.buyback_list .col:not(".d-none") .card[data-nb_found!="' + keywords.length + '"]').parent().parent().addClass('d-none');
+		$('.buyback_list .card[data-nb_found!="' + keywords.length + '"]').parent().parent().addClass('d-none');
 
-		var found_BB = $('.buyback_list .col:not(".d-none") .card');
-
+		var found_BB = $('.buyback_list .card[data-nb_found="' + keywords.length + '"]');
 
 		$('#page_BuyBack h1.h2 span').text(' (' + found_BB.length + '/' + $('.buyback_list .card').length + ')');
 	});

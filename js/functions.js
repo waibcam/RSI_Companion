@@ -15,6 +15,8 @@ var Rsi_PTU_Token = false;
 
 var PreLoaded = false;
 
+var service_status = false;
+
 var News = [];
 
 
@@ -49,8 +51,12 @@ function pre_load_data(hash, callback)
 	}, function(Referrals){
 		if (Referrals.success == 1)
 		{
+			Referrals.data.recruits = sanitizeHTML(Referrals.data.recruits);
+			Referrals.data.end = sanitizeHTML(Referrals.data.end);
+			Referrals.data.prospects = sanitizeHTML(Referrals.data.prospects);
+			
 			$('#referal').parent().removeClass('d-none');
-			$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.recruits + '/' + Referrals.data	.end + ' (' + Referrals.data.prospects + ' prospect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
+			$('#referal').html('<a href="https://robertsspaceindustries.com/account/referral-program" target="_blank">' + Referrals.data.recruits + '/' + Referrals.data.end + ' (' + Referrals.data.prospects + ' prospect' + (Referrals.data.prospects > 1?'s':'') + ')</a>');
 		}
 	});
 	
@@ -64,7 +70,6 @@ function pre_load_data(hash, callback)
 			Token: Rsi_LIVE_Token,
 			page: page,
 		}, (news_result) => {
-			console.log(news_result);
 			if (news_result.success == 1)
 			{
 				if (typeof news_result != "undefined")
@@ -110,14 +115,14 @@ function pre_load_data(hash, callback)
 	contacts_li_a.find('.badge').html('<i class="fas fa-sync fa-spin"></i>');
 	// Collecting Friend List
 	chrome.runtime.sendMessage({
-		type: 'getFriendList',
+		type: 'getFriends',
 		LIVE: true,
 		Token: Rsi_LIVE_Token,
 	}, (FriendList) => {
 		if (FriendList.success == 1)
 		{
 			if (hash == "#page_Contacts") callback();
-			contacts_li_a.find('.badge').html(FriendList.data.length);
+			contacts_li_a.find('.badge').html(sanitizeHTML(FriendList.data.length));
 		}
 		else contacts_li_a.parent().addClass('d-none');
 	});
@@ -132,7 +137,7 @@ function pre_load_data(hash, callback)
 		if (Organizations.success == 1)
 		{
 			if (hash == "#page_Organizations") callback();
-			organizations_li_a.find('.badge').html(Organizations.organizations.length);
+			organizations_li_a.find('.badge').html(sanitizeHTML(Organizations.organizations.length));
 		}
 		else organizations_li_a.parent().addClass('d-none');
 	});
@@ -148,7 +153,7 @@ function pre_load_data(hash, callback)
 		if (Boards.success == 1)
 		{
 			if (hash == "#page_Roadmap") callback();
-			roadmap_li_a.find('.badge').html(Boards.data.boards.length);
+			roadmap_li_a.find('.badge').html(sanitizeHTML(Boards.data.boards.length));
 		}
 		else roadmap_li_a.parent().addClass('d-none');
 	});
@@ -168,7 +173,7 @@ function pre_load_data(hash, callback)
 			$(ReleaseNotes.data.releases).each((index, release) => {
 				if (release.date !== false) nb_release++;
 			});
-			releasenotes_li_a.find('.badge').html(nb_release);
+			releasenotes_li_a.find('.badge').html(sanitizeHTML(nb_release));
 		}
 		else releasenotes_li_a.parent().addClass('d-none');
 	});
@@ -240,7 +245,7 @@ function get_notification (notification, message)
 				debug_needed = false;
 				break;
 			case "friend":
-				link_url += '/settings/friend-requests';
+				link_url = '#page_Contacts';
 				debug_needed = false;
 				break;
 			default:
@@ -264,7 +269,7 @@ function get_notification (notification, message)
 			img +
 			'<div class="media-body">' +
 				'<h6 class="mt-0 mb-1">' + time_ago + '</h6>' +
-				'<a class="notifications-item" href="' + link_url + '" target="_blank" data-notification_id="' + notification.id + '">' + message + '</a>' +
+				'<a class="notifications-item" href="' + link_url + '"' + (!link_url.startsWith("#") ? ' target="_blank"' : '') + ' data-notification_id="' + notification.id + '">' + message + '</a>' +
 			'</div>' +
 		'</li>' +
 	'';
@@ -280,7 +285,7 @@ function update_notification(data)
 		if (data.total_notification > 0)
 		{
 			setBadge(data.total_notification);
-			$('a.nav-link[href="' + elem + '"]').find('.badge').html(data.total_notification);
+			$('a.nav-link[href="' + elem + '"]').find('.badge').html(sanitizeHTML(data.total_notification));
 		}
 		else
 		{
@@ -308,12 +313,17 @@ function update_notification(data)
 			switch (notification.type)
 			{
 				case "friend-new-request":
+					notification.text_tokens.displayname = sanitizeHTML(notification.text_tokens.displayname);
+					notification.text_tokens.plaintext = sanitizeHTML(notification.text_tokens.plaintext);
+					
 					message = 'New friend request from <strong>' + notification.text_tokens.displayname + '</strong> is <em>"' + notification.text_tokens.plaintext + '"</em>';
 					
 					container.append(get_notification (notification, message));
 					break;
 				
 				case "private-new-message":
+					notification.text_tokens.displayname = sanitizeHTML(notification.text_tokens.displayname);
+					notification.text_tokens.plaintext = sanitizeHTML(notification.text_tokens.plaintext);
 					message = 'New Message from <strong>' + notification.text_tokens.displayname + '</strong>:<br /><em>"' + notification.text_tokens.plaintext + '"</em>';
 					
 					container.append(get_notification (notification, message));
@@ -321,6 +331,8 @@ function update_notification(data)
 				
 				case "forum-channel-new-thread":
 					// "forum-channel-new-thread" => "New thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> has been created in channel <strong>' + notification.text_tokens.forum_channel_name + '</strong>"
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
+					notification.text_tokens.forum_channel_name = sanitizeHTML(notification.text_tokens.forum_channel_name);
 
 					message = 'New thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> has been created in channel <strong>' + notification.text_tokens.forum_channel_name + '</strong>';
 					
@@ -330,6 +342,8 @@ function update_notification(data)
 					
 				case "forum-channel-new-thread.grouped":
 					// "forum-channel-new-thread.grouped":"<strong>' + notification.text_tokens.threads_count + ' new threads</strong> have been created in channel <strong>' + notification.text_tokens.forum_channel_name + '</strong>"
+					notification.text_tokens.threads_count = sanitizeHTML(notification.text_tokens.threads_count);
+					notification.text_tokens.forum_channel_name = sanitizeHTML(notification.text_tokens.forum_channel_name);
 
 					message = '<strong>' + notification.text_tokens.threads_count + ' new thread' + (notification.text_tokens.threads_count>1?'s':'') + '</strong> ' + (notification.text_tokens.threads_count>1?'have':'has') + ' been created in channel <strong>' + notification.text_tokens.forum_channel_name + '</strong>';
 					
@@ -339,6 +353,8 @@ function update_notification(data)
 				
 				case "forum-thread-reply-owner":
 					// "forum-thread-reply-owner":"<strong>' + notification.text_tokens.member_displayname + '</strong> replied to your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> replied to your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -347,6 +363,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-owner.grouped":
 					// "forum-thread-reply-owner.grouped":"<strong>' + notification.text_tokens.members_count + ' replies</strong> to your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.members_count = sanitizeHTML(notification.text_tokens.members_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.members_count + ' replies</strong> to your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -355,6 +373,8 @@ function update_notification(data)
 					
 				case "forum-thread-vote-owner":
 					// "forum-thread-vote-owner":"<strong>' + notification.text_tokens.votes_count + ' new vote</strong> for your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.votes_count = sanitizeHTML(notification.text_tokens.votes_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.votes_count + ' new vote</strong> for your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -364,6 +384,8 @@ function update_notification(data)
 					
 				case "forum-thread-vote-owner.grouped":
 					// "forum-thread-vote-owner.grouped":"<strong>' + notification.text_tokens.votes_count + ' votes</strong> for your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.votes_count = sanitizeHTML(notification.text_tokens.votes_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.votes_count + '</strong> replied to your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -372,6 +394,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply":
 					// "forum-thread-reply":"<strong>' + notification.text_tokens.member_displayname + '</strong> replied in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> replied in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -380,6 +404,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply.grouped":
 					// "forum-thread-reply.grouped":"<strong>' + notification.text_tokens.members_count + ' new replies</strong> in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.members_count = sanitizeHTML(notification.text_tokens.members_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.members_count + ' new replies</strong> in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -388,6 +414,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-personal":
 					// "forum-thread-reply-personal":"<strong>' + notification.text_tokens.member_displayname + '</strong> replied to you in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> replied to you in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -396,6 +424,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-personal.grouped":
 					// "forum-thread-reply-personal.grouped":"<strong>' + notification.text_tokens.members_count + ' new replies</strong> in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.members_count = sanitizeHTML(notification.text_tokens.members_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.members_count + ' new replies</strong> in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -404,6 +434,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-vote-personal":
 					// "forum-thread-reply-vote-personal":"<strong>' + notification.text_tokens.votes_count + ' new vote</strong> for your reply in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.votes_count = sanitizeHTML(notification.text_tokens.votes_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.votes_count + ' new vote</strong> for your reply in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -412,6 +444,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-vote-personal.grouped":
 					// "forum-thread-reply-vote-personal.grouped":"<strong>' + notification.text_tokens.votes_count + ' votes</strong> for your reply in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.votes_count = sanitizeHTML(notification.text_tokens.votes_count);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.votes_count + ' votes</strong> for your reply in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -420,6 +454,8 @@ function update_notification(data)
 					
 				case "forum-thread-reply-quote-personal":
 					// "forum-thread-reply-quote-personal":"<strong>' + notification.text_tokens.member_displayname + '</strong> has quoted you in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> has quoted you in the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -428,6 +464,8 @@ function update_notification(data)
 					
 				case "community-update-rename":
 					// "community-update-rename":"Your organization <strong>' + notification.text_tokens.old_name + '</strong> has been renamed to <strong>' + notification.text_tokens.new_name + '</strong>"
+					notification.text_tokens.old_name = sanitizeHTML(notification.text_tokens.old_name);
+					notification.text_tokens.new_name = sanitizeHTML(notification.text_tokens.new_name);
 					
 					message = 'Your organization <strong>' + notification.text_tokens.old_name + '</strong> has been renamed to <strong>' + notification.text_tokens.new_name + '</strong>';
 					
@@ -436,6 +474,8 @@ function update_notification(data)
 					
 				case "role-create":
 					// "role-create":"<strong>' + notification.text_tokens.member_displayname + '</strong> has created a new <strong>' + notification.text_tokens.role_name + '</strong> role in the organization <strong>' + notification.text_tokens.community_name + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.community_name = sanitizeHTML(notification.text_tokens.community_name);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> has created a new <strong>' + notification.text_tokens.role_name + '</strong> role in the organization <strong>' + notification.text_tokens.community_name + '</strong>';
 					
@@ -444,6 +484,8 @@ function update_notification(data)
 					
 				case "role-remove":
 					// "role-remove":"<strong>' + notification.text_tokens.member_displayname + '</strong> has deleted the <strong>' + notification.text_tokens.role_name + '</strong> role in the organization <strong>' + notification.text_tokens.community_name + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.community_name = sanitizeHTML(notification.text_tokens.community_name);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> has deleted the <strong>' + notification.text_tokens.role_name + '</strong> role in the organization <strong>' + notification.text_tokens.community_name + '</strong>';
 					
@@ -452,6 +494,10 @@ function update_notification(data)
 					
 				case "role-update-rename":
 					// "role-update-rename":"<strong>' + notification.text_tokens.member_displayname + '</strong> has rename the <strong>' + notification.text_tokens.old_role_name + '</strong> role to <strong>' + notification.text_tokens.new_role_name + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.old_role_name = sanitizeHTML(notification.text_tokens.old_role_name);
+					notification.text_tokens.new_role_name = sanitizeHTML(notification.text_tokens.new_role_name);
+					notification.text_tokens.community_name = sanitizeHTML(notification.text_tokens.community_name);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> has rename the <strong>' + notification.text_tokens.old_role_name + '</strong> role to <strong>' + notification.text_tokens.new_role_name + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>';
 					
@@ -460,6 +506,9 @@ function update_notification(data)
 					
 				case "role-update-permissions":
 					//"role-update-permissions":"<strong>' + notification.text_tokens.member_displayname + '</strong> has changed permissions for the role <strong>' + notification.text_tokens.role_name + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.role_name = sanitizeHTML(notification.text_tokens.role_name);
+					notification.text_tokens.community_name = sanitizeHTML(notification.text_tokens.community_name);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> has changed permissions for the role <strong>' + notification.text_tokens.role_name + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>';
 					
@@ -468,6 +517,9 @@ function update_notification(data)
 					
 				case "lobby-member-mention":
 					// "lobby-member-mention":"<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in <strong>' + notification.text_tokens.lobby_displayname + '</strong>: <em>' + notification.text_tokens.message + '</em>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.lobby_displayname = sanitizeHTML(notification.text_tokens.lobby_displayname);
+					notification.text_tokens.message = sanitizeHTML(notification.text_tokens.message);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in <strong>' + notification.text_tokens.lobby_displayname + '</strong>: <em>' + notification.text_tokens.message + '</em>';
 					
@@ -477,6 +529,8 @@ function update_notification(data)
 					
 				case "private-lobby-member-mention":
 					//	"private-lobby-member-mention":"<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in a private message: <em>' + notification.text_tokens.message + '</em>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.message = sanitizeHTML(notification.text_tokens.message);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in a private message: <em>' + notification.text_tokens.message + '</em>';
 					
@@ -485,6 +539,8 @@ function update_notification(data)
 				
 				case "forum-thread-member-mention":
 					// "forum-thread-member-mention":"<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> mentioned you in <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -493,6 +549,8 @@ function update_notification(data)
 					
 				case "forum-thread-moderation-erase":
 					// "forum-thread-moderation-erase":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>deleted</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>deleted</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>';
 					
@@ -501,6 +559,9 @@ function update_notification(data)
 					
 				case "forum-thread-reply-moderation-erase":
 					// "forum-thread-reply-moderation-erase":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>deleted</strong> your reply inside the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
+					notification.text_tokens.moderator_reason = sanitizeHTML(notification.text_tokens.moderator_reason);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>deleted</strong> your reply inside the thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>';
 					
@@ -509,6 +570,9 @@ function update_notification(data)
 					
 				case "forum-thread-moderation-lock":
 					// "forum-thread-moderation-lock":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>closed</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
+					notification.text_tokens.moderator_reason = sanitizeHTML(notification.text_tokens.moderator_reason);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>closed</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong> for the following reason: <strong>' + notification.text_tokens.moderator_reason + '</strong>';
 					
@@ -517,6 +581,8 @@ function update_notification(data)
 					
 				case "forum-thread-moderation-unlock":
 					// "forum-thread-moderation-unlock":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>reopened</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>reopened</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -525,6 +591,8 @@ function update_notification(data)
 						
 				case "forum-thread-moderation-pin":
 					// "forum-thread-moderation-pin":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>pinned</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>pinned</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -533,6 +601,8 @@ function update_notification(data)
 					
 				case "forum-thread-moderation-unpin":
 					// "forum-thread-moderation-unpin":"Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>unpinned</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>"
+					notification.text_tokens.moderator_member_displayname = sanitizeHTML(notification.text_tokens.moderator_member_displayname);
+					notification.text_tokens.forum_thread_subject = sanitizeHTML(notification.text_tokens.forum_thread_subject);
 					
 					message = 'Moderator <strong>' + notification.text_tokens.moderator_member_displayname + '</strong> has <strong>unpinned</strong> your thread <strong>' + notification.text_tokens.forum_thread_subject + '</strong>';
 					
@@ -541,6 +611,10 @@ function update_notification(data)
 					
 				case "forum-thread-reply-flag":
 					// "forum-thread-reply-flag":'Thread post by <strong>' + notification.text_tokens.author_displayname + '</strong> was flagged by <strong>' + notification.text_tokens.reporter_displayname + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>.\n\n<strong>Reason:</strong> <em>"' + notification.text_tokens.reason + '"</em>',"lobby-message-flag":'Lobby message by <strong>' + notification.text_tokens.author_displayname + '</strong> was flagged by <strong>' + notification.text_tokens.reporter_displayname + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>. \n\n<strong>Reason:</strong> <em>"' + notification.text_tokens.reason + '"</em>'
+					notification.text_tokens.author_displayname = sanitizeHTML(notification.text_tokens.author_displayname);
+					notification.text_tokens.reporter_displayname = sanitizeHTML(notification.text_tokens.reporter_displayname);
+					notification.text_tokens.community_name = sanitizeHTML(notification.text_tokens.community_name);
+					notification.text_tokens.reason = sanitizeHTML(notification.text_tokens.reason);
 					
 					message = 'Thread post by <strong>' + notification.text_tokens.author_displayname + '</strong> was flagged by <strong>' + notification.text_tokens.reporter_displayname + '</strong> in the organization <strong>' + notification.text_tokens.community_name + '</strong>.\n\n<strong>Reason:</strong> <em>"' + notification.text_tokens.reason + '"</em>';
 					
@@ -549,6 +623,7 @@ function update_notification(data)
 						
 				case "guide-request-new":
 					// "guide-request-new":"<strong>' + notification.text_tokens.member_displayname + '</strong> sent you a guiding request."
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> sent you a guiding request.';
 					
@@ -557,6 +632,7 @@ function update_notification(data)
 					
 				case "guide-request-declined":
 					// "guide-request-declined":"<strong>' + notification.text_tokens.member_displayname + '</strong> declined your guiding request."
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> declined your guiding request.';
 					
@@ -565,6 +641,7 @@ function update_notification(data)
 					
 				case "guide-session-start":
 					// "guide-session-start":"<strong>' + notification.text_tokens.member_displayname + '</strong> accepted your guiding request."
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
 					
 					message = '<strong>' + notification.text_tokens.member_displayname + '</strong> accepted your guiding request.';
 					
@@ -573,6 +650,7 @@ function update_notification(data)
 						
 				case "guide-session-terminate":
 					// "guide-session-terminate":"Your guiding session with <strong>' + notification.text_tokens.member_displayname + '</strong> has now ended."
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
 					
 					message = 'Your guiding session with <strong>' + notification.text_tokens.member_displayname + '</strong> has now ended.';
 					
@@ -581,6 +659,7 @@ function update_notification(data)
 					
 				case "guide-session-endorsement":
 					// "guide-session-endorsement":"Your guiding session with <strong>' + notification.text_tokens.member_displayname + '</strong> has now ended. Don't forget to endorse your Guide!"
+					notification.text_tokens.member_displayname = sanitizeHTML(notification.text_tokens.member_displayname);
 					
 					message = 'Your guiding session with <strong>' + notification.text_tokens.member_displayname + '</strong> has now ended. Don\'t forget to endorse your Guide!';
 					
@@ -592,7 +671,11 @@ function update_notification(data)
 			}			
 		});
 		
-		$('.toast').toast('show')
+		$( "#page_Spectrum img" ).on('error', function(e) {
+			//console.log( e );
+			$(this).attr( "src", "../img/default_avatar.jpg" )
+			return true;
+		});
 	}
 }
 
@@ -620,6 +703,46 @@ function  CheckConnection(DoPreload, force, from, callback) {
 			
 			var data = connection_status.live.data;
 			
+			service_status = data.service_status;
+			$('#service_status').html('');
+			$(service_status).each((index, status) => {
+				switch (status.name)
+				{
+					case 'platform':
+						status.name = 'Platform';
+						break;
+					case 'pu':
+						status.name = 'Persistent Universe';
+						break;
+					case 'ea':
+						status.name = 'Electronic Access';
+						break;
+					default:
+						break;
+				}
+				
+				status.icon = '';
+				
+				switch (status.status)
+				{
+					case 'operational':
+						status.icon = '<i class="fas text-success fa-check-circle"></i>';
+						break;
+					default:
+						status.icon = '<i class="fas text-warning fa-exclamation-triangle"></i>';
+						break;
+				}
+				
+				status.status = sanitizeHTML(status.status);
+				status.name = sanitizeHTML(status.name);
+				
+				$('#service_status').append('<a href="https://status.robertsspaceindustries.com/" target="_blank"><span data-toggle="popover" data-placement="bottom" data-trigger="hover" data-content="' + status.status + '" data-original-title="" title="">' + status.name + ': <strong class="mr-3">' + status.icon + '</strong></span></a>');
+				
+				$('[data-toggle="popover"]').popover({
+					template: '<div class="popover" role="tooltip"><div class="arrow"></div><h3 class="popover-header"></h3><div class="popover-body"></div></div>'
+				});
+			});
+			
 			update_notification(data);
 			
 			handle = data.member.nickname;
@@ -642,7 +765,6 @@ function  CheckConnection(DoPreload, force, from, callback) {
 						//  If hash doesn't exist
 						if (typeof elem == "undefined")
 						{
-							console.log(data.nb_Spectrum_notification);
 							if (data.nb_Spectrum_notification > 0)
 							{
 								// Open Spectrum
@@ -750,7 +872,6 @@ function LeftMenu_Click(elem) {
 				LeftMenu_Click_BuyBack(elem, href);
 				break;			
 			
-
 			case "#page_Contacts":
 				LeftMenu_Click_Contacts(elem, href);
 				break;
@@ -867,3 +988,8 @@ function numberWithCommas(x) {
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+var sanitizeHTML = function (str) {
+	var temp = document.createElement('div');
+	temp.textContent = str;
+	return temp.innerHTML;
+};

@@ -70,12 +70,21 @@ function get_Threads(connection_data)
 						nb_notification = 0;
 
 						$(all_threads).each((index, thread) => {									
-							time_ago = timeSince(thread.time_created);
-							avatar = thread.member.avatar;
+							time_ago = timeSince(sanitizeHTML(thread.time_created));
+							avatar = sanitizeHTML(thread.member.avatar);
 							if (typeof avatar == "undefined" || avatar == null) avatar = '../img/default_avatar.jpg';
 							img = '<img src="' + avatar + '" class="img-fluid rounded mr-3" alt="User Avatar" style="width: 64px;"/>';
 							
 							if (thread.is_new) nb_notification++;
+							
+							thread.slug = sanitizeHTML(thread.slug);
+							thread.member.nickname = sanitizeHTML(thread.member.nickname);
+							thread.channel.color = sanitizeHTML(thread.channel.color);
+							thread.channel.name = sanitizeHTML(thread.channel.name);
+							thread.community.slug = sanitizeHTML(thread.community.slug);
+							thread.channel_id = sanitizeHTML(thread.channel_id);
+							thread.id = sanitizeHTML(thread.id);
+							thread.subject = sanitizeHTML(thread.subject);
 							
 							container.append('' +
 								'<li class="media p-1 mb-2 border-bottom' + (thread.is_new?' unread bg-light text-dark':'') + '" data-slug="' + thread.slug + '">' +
@@ -89,7 +98,6 @@ function get_Threads(connection_data)
 									'</div>' +
 								'</li>' +
 							'');
-							
 						});
 						
 						$(elem).find('.content .threads .card-title > span').text('(' + nb_notification + '/' + all_threads.length + ')');
@@ -102,14 +110,26 @@ function get_Threads(connection_data)
 
 $( document ).ready(function() {
 	// When user click on the notification.
-	$(document).on('click', '#page_Spectrum .notification a.notifications-item', function(e){		
-		chrome.runtime.sendMessage({
-			type: 'SpectrumRead',
-			LIVE_Token: Rsi_LIVE_Token,
-			notification_id: $(this).data('notification_id'),
-		}, (result) => {
-			$(this).closest('li.media').removeClass('unread bg-light text-dark');
-		});
+	$(document).on('click', '#page_Spectrum .notification a.notifications-item', function(e){
+		
+		var href = $(this).attr('href');
+		
+		if (href.startsWith("#"))
+		{
+			$('a.nav-link[href="' + href + '"]').click();
+			if (href == "#page_Contacts" ) $('#pending_contacts').click();
+		}
+		else
+		{
+			chrome.runtime.sendMessage({
+				type: 'SpectrumRead',
+				LIVE_Token: Rsi_LIVE_Token,
+				notification_id: $(this).data('notification_id'),
+			}, (result) => {
+				$(this).closest('li.media').removeClass('unread bg-light text-dark');
+			});
+		}
+		
 	});
 	
 	

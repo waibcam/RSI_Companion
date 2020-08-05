@@ -14,22 +14,25 @@ function LeftMenu_Click_ReleaseNotes(elem, href)
 				$('#page_ReleaseNotes .content > pre').html('');
 				
 				$(ReleaseNotes.data.info).each((index, line) => {
-					$('#page_ReleaseNotes .content > pre').append(line + "\n");
+					$('#page_ReleaseNotes .content > pre').append(sanitizeHTML(line) + "\n");
 				});
 				
 				var nb_release = 0;
 				$(ReleaseNotes.data.releases).each((index, release) => {
 					if (release.date !== false)
 					{
+						release.version = sanitizeHTML(release.version);
+						release.date = sanitizeHTML(release.date);
+						
 						nb_release++;
 						$('#page_ReleaseNotes .content > pre').append('\n<span class="text-warning">' + release.version + ' - Released ' + timeSince(release.date) + ':</span>\n');
 						$('#page_ReleaseNotes .content > pre').append('------------------------------------\n');
 						$(release.features).each((index, feature) => {
-							$('#page_ReleaseNotes .content > pre').append(feature + '\n');
+							$('#page_ReleaseNotes .content > pre').append(sanitizeHTML(feature) + '\n');
 						});
 					}
 				});
-				$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html(nb_release);
+				$('a.nav-link[href="#page_ReleaseNotes"]').find('.badge').html(sanitizeHTML(nb_release));
 			}
 		});
 	}

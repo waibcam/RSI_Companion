@@ -7,14 +7,18 @@
 		<title></title>
 		
 		<link rel="stylesheet" href="../css/bootstrap.min.css">
-		<link rel="stylesheet" href="https://pro.fontawesome.com/releases/v5.12.0/css/all.css" integrity="sha384-ekOryaXPbeCpWQNxMwSWVvQ0+1VrStoPJq54shlYhR8HzQgig1v5fas6YgOqLoKz" crossorigin="anonymous">
-		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.12/dist/css/bootstrap-select.min.css">
+		<link rel="stylesheet" href="../css/FontAwesomePro5.14.0_all.css">
+		<link rel="stylesheet" href="../css/bootstrap-select.min.css">
 		<link rel="stylesheet" href="../css/default.css">
 		
-		<script src="../js/jquery-3.4.1.min.js"></script>
-		<script src="../js/bootstrap.bundle.min.js"></script>
-		<script src="../js/popper.min.js"></script>
-		<script src="../js/bootstrap-select.min.js"></script>
+		<!-- Jquery v3.4.1 ( https://jquery.com/download/ ) => https://code.jquery.com/jquery-3.4.1.min.js -->
+		<script src="../js/jquery-3.4.1.min.js" integrity="sha384-vk5WoKIaW/vJyUAd9n/wmopsmNhiy+L2Z+SBxGYnUkunIxVxAv/UtMOhba/xskxh"></script>
+		<!-- Popper ( https://popper.js.org/ ) => https://unpkg.com/@popperjs/core@2.4.4/dist/umd/popper.min.js -->
+		<script src="../js/popper.min.js" integrity="sha384-uLHxgwX6ZvC6FoWIhzkulUpK8rYAiK30nm034ygkllTGvodI+uL6V5an1iTvrLIL"></script>
+		<!-- Bootstrap v4.4.1 ( https://getbootstrap.com/ ) => https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js -->
+		<script src="../js/bootstrap.bundle.min.js" integrity="sha384-6khuMg9gaYr5AxOqhkVIODVIvm9ynTT5J4V1cfthmT+emCG6yVmEZsRHdxlotUnm"></script>
+		<!-- bootstrap-select v1.13.12 ( https://developer.snapappointments.com/bootstrap-select/ ) => https://cdn.jsdelivr.net/npm/bootstrap-select@1.13.14/dist/js/bootstrap-select.min.js -->
+		<script src="../js/bootstrap-select.min.js" integrity="sha384-SfMwgGnc3UiUUZF50PsPetXLqH2HSl/FmkMW/Ja3N2WaJ/fHLbCHPUsXzzrM6aet"></script>
 		
 		<script src="../js/functions.js"></script>
 		<script src="../js/index.js"></script>
@@ -23,12 +27,10 @@
 		<script src="../js/page_spectrum.js"></script>
 		<script src="../js/page_ships.js"></script>
 		<script src="../js/page_buyback.js"></script>
-		<script src="../js/page_store.js"></script>
 		<script src="../js/page_contacts.js"></script>
 		<script src="../js/page_organizations.js"></script>
 		<script src="../js/page_roadmap.js"></script>
 		<script src="../js/page_releasenotes.js"></script>
-		<script src="../js/page_telemetry.js"></script>
 		
 	</head>
 	<body class="bg">
@@ -39,12 +41,14 @@
 					<img src="../img/icon_64.png" width="30" height="30" class="d-inline-block align-top" alt="RSI" />
 					<span></span> <small><i class="fas fa-sync fa-spin text-warning d-none"></i></small>
 				</a>
+				<div class="d-xxs-inline" id ="service_status">
+				</div>
 				<div class="d-none d-xxs-inline">
-					<span class="d-none"><span class="d-none d-md-inline">Star </span>Citizens: <strong id="fans" class="mr-4"></span></strong>
-					<span class="d-none">Funds<span class="d-none d-md-inline"> raised</span>: <strong id="funds" class="mr-4"></strong></span>
+					<span class="d-none"><span class="d-none d-lg-inline">Star </span>Citizens: <strong id="fans" class="mr-3"></strong></span>
+					<span class="d-none">Funds<span class="d-none d-lg-inline"> raised</span>: <strong id="funds" class="mr-3"></strong></span>
 					<div class="d-none d-xs-inline">
-						<span class="d-none">Referral<span class="d-none d-md-inline"> program</span>: <strong id="referal" class="mr-4"></strong></span>
-						<span class="d-none" title="Buy Back token available">BB Token: <strong id="buybacktoken" class="mr-4"></strong></span>
+						<span class="d-none">Referral<span class="d-none d-lg-inline"> program</span>: <strong id="referal" class="mr-3"></strong></span>
+						<span class="d-none" title="Buy Back token available">BB Token: <strong id="buybacktoken" class="mr-3"></strong></span>
 					</div>
 				</div>
 			</div>
@@ -60,7 +64,9 @@
 				This is an unofficial Star Citizen application<span class="d-none d-xxs-inline">, not affiliated with the Cloud Imperium group of companies.</span>
 			</div>
 			<div class="d-none d-sm-block">
-				<a href="https://robertsspaceindustries.com/community/citizen-spotlight/16217-RSI-Companion" target="_blank" class="hover">Please, consider up-voting my post on Spectrum <small><i class="fas fa-external-link"></i></small></a>
+				<a href="https://robertsspaceindustries.com/community/citizen-spotlight/16217-RSI-Companion" target="_blank" class="hover ml-4">Citizen Spotlight <small><i class="fas fa-external-link"></i></small></a>
+				<a href="https://twitter.com/Kamille_92" target="_blank" class="hover ml-4">Twitter <small><i class="fab fa-twitter"></i></small></a>
+				<a href="https://github.com/waibcam/RSI_Companion" target="_blank" class="hover ml-4">Github <small><i class="fab fa-github"></i></small></a>
 			</div>
 		</nav>
 		<div class="modal fade" id="ships_not_found" tabindex="-1" role="dialog" aria-labelledby="ships_not_found" aria-hidden="true">
@@ -351,12 +357,12 @@
 														<div id="summary" class="d-none">
 															<ul class="list-group">
 																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_added">
-																	Contacts added
+																	Already Friend
 																	<span class="badge badge-success badge-pill" id="contacts_added">0</span>
 																</li>
-																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_existing">
-																	Already existing contacts 
-																	<span class="badge badge-warning badge-pill" id="contacts_existing">0</span>
+																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_pending">
+																	Contacts Pending
+																	<span class="badge badge-info badge-pill" id="contacts_pending">0</span>
 																</li>
 																<li class="list-group-item list-group-item-dark d-flex justify-content-between align-items-center" data-type="contacts_no_ptu">
 																	Contacts without PTU account
@@ -390,11 +396,8 @@
 							<div class="page-content mt-3">
 								<div class="mb-3 col-12 col-md-4 float-left">
 									<button id="my_contacts" type="button" class="btn btn-success">My contact<span class="plurial"></span> <span class="nb_contacts"></span></button>
-									<button id="live_contacts" type="button" class="btn btn-secondary">LIVE Citizen<span class="plurial"></span> <span class="nb_contacts"></span></button>
-									<button type="button" class="btn-sm btn btn-primary contacts_sort" data-sort_by="date" data-sort_type="asc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Latest added contact first"><i class="fas fa-sort-numeric-down"></i></button>
-									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="date"data-sort_type="desc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Oldest added contact first"><i class="fas fa-sort-numeric-up"></i></button>
-									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="displayname" data-sort_type="asc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Ascending by Display Name"><i class="fas fa-sort-alpha-down"></i></button>
-									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="displayname"data-sort_type="desc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Descending by Display Name"><i class="fas fa-sort-alpha-up"></i></button>
+									<button id="pending_contacts" type="button" class="btn btn-secondary">Pending contact<span class="plurial"></span> <span class="nb_contacts"></span></button>
+									<button id="live_contacts" type="button" class="btn btn-secondary">Database <span class="nb_contacts"></span></button>
 								</div>
 								<div id="input_search_contacts" class="input-group mb-3 col-12 col-md-8 float-right d-none">
 									<div class="input-group-prepend">
@@ -407,11 +410,22 @@
 							
 							<div class="my_contacts d-none">
 								<div class="d-none ml-2 mr-2 alert" role="alert"></div>
+								<div class="pb-2">
+									<button type="button" class="btn-sm btn btn-primary contacts_sort" data-sort_by="displayname" data-sort_type="asc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Ascending by Display Name"><i class="fas fa-sort-alpha-down"></i></button>
+									<button type="button" class="btn-sm btn btn-secondary contacts_sort" data-sort_by="displayname"data-sort_type="desc" data-toggle="popover" data-placement="top" data-trigger="hover" data-content="Descending by Display Name"><i class="fas fa-sort-alpha-up"></i></button>
+								</div>
+								<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
+							</div>
+							
+							<div class="pending_contacts d-none">
+								<div class="d-none ml-2 mr-2 alert" role="alert"></div>
+								<div class="pb-4"></div>
 								<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
 							</div>
 							
 							<div class="live_contacts d-none">
 								<div class="d-none ml-2 mr-2 alert" role="alert"></div>
+								<div class="pb-4"></div>
 								<div class="row row-cols-1 row-cols-xxs-1 row-cols-xs-2 row-cols-sm-3 row-cols-md-3 row-cols-lg-4 row-cols-xl-5 row-cols-xxxxl-6"></div>
 							</div>
 							

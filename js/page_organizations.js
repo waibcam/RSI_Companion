@@ -15,6 +15,13 @@ function LeftMenu_Click_Organizations(elem, href)
 				elem.find('.badge').text($(result.organizations).length);
 
 				$(result.organizations).each(function (i, organization) {
+					organization.SID = sanitizeHTML(organization.SID);
+					organization.name = sanitizeHTML(organization.name);
+					organization.logo = sanitizeHTML(organization.logo);
+					organization.nb_member = sanitizeHTML(organization.nb_member);
+					organization.rank = sanitizeHTML(organization.rank);
+					organization.level_number = sanitizeHTML(organization.level_number);
+					
 					$(href + ' .content .my_organizations').append('' +
 						'<div class="col mb-2">' +
 							'' +
@@ -74,37 +81,82 @@ $(document).ready(function () {
 				if (result.success == 1) {
 					members = result.data;
 					
-					$(members).each((index, member) => {						
-						member_form.append('' +
-						'<div class="col mb-4">' +
-							'' +
-							'<div class="card bg-secondary" data-nickname="' + member.nickname + '" data-displayname="' + member.displayname + '">' +
-								'<div class="card-header p-1">' +
-									'<div class="media-body">' +
-										'<div class="displayname">'+
-											'<a href="' + base_LIVE_Url + 'citizens/' + member.nickname + '" target="_blank">' + member.displayname + '</a>'+
+					friendlist = [];
+					friendrequests = [];
+					
+					// Collecting Friends current user
+					chrome.runtime.sendMessage({
+						type: 'getFriends',
+						LIVE: true,
+						Token: Rsi_LIVE_Token,
+					}, (FriendList) => {
+						if (FriendList.success == 1) friendlist = FriendList.data.reverse();
+						
+						// Collecting FriendRequest of current user
+						chrome.runtime.sendMessage({
+							type: 'getFriendRequests',
+							LIVE: true,
+							Token: Rsi_LIVE_Token,
+						}, (FriendRequests) => {
+							
+							if (FriendRequests.success == 1) friendrequests = FriendRequests.data;
+
+
+							$(members).each((index, member) => {
+								var already_requested = false;
+								var already_friend = false;
+								
+								$(friendlist).each(function (id, this_friend) {
+									if (this_friend.nickname == member.nickname)
+									{
+										already_friend = true;
+									}
+								});
+								
+								$(friendrequests).each(function (id, this_friend_request) {
+									if (this_friend_request.members[0].nickname == member.nickname)
+									{
+										already_requested = true;
+									}
+								});
+								
+								member.nickname = sanitizeHTML(member.nickname);
+								member.displayname = sanitizeHTML(member.displayname);
+								member.avatar = sanitizeHTML(member.avatar);
+								
+								member_form.append('' +
+								'<div class="col mb-4">' +
+									'' +
+									'<div class="card bg-secondary" data-nickname="' + member.nickname + '" data-displayname="' + member.displayname + '">' +
+										'<div class="card-header p-1">' +
+											'<div class="media-body">' +
+												'<div class="displayname">'+
+													'<a href="' + base_LIVE_Url + 'citizens/' + member.nickname + '" target="_blank">' + member.displayname + '</a>'+
+												'</div>' +
+												'<div>' +
+													'<small><span class="nickname text-secondary">' + member.nickname + '</span></small>' +
+												'</div>' +
+											'</div>' +
 										'</div>' +
-										'<div>' +
-											'<small><span class="nickname text-secondary">' + member.nickname + '</span></small>' +
+										'<div class="card-body p-2">' +
+											'<div class="media">' +
+												'<img src="' + base_LIVE_Url + member.avatar + '" class="align-self-start mr-3 rounded" alt="' + member.displayname + '">' +
+												'<div class="media-body align-self-center">' +
+													'<button type="button" class="btn btn-' + (member.following ? 'dark' : (already_friend ? 'dark' : (already_requested ? 'info' : 'success'))) + ' btn-sm follow" data-nickname="' + member.nickname + '" data-action="' + (member.following ? 'unfollow' : 'follow') + '"><i class="fas fa-user-' + (member.following ? 'minus' : 'plus') + '"></i><span class="d-md-none d-lg-inline"> ' + (member.following ? 'Unfriend' : (already_friend ? 'Already Friend' : (already_requested ? 'Request sent' : 'Send Friend Request'))) + '</span></button>' +
+												'</div>' +
+											'</div>' +
 										'</div>' +
 									'</div>' +
+									'' +
 								'</div>' +
-								'<div class="card-body p-2">' +
-									'<div class="media">' +
-										'<img src="' + base_LIVE_Url + member.avatar + '" class="align-self-start mr-3 rounded" alt="' + member.displayname + '">' +
-										'<div class="media-body align-self-center">' +
-											'<button type="button" class="btn btn-' + (member.following ? 'dark' : 'success') + ' btn-sm follow" data-nickname="' + member.nickname + '" data-action="' + (member.following ? 'unfollow' : 'follow') + '"><i class="fas fa-user-' + (member.following ? 'minus' : 'plus') + '"></i><span class="d-md-none d-lg-inline"> ' + (member.following ? 'Unfollow' : 'Follow') + '</span></button>' +
-										'</div>' +
-									'</div>' +
-								'</div>' +
-							'</div>' +
-							'' +
-						'</div>' +
-						'');
+								'');
+							});
+							
+							
+							button.html(button_text.replace("<span>Show</span>", "<span>Hide</span>"));
+							
+						});
 					});
-					
-					
-					button.html(button_text.replace("<span>Show</span>", "<span>Hide</span>"));
 				} else {
 					button.replaceWith('<code>Sorry, an error occured.</code>');
 				}
@@ -139,7 +191,7 @@ $(document).ready(function () {
 					var this_class = '';
 					if (result.data.length > 0) this_class = 'text-success';
 
-					button.replaceWith('<code class="' + this_class + '">' + result.data.length + ' member' + (result.data.length > 1 ? 's' : '') + ' added to LIVE.</code>');
+					button.replaceWith('<code class="' + this_class + '">' + result.data.length + ' friend request' + (result.data.length > 1 ? 's' : '') + ' sent.</code>');
 				} else {
 					button.replaceWith('<code>Sorry, an error occured.</code>');
 				}

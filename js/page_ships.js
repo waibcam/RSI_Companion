@@ -70,12 +70,14 @@ function refresh_ShipList_data(href, refresh)
 			// we don't allow a user to send another report before 7 days
 			if (ships_not_found.length > 0 && (current_timestamp - last_report) > 60*60*24*7)
 			{
+				ships_not_found.length = sanitizeHTML(ships_not_found.length);
+				
 				$('button[data-target="#ships_not_found"]').removeClass('d-none').html('<i class="fas fa-exclamation-triangle"></i> ' + ships_not_found.length + ' ship' + (ships_not_found.length>1?'s':'') + ' not detected');
 				
 				$('#ships_not_found .modal-body').html('<p>The script couldn\'t detect everything apparently. Please, use the report button to warn the author about your ships not beeing detected:</p><ol></ol>');
 				
 				$(ships_not_found).each((index, ship_name) => {
-					$('#ships_not_found .modal-body > ol').append('<li>' + ship_name + '</li>');
+					$('#ships_not_found .modal-body > ol').append('<li>' + sanitizeHTML(ship_name) + '</li>');
 				});
 				$('#ships_not_found .modal-body').append('<p class="text-right mb-0"><small>The report will contain only your ship name, nothing more!</small></p>');
 				
@@ -112,6 +114,7 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.production_status !== null) {
 					var ship_production_status = ship.production_status.split('/');
 					$(ship_production_status).each(function (index, val) {
+						val = sanitizeHTML(val);
 						span_ship_production_status = span_ship_production_status + '<span class="mr-1 mb-1 badge badge-primary">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
@@ -120,6 +123,7 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.type !== null) {
 					var ship_type = ship.type.split('/');
 					$(ship_type).each(function (index, val) {
+						val = sanitizeHTML(val);
 						span_ship_type = span_ship_type + '<span class="mr-1 mb-1 badge badge-warning">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
@@ -128,16 +132,31 @@ function refresh_ShipList_data(href, refresh)
 				if (ship.focus !== null) {
 					var ship_focus = ship.focus.split('/');
 					$(ship_focus).each(function (index, val) {
+						val = sanitizeHTML(val);
 						span_ship_focus = span_ship_focus + '<span class="mr-1 mb-1 badge badge-danger">' + capitalizeFirstLetter(val) + '</span> '
 					})
 				}
 				
 				ship_image = ship.media[0].images.slideshow;
-				if (! ship_image.includes('http')) ship_image = base_LIVE_Url + ship_image;
+				if (! ship_image.startsWith('http')) ship_image = base_LIVE_Url + ship_image;
+				ship_image = sanitizeHTML(ship_image);
+				
+				if (! ship.url.startsWith("http")) ship.url = base_LIVE_Url + ship.url;
+				ship.url = sanitizeHTML(ship.url);
+				ship.id = sanitizeHTML(ship.id);
+				ship.owned = sanitizeHTML(ship.owned);
+				ship.nb = sanitizeHTML(ship.nb);
+				ship.loaner = sanitizeHTML(ship.loaner);
+				ship.name = sanitizeHTML(ship.name);
+				ship.manufacturer.id = sanitizeHTML(ship.manufacturer.id);
+				ship.manufacturer.name = sanitizeHTML(ship.manufacturer.name);
+				ship.production_status = sanitizeHTML(ship.production_status);
+				ship.type = sanitizeHTML(ship.type);
+				ship.focus = sanitizeHTML(ship.focus);
 
 				$(href + ' .ship_list > .row').append('' +
 					'<div class="col mb-4 d-none">' +
-						'<a href="' + base_LIVE_Url + ship.url.substr(1) + '" target="_blank">' +
+						'<a href="' + ship.url.substr(1) + '" target="_blank">' +
 							'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + ship.owned + '" data-nb="' + ship.nb + '"  data-loaner="' + ship.loaner + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
 								'<img class="card-img-top" src="' + ship_image + '" alt="' + ship.name + '" />' +
 								(ship.owned?'<span class="owner badge badge-success">x' + ship.nb + '</span>':'') +
@@ -185,7 +204,7 @@ function refresh_ShipList_data(href, refresh)
 				if (loaner_from_name.length > 0)
 				{
 					ship_card.find('span.loaner').text('Loaner from: ');
-					ship_card.find('span.loaner').append('<i class="text-dark">' + loaner_from_name.join(', ') + '</i>');
+					ship_card.find('span.loaner').append('<i class="text-dark">' + sanitizeHTML(loaner_from_name.join(', ')) + '</i>');
 				}
 				
 				ship_card.attr("data-loaned", true);
@@ -199,16 +218,24 @@ function refresh_ShipList_data(href, refresh)
 			Ship_Manufacturers.sortAscOn('name_lower');
 			
 			$(Ship_Status).each((i, Status) => {
+				Status = sanitizeHTML(Status);
 				$('select#Ship_Status').append('<option value="' + Status + '">' + capitalizeFirstLetter(Status) + '</option>')
 			});
 			$(Ship_Focus).each((i, Focus) => {
+				Focus = sanitizeHTML(Focus);
 				$('select#Ship_Focus').append('<option value="' + Focus + '">' + capitalizeFirstLetter(Focus) + '</option>')
 			});
 			$(Ship_Type).each((i, Type) => {
+				Type = sanitizeHTML(Type);
 				$('select#Ship_Type').append('<option value="' + Type + '">' + capitalizeFirstLetter(Type) + '</option>')
 			});
 			$(Ship_Manufacturers).each( (i, Manufacturer) => {
-				if (typeof(Manufacturer) != "undefined") $('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
+				if (typeof(Manufacturer) != "undefined")
+				{
+					Manufacturer.id = sanitizeHTML(Manufacturer.id);
+					Manufacturer.name = sanitizeHTML(Manufacturer.name);
+					$('select#Ship_Manufacturers').append('<option value="' + Manufacturer.id + '">' + Manufacturer.name + '</option>')
+				}
 			});
 
 			$('#input_search_ships').removeClass('d-none');
@@ -303,23 +330,23 @@ $(document).ready(function () {
 			if (Filter_Ship_Type != 0) $('.ship_list .card').not('[data-type="' + Filter_Ship_Type + '"]').parent().parent().addClass('d-none');
 
 			var name = $(this_card).data('name');
-			if (name != 'null') name = name.toLowerCase();
+			if (name != 'null' && name != null) name = name.toLowerCase();
 			else name = '';
 
 			var manufacturer = $(this_card).data('manufacturer');
-			if (manufacturer != 'null') manufacturer = manufacturer.toLowerCase();
+			if (manufacturer != 'null' && manufacturer != null) manufacturer = manufacturer.toLowerCase();
 			else manufacturer = '';
 
 			var production_status = $(this_card).data('production_status');
-			if (production_status != 'null') production_status = production_status.toLowerCase();
+			if (production_status != 'null' && production_status != null) production_status = production_status.toLowerCase();
 			else production_status = '';
 
 			var type = $(this_card).data('type');
-			if (type != 'null') type = type.toLowerCase();
+			if (type != 'null' && type != null) type = type.toLowerCase();
 			else type = '';
 
 			var ship_focus = $(this_card).data('ship_focus');
-			if (ship_focus != null) ship_focus = ship_focus.toLowerCase();
+			if (ship_focus != 'null' && ship_focus != null) ship_focus = ship_focus.toLowerCase();
 			else ship_focus = '';
 
 			var owned = $(this_card).data('owned');

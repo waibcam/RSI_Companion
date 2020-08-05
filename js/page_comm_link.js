@@ -45,6 +45,14 @@ function display_News(result) {
 
 		// looking for all organizations of the user
 		$(result.page_data).each(function (i, news) {
+			
+			news.image = sanitizeHTML(news.image);
+			news.href = sanitizeHTML(news.href);
+			news.article_size = sanitizeHTML(news.article_size);
+			news.title = sanitizeHTML(news.title);
+			news.type = sanitizeHTML(news.type);
+			news.time_ago = sanitizeHTML(news.time_ago);
+			news.comments = sanitizeHTML(news.comments);
 
 			var image_url = "";
 

@@ -23,12 +23,18 @@ function LeftMenu_Click_Roadmap(elem, href)
 				$(href + ' .content').html('<div class="boards row col row-cols-1 row-cols-sm-2 row-cols-md-3 row-cols-lg-3 row-cols-xl-4 row-cols-xxl-5 row-cols-xxxl-6"></div>');
 				boards = result.data.boards;
 				$(boards).each(function (index, board) {
+					board.id = sanitizeHTML(board.id);
+					board.name = sanitizeHTML(board.name);
+					board.thumbnail.urls.square = sanitizeHTML(board.thumbnail.urls.square);
+					if (! board.thumbnail.urls.square.startsWith("http")) board.thumbnail.urls.square = base_LIVE_Url + board.thumbnail.urls.square;
+					board.last_updated = sanitizeHTML(board.last_updated);
+					
 					$(href + ' .content .boards').append('' +
 						'<div class="col mb-4">' +
 							'<div class="card bg-dark cursor getboard" data-id="' + board.id + '" data-name="' + board.name + '" data-last_updated="' + board.last_updated + '">' +
 								'<div class="card-header p-1 m-0">' + board.name + '</div>' +
 								'<div class="card-body text-center text-warning">' +
-									'<img class="img-fluid img_roadmap" src="' + base_LIVE_Url + board.thumbnail.urls.square + '" alt="' + board.name + '" />' +
+									'<img class="img-fluid img_roadmap" src="' + board.thumbnail.urls.square + '" alt="' + board.name + '" />' +
 									'<div class="update_in_progress d-none">CIG is most likely updating the Roadmap right now. Come back in few minutes.</div>' +
 								'</div>' +
 								'<div class="card-footer p-1 m-0 text-right" title="' + board.last_updated + '"><i>Updated ' + timeSince(board.last_updated) + '</i></div>' +
@@ -131,7 +137,7 @@ function display_card(current_card, id_changed, extra, previous_card)
 	{
 		case "REMOVED": badge = '<span class="mr-1 badge badge-danger">REMOVED</span>'; break;
 		case "NEW": badge = '<span class="mr-1 badge badge-success">NEW</span>'; break;
-		case "MOVED": badge = '<span class="mr-1 badge badge-warning">MOVED from ' + extra + '</span>'; break;
+		case "MOVED": badge = '<span class="mr-1 badge badge-warning">MOVED from ' + sanitizeHTML(extra) + '</span>'; break;
 	}
 	
 	var current_progress = (current_card.tasks > 0 ? (current_card.completed / current_card.tasks * 100) : 0);
@@ -164,6 +170,27 @@ function display_card(current_card, id_changed, extra, previous_card)
 	
 	var to_do_progress = (100 - previous_progress - diff_progress);
 	
+	current_card.id = sanitizeHTML(current_card.id);
+	current_card.name = sanitizeHTML(current_card.name);
+	current_card.inprogress = sanitizeHTML(current_card.inprogress);
+	current_card.tasks = sanitizeHTML(current_card.tasks);
+	current_card.completed = sanitizeHTML(current_card.completed);
+	current_card.released = sanitizeHTML(current_card.released);
+	if (previous_card !== false)
+	{
+		previous_card.completed = sanitizeHTML(previous_card.completed);
+		previous_card.tasks = sanitizeHTML(previous_card.tasks);
+	}
+	
+	
+	var card_image = '';
+	if (current_card.thumbnail != null && current_card.thumbnail.urls != null && current_card.thumbnail.urls.rect != null)
+	{
+		if (! current_card.thumbnail.urls.rect.startsWith("http")) current_card.thumbnail.urls.rect = base_LIVE_Url + current_card.thumbnail.urls.rect;
+		
+		card_image = '<img src="' + sanitizeHTML(current_card.thumbnail.urls.rect) + '" class="img-fluid rounded img_roadmap_card mt-1 d-none" alt="' + current_card.name + '">';
+	}
+	
 	return(''+
 		'<div class="col-12 mb-2" data-card>' +
 			'<div class="card bg-thirdary" data-id="' + current_card.id + '" data-name="' + current_card.name + '">' +
@@ -183,7 +210,7 @@ function display_card(current_card, id_changed, extra, previous_card)
 						'</div>' +
 					'</div>' +
 				'</div>' +
-				(current_card.thumbnail != null && current_card.thumbnail.urls != null && current_card.thumbnail.urls.rect != null ? '<img src="' + base_LIVE_Url + current_card.thumbnail.urls.rect + '" class="img-fluid rounded img_roadmap_card mt-1 d-none" alt="' + current_card.name + '">' : '') +
+				card_image +
 				'<div class="card-body p-1 m-0 description d-none">' +
 					'<div class="progress bg-dark' + (current_progress == 0 || current_progress == 0 ? ' d-none' : '') + '" data-inprogress="' + current_card.inprogress + '" data-tasks="' + current_card.tasks + '" data-completed="' + current_card.completed + '" data-released="' + current_card.released + '">' +
 						'<div class="progress-bar ' + (current_progress == 100 ? 'bg-success' : (current_progress > 75 ? 'bg-info' : (current_progress > 50 ? 'bg-warning' : 'bg-danger'))) + '" role="progressbar" style="width: ' + current_progress + '%;" aria-valuenow="' + current_progress + '" aria-valuemin="0" aria-valuemax="100">' +
@@ -298,6 +325,11 @@ function get_board(board_id, board_last_updated)
 			$(current_releases).each(function (index, release) {
 				if (release.cards.length > 0) {
 					
+					release.id = sanitizeHTML(release.id);
+					release.released = sanitizeHTML(release.released);
+					release.name = sanitizeHTML(release.name);
+					release.description = sanitizeHTML(release.description);
+					
 					$('.board-' + board_id + ' > .row').append('' +
 						'<div class="release-' + release.id + (release.released == 1 ? ' d-none' : '') + ' col mb-2 pl-2 pr-0" data-name="' + release.name + '" data-released="' + release.released + '">' +
 							'<div class="card bg-dark mb-2">' +
@@ -323,6 +355,10 @@ function get_board(board_id, board_last_updated)
 								});
 							});
 						}
+						
+						category.id = sanitizeHTML(category.id);
+						category.released = sanitizeHTML(category.released);
+						category.name = sanitizeHTML(category.name);
 						
 						$('.board-' + board_id + ' > .row .release-' + release.id + ' .card-body > .row.release').append('' +
 							'<div class="col-12 mb-2" data-dategory>' +
@@ -403,7 +439,7 @@ $(document).ready(function () {
 
 		$('#page_Roadmap nav > ol > li:eq(0)').removeClass('active');
 		$('#page_Roadmap nav > ol > li:gt(0)').remove();
-		$('#page_Roadmap nav > ol').append('<li class="breadcrumb-item active"><span>' + board_name + '</span></li>');
+		$('#page_Roadmap nav > ol').append('<li class="breadcrumb-item active"><span>' + sanitizeHTML(board_name) + '</span></li>');
 		
 		//$('#page_Roadmap nav button').removeClass('d-none');
 

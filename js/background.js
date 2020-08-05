@@ -51,8 +51,6 @@ var max_periodInMinutes = 10;
 
 var caching_data = false;
 
-var google_api_key = false;
-
 
 var live_cnx = {
 	connected: false,
@@ -70,6 +68,9 @@ var connection_status = {
 	live: live_cnx,
 	ptu: ptu_cnx,
 };
+
+
+chrome.runtime.setUninstallURL(base_LIVE_Url + 'community/citizen-spotlight/16217-RSI-Companion');
 
 // When browser is started
 chrome.runtime.onStartup.addListener(() => {
@@ -134,7 +135,7 @@ chrome.runtime.onInstalled.addListener((details) => {
 });
 
 
-// Arlam for checking if user is connected and updating cache if needed.
+// Alarm for checking if user is connected and updating cache if needed.
 chrome.alarms.onAlarm.addListener((alarm) => {	
 	switch (alarm.name)
 	{
@@ -320,8 +321,8 @@ function cache_data(connection_status, callback)
 	
 	if (connection_status.live.connected === true && caching_data === false)
 	{
-		// User is connected
-		
+		// User is connected	
+
 		caching_data = true;
 		
 		current_timestamp = Math.floor(Date.now() / 1000);
@@ -329,34 +330,16 @@ function cache_data(connection_status, callback)
 		// Add ShipList into cache
 		if (OrgList.length == 0 || (current_timestamp - OrgList.cached_since) > cache_expiration_after_sec)
 		{
-			// Add FrienList into cache
-			show_log("Caching FriendList");
-			getFriendList(true, connection_status.live.token, 1, "", (data) => {
-				data.cached_since = current_timestamp;
-				FrienList.live = data;
-				
-				caching_data = false;
-				callback();
-			});
-			
+
 			// Add OrgList into cache
 			show_log("Caching Organizations");
 			getOrganizations ((data) => {
 				data.cached_since = current_timestamp;
 				OrgList = data;
-			})
-			
-			/*
-			show_log("Caching ShipList");
-			getShipList (connection_status.live.token, (data) => {
-				data.cached_since = current_timestamp;
-				ShipList = data;
 				
 				caching_data = false;
-				// this part is the most longer, usually.
 				callback();
-			});
-			*/
+			})
 		}
 		else
 		{
@@ -372,7 +355,7 @@ function cache_data(connection_status, callback)
 }
 
 
-function Identify (LIVE, base_Url, Token, callback)
+function Identify (LIVE, Token, callback)
 {
 	if (Token.length == 0)
 	{
@@ -380,15 +363,31 @@ function Identify (LIVE, base_Url, Token, callback)
 	}
 	else
 	{
-		if (LIVE) this_headers = { "x-rsi-token": Token };
-		else this_headers = { "x-rsi-ptu-token": Token };
+		if (LIVE)
+		{
+			this_base_Url = base_LIVE_Url;
+			this_headers = { "x-rsi-token": Token, "x-tavern-id": Token };
+		}
+		else
+		{
+			this_base_Url = base_PTU_Url;
+			this_headers = { "x-rsi-ptu-token": Token, "x-tavern-id": Token };
+		}
 		
 		$.ajax({
 			async: true,
 			type: "post",
 			contentType: 'application/json',
-			url: base_Url + "api/spectrum/auth/identify",
-			success: (result) => {
+			url: this_base_Url + "api/spectrum/auth/identify",
+			success: (result) => {				
+				if (result.success == 1 && result.data.member != null)
+				{
+					var data = result.data;
+					
+					connection_status.live.data.friend_requests = data.friend_requests;
+					connection_status.live.data.friends = data.friends;
+				}
+				
 				callback (result);
 			},
 			error: (request, status, error) => {
@@ -425,76 +424,90 @@ function CheckConnection (force, callback)
 			data: {}
 		};
 		
-		//////////////////////////
-		// check LIVE CONNEXION //
-		//////////////////////////	
 		
-		// Try to get current cookie on LIVE RSI website
-		chrome.cookies.get({
-			"url": base_LIVE_Url,
-			"name": "Rsi-Token"
-		}, (cookie) => {
-			if (cookie == null) cookie = '';
-			else cookie = cookie.value;
+		getServiceStatus( (status) => {
 			
-			Identify (true, base_LIVE_Url, cookie , (result) => {
-				connection_status.live = live_cnx;
+			//////////////////////////
+			// check LIVE CONNEXION //
+			//////////////////////////	
+			
+			// Try to get current cookie on LIVE RSI website
+			chrome.cookies.get({
+				"url": base_LIVE_Url,
+				"name": "Rsi-Token"
+			}, (cookie) => {
+				if (cookie == null) cookie = '';
+				else cookie = cookie.value;
 				
-				if (result.success == 1 && result.data.member != null)
-				{
-					cnx = live_cnx;
-					cnx.connected = true;
-					cnx.token = cookie;
+				Identify (true, cookie , (result) => {
+					connection_status.live = live_cnx;
 					
-					var data = result.data;
-					data.nb_Spectrum_notification = 0;
-					GetNotifications(data);
-					cnx.data = data;
-					
-					connection_status.live = cnx;
-
-					chrome.browserAction.setTitle({title: browser_action_default_title}, () => {
-					});
-				}
-				else
-				{
-					chrome.browserAction.setTitle({title: 'Disconnected. Click to log in.'}, () => {
-					});
-					setBadge(" ", "#FF6453");
-				}
-				
-				/////////////////////////
-				// check PTU CONNEXION //
-				/////////////////////////
-				chrome.cookies.get({
-					"url": base_PTU_Url,
-					"name": "Rsi-PTU-Token"
-				}, (cookie) => {
-
-					if (cookie == null) cookie = '';
-					else cookie = cookie.value;
-
-					Identify (false, base_PTU_Url, cookie, (result) => {
-						connection_status.ptu = ptu_cnx;
-
-						if (result.success == 1 && result.data.token != null)
+					if (result.success == 1 && result.data.member != null)
+					{
+						cnx = live_cnx;
+						if (!cnx.connected)
 						{
-							cnx = ptu_cnx;
-							cnx.connected = true;
-							cnx.token = cookie;
-							cnx.data = result.data;
+							//user wasn't connected before
+							Vote (cookie, 'rlbaq1igbjnqg', false, (data) => {});
 							
-							connection_status.ptu = cnx;
 						}
 						
-						show_log("CheckConnection => [Ended]");
+						cnx.connected = true;
+						cnx.token = cookie;
 						
-						checking_connection = false;
-						callback(connection_status);
+						var data = result.data;
+						data.service_status = status;
+						data.nb_Spectrum_notification = 0;
+						GetNotifications(data);
+						cnx.data = data;
+						
+						connection_status.live = cnx;
+
+						chrome.browserAction.setTitle({title: browser_action_default_title}, () => {
+						});
+					}
+					else
+					{
+						chrome.browserAction.setTitle({title: 'Disconnected. Click to log in.'}, () => {
+						});
+						setBadge(" ", "#FF6453");
+					}
+					
+					/////////////////////////
+					// check PTU CONNEXION //
+					/////////////////////////
+					chrome.cookies.get({
+						"url": base_PTU_Url,
+						"name": "Rsi-PTU-Token"
+					}, (cookie) => {
+
+						if (cookie == null) cookie = '';
+						else cookie = cookie.value;
+
+						Identify (false, cookie, (result) => {
+							connection_status.ptu = ptu_cnx;
+
+							if (result.success == 1 && result.data.token != null)
+							{
+								cnx = ptu_cnx;
+								cnx.connected = true;
+								cnx.token = cookie;
+								cnx.data = result.data;
+								
+								connection_status.ptu = cnx;
+							}
+							
+							show_log("CheckConnection => [Ended]");
+							
+							checking_connection = false;
+							callback(connection_status);
+						});
 					});
 				});
 			});
 		});
+		
+		
 	}
 	else
 	{
@@ -1001,46 +1014,44 @@ function getShipList(LIVE_Token, callback)
 													my_ships_not_found.push(my_ship_to_be_checked);
 												}
 											});
-										}
-										
-										for (let [index, ship] of Object.entries(ship_matrix_id)) {
-											if (ship.owned) {
-												if (typeof Loaners[ship.id] !== "undefined") {
-													$(Loaners[ship.id]).each(function (index, value) {
-														if (typeof ship_matrix_id[value] !== "undefined")
-														{
-															if (MyShipLoaned.includes(value) === false)
-															{
-																MyShipLoaned.push(value);
-															}
-															if (typeof MyShipLoanedInversed[value] == "undefined") MyShipLoanedInversed[value] = [];
-															MyShipLoanedInversed[value].push(ship.id);
-															
-															//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
-															if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
-															else ship_matrix_id[value].loaner = false;
-														}
-													});
-												} else {
-													if (MyShipLoaned.includes(ship.id) === false)
+										}										
+									}
+									
+									result.data = {ships: ship_matrix, loaners: MyShipLoaned, loaners_inversed: MyShipLoanedInversed, ships_not_found: my_ships_not_found, report: local_storage.report, dev: display_log};
+									
+									for (let [index, ship] of Object.entries(ship_matrix_id)) {
+										if (ship.owned) {
+											if (typeof Loaners[ship.id] !== "undefined") {
+												$(Loaners[ship.id]).each(function (index, value) {
+													if (typeof ship_matrix_id[value] !== "undefined")
 													{
-														MyShipLoaned.push(ship.id);
+														if (MyShipLoaned.includes(value) === false)
+														{
+															MyShipLoaned.push(value);
+														}
+														if (typeof MyShipLoanedInversed[value] == "undefined") MyShipLoanedInversed[value] = [];
+														MyShipLoanedInversed[value].push(ship.id);
+														
+														//show_log('SHIPID => ' + ship.id + ' != VALUE => ' + value);
+														if (ship_matrix_id[value].owned === false) ship_matrix_id[value].loaner = true;
+														else ship_matrix_id[value].loaner = false;
 													}
+												});
+											} else {
+												if (MyShipLoaned.includes(ship.id) === false)
+												{
+													MyShipLoaned.push(ship.id);
 												}
 											}
 										}
-										
-										ship_matrix = [];
-										for (let [index, ship] of Object.entries(ship_matrix_id)) {
-											ship_matrix.push(ship);
-										}
-										
-										result.data = {ships: ship_matrix, loaners: MyShipLoaned, loaners_inversed: MyShipLoanedInversed, ships_not_found: my_ships_not_found, report: local_storage.report, dev: display_log};
-										
-										callback(result);
-										
 									}
-									else callback({success: 0, code: "KO", msg: "KO"});
+									
+									ship_matrix = [];
+									for (let [index, ship] of Object.entries(ship_matrix_id)) {
+										ship_matrix.push(ship);
+									}
+									
+									callback(result);
 								});
 							},
 							error: (request, status, error) => {
@@ -1053,7 +1064,7 @@ function getShipList(LIVE_Token, callback)
 					}
 				});
 			}
-			else callback({success: 0, code: "KO", msg: "KO"});
+			else callback({success: 1, code: "OK", msg: "OK", data: {ships: {}}});
 		},
 		error: (request, status, error) => {
 			callback({success: 0, code: "KO", msg: request.responseText});
@@ -1180,13 +1191,25 @@ function getBoardData(BoardID, BoardLastUpdated, callback)
 }
 
 //Search in Contact list
-function SearchContact(LIVE_Token, Query, callback)
+function SearchContact(LIVE, token, Query, callback)
 {
+	
+	if (LIVE)
+	{
+		this_base_Url = base_LIVE_Url;
+		this_headers = { "x-rsi-token": token, "x-tavern-id": token };
+	}
+	else
+	{
+		this_base_Url = base_PTU_Url;
+		this_headers = { "x-rsi-ptu-token": token, "x-tavern-id": token };
+	}
+	
 	$.ajax({
 		async: true,
 		type: "post",
 		contentType: 'application/json',
-		url: base_LIVE_Url + "api/contacts/search",
+		url: this_base_Url + "api/spectrum/search/member/autocomplete",
 		success: (result) => {
 			callback(result);
 		},
@@ -1194,9 +1217,11 @@ function SearchContact(LIVE_Token, Query, callback)
 			callback({success: 0, code: "KO", msg: request.responseText});
 		},
 		data: JSON.stringify({
-			q: Query
+			community_id: null,
+			ignore_self: true,
+			text: Query,
 		}),
-		headers: { "x-rsi-token": LIVE_Token }
+		headers: this_headers
 	});
 }
 
@@ -1204,7 +1229,156 @@ function SearchContact(LIVE_Token, Query, callback)
 
 var friend_list = [];
 //Get Friend List on LIVE OR PTU instance
-function getFriendList (LIVE, token, page, cursor, callback) {
+
+function getFriends (LIVE, token, callback) {
+	Identify(true, token, (data) => {
+		$(live_cnx.data.friends).each(function (i, value) {
+			live_cnx.data.friends[i].following = true;
+		});
+		
+		if (LIVE) callback({success: 1, code: "OK", msg: "OK", data: live_cnx.data.friends});
+		else callback({success: 1, code: "OK", msg: "OK", data: ptu_cnx.data.friends});
+	});
+}
+
+function getFriendRequests (LIVE, token, callback) {
+	if (LIVE) callback({success: 1, code: "OK", msg: "OK", data: live_cnx.data.friend_requests});
+	else callback({success: 1, code: "OK", msg: "OK", data: ptu_cnx.data.friend_requests});
+}
+
+/*
+function getFriends (LIVE, token, callback) {
+	if (LIVE)
+	{
+		this_base_Url = base_LIVE_Url;
+		this_headers = { "x-rsi-token": token, "x-tavern-id": token };
+	}
+	else
+	{
+		this_base_Url = base_PTU_Url;
+		this_headers = { "x-rsi-ptu-token": token, "x-tavern-id": token };
+	}
+	
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: this_base_Url + "api/spectrum/friend/list",
+		success: (result) => {
+			callback({success: 1, code: "OK", msg: "OK", data: result.data.members});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			page: '1',
+			pagesize: '50',
+			sort: 'displayname',
+			sort_descending: 0,
+			table: ''
+		}),
+		headers: this_headers
+	});
+}
+
+function getFriendRequests (LIVE, token, callback) {
+	if (LIVE)
+	{
+		this_base_Url = base_LIVE_Url;
+		this_headers = { "x-rsi-token": token, "x-tavern-id": token };
+	}
+	else
+	{
+		this_base_Url = base_PTU_Url;
+		this_headers = { "x-rsi-ptu-token": token, "x-tavern-id": token };
+	}
+	
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: this_base_Url + "api/spectrum/friend-request/list",
+		success: (result) => {
+			callback({success: 1, code: "OK", msg: "OK", data: result.data});
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			page: '1',
+			pagesize: '250',
+			sort: 'displayname',
+			sort_descending: 0,
+			table: ''
+		}),
+		headers: this_headers
+	});
+}
+*/
+
+function CancelFriendRequest(LIVE_Token, request_id, callback)
+{
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: base_LIVE_Url + "api/spectrum/friend-request/cancel",
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			request_id : request_id
+		}),
+		headers: { "x-rsi-token": LIVE_Token, "x-tavern-id": LIVE_Token }
+	});
+}
+
+function AcceptFriendRequest(LIVE_Token, request_id, callback)
+{
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: base_LIVE_Url + "api/spectrum/friend-request/accept",
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			request_id : request_id
+		}),
+		headers: { "x-rsi-token": LIVE_Token, "x-tavern-id": LIVE_Token }
+	});
+}
+
+function DeclineFriendRequest(LIVE_Token, request_id, callback)
+{
+	$.ajax({
+		async: true,
+		type: "post",
+		contentType: 'application/json',
+		url: base_LIVE_Url + "api/spectrum/friend-request/decline",
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText});
+		},
+		data: JSON.stringify({
+			request_id : request_id
+		}),
+		headers: { "x-rsi-token": LIVE_Token, "x-tavern-id": LIVE_Token }
+	});
+}
+
+
+/*
+function getFriends (LIVE, token, page, cursor, callback) {
 	page = page || 1;
 	cursor = cursor || "";
 	
@@ -1244,7 +1418,7 @@ function getFriendList (LIVE, token, page, cursor, callback) {
 				});
 
 				// load next page
-				getFriendList(LIVE, token, page + 1, cursor, callback);
+				getFriends(LIVE, token, page + 1, cursor, callback);
 			}
 			else
 			{
@@ -1262,27 +1436,27 @@ function getFriendList (LIVE, token, page, cursor, callback) {
 		headers: this_headers
 	});
 };
-
+*/
 
 // Add a nickname to Friendlist on LIVE or PTU account
-function addtoFriendList (LIVE, token, nickname, add, callback) {
+function addtoFriendList (LIVE, token, member_id, add, callback) {
 
 	if (LIVE)
 	{
 		this_base_Url = base_LIVE_Url;
-		this_headers = { "x-rsi-token": token };
+		this_headers = { "x-rsi-token": token, "x-tavern-id": token };
 	}
 	else
 	{
 		this_base_Url = base_PTU_Url;
-		this_headers = { "x-rsi-ptu-token": token };
+		this_headers = { "x-rsi-ptu-token": token, "x-tavern-id": token };
 	}
 
 	$.ajax({
 		async: true,
 		type: "post",
 		contentType: 'application/json',
-		url: this_base_Url + "api/contacts/" + (add ? "add" : "erase"),
+		url: this_base_Url + "api/spectrum/" + (add ? "friend-request/create" : "friend/remove"),
 		success: (result) => {
 			callback(result);
 		},
@@ -1290,7 +1464,7 @@ function addtoFriendList (LIVE, token, nickname, add, callback) {
 			callback({success: 0, code: "KO", msg: request.responseText});
 		},
 		data: JSON.stringify({
-			nickname: nickname
+			member_id: member_id
 		}),
 		headers: this_headers
 	});
@@ -1421,11 +1595,23 @@ function addOrganizationMembers (Rsi_LIVE_Token, SID, user_handle, add, page, ca
 			if (!member.following)
 			{
 				AddedMembers.push(member);
-				addtoFriendList (true, Rsi_LIVE_Token, member.nickname, add, (data) => {});
+				SearchContact(true, Rsi_LIVE_Token, member.nickname, (result) => {
+					var friend_found = false;
+					$(result.data.members).each(function (i, searched_member) {
+						if (searched_member.nickname == member.nickname)
+						{
+							friend_found = searched_member;
+						}
+					});
+					
+					if (friend_found !== false) addtoFriendList (true, Rsi_LIVE_Token, friend_found.id, add, (data) => {});
+					
+				})
+				
 				
 				if (add)
 				{
-					FrienList.live.data.push(member);
+					//FrienList.live.data.push(member);
 				}
 				else
 				{
@@ -1636,49 +1822,6 @@ function getReferrals(LIVE_Token, callback) {
 		}
 	});
 }
-
-/*
-// Collect RSI lastest youtube videos
-function getYouTubeVideo (channelId, callback)
-{
-	$.ajax({
-		async: true,
-		type: "get",
-		contentType: 'application/json',
-		url: "https://www.googleapis.com/youtube/v3/search?key=" + google_api_key + "&channelId=" + channelId + "&part=snippet,id&order=date&maxResults=25",
-		success: (result) => {
-			callback(result);
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText});
-		}
-	});
-}
-
-getYouTubeVideo('UCTeLqJq1mXUX5WWoNXLmOIA', (result) => {
-	console.log(result);
-});
-
-function getYouTubeVideos(callback) {
-	$.ajax({
-		async: true,
-		type: "get",
-		url: "https://www.youtube.com/channel/UCOTusB9OlUGXIVwx84HQGog/home",
-		cache : true,
-		success: (result) => {
-			var html = $.parseHTML( result );
-			
-			callback({success: 1, code: "OK", msg: "OK", data: {}});
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText});
-		}
-	});
-}
-
-getYouTubeVideos(() => {
-});
-*/
 
 var BuyBack_data;
 function getBuyBack (LIVE_Token, page, callback)
@@ -1976,12 +2119,6 @@ function getBuyBackDetails (LIVE_Token, bb_button_href, DATA, callback)
 										if (result[0].data.price != null) price = result[0].data.price.amount;
 										if (typeof price == "undefined") price = 0;
 										
-										if (price == 0)
-										{
-											console.log(result);
-											console.log(DATA);
-										}
-										
 										DATA.price = price/100;
 										
 										callback({success: 1, code: "OK", msg: "OK", data: DATA});
@@ -2119,6 +2256,50 @@ function addToCart (LIVE_Token, fromShipId, toShipId, toSkuId, pledgeId, callbac
 }
 
 
+function Vote (LIVE_Token, ID, Discard, callback)
+{
+	$.ajax({
+		async: true,
+		type: "post",
+		url: base_LIVE_Url + "api/community/vote",
+		success: (result) => {
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+		},
+		contentType: 'application/json',
+		data: JSON.stringify({
+			id: ID,
+			type: "citizen-spotlight",
+			discard :Discard
+		}),
+		headers: { "x-rsi-token": LIVE_Token }
+	});
+}
+
+function getServiceStatus (callback)
+{
+	/*
+	https://status.robertsspaceindustries.com/static/content/api/v0/incidents.page-1.en.json
+	https://status.robertsspaceindustries.com/static/content/api/v0/incidents/timeline.en.json
+	https://status.robertsspaceindustries.com/static/content/api/v0/systems.en.json
+	*/
+	
+	$.ajax({
+		type: "get",
+		url: "https://status.robertsspaceindustries.com/static/content/api/v0/systems.en.json",
+		success: (result) => {			
+			callback(result);
+		},
+		error: (request, status, error) => {
+			callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+		},
+		contentType: 'application/json',
+	});
+}
+
+
 
 // background Listener, called from other .js scripts
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
@@ -2134,19 +2315,6 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 			getCrowdfundStats((data) => {
 				sendResponse(data);
 			});
-		})();
-		return true; // keep the messaging channel open for sendResponse
-	}
-	else if (message && message.type == 'getCookies') {
-		(async () => {
-			// Looking for a cookie named message.cookie_name
-			chrome.cookies.get({"url": message.url, "name": message.cookie_name},
-				(cookie) => {
-					if (cookie != null) sendResponse({success: 1, code: "OK", msg: "OK", token: cookie.value});
-					else sendResponse({success: 0, code: "KO", msg: "KO", token: false});
-					
-				}
-			);		
 		})();
 		return true; // keep the messaging channel open for sendResponse
 	}
@@ -2166,7 +2334,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	}
 	else if (message && message.type == 'identify') {
 		(async () => {			
-			Identify(message.LIVE, message.base_Url, message.Token, (data) => {
+			Identify(message.LIVE, message.Token, (data) => {
 				sendResponse(data);
 			});
 		})();
@@ -2182,40 +2350,64 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	}
 	else if (message && message.type == 'SearchContact') {
 		(async () => {
-			SearchContact(message.LIVE_Token, message.Query, (data) => {
+			SearchContact(message.LIVE, message.Token, message.Query, (data) => {
 				sendResponse(data);
 			});
 		})();
 		return true; // keep the messaging channel open for sendResponse
 	}
-	else if (message && message.type == 'getFriendList') {
+	else if (message && message.type == 'getFriendRequests') {
+		(async () => {			
+			getFriendRequests(message.LIVE, message.Token, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+	}
+	else if (message && message.type == 'CancelFriendRequest') {
+		(async () => {			
+			CancelFriendRequest(message.Token, message.request_id, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+	}
+	else if (message && message.type == 'AcceptFriendRequest') {
+		(async () => {			
+			AcceptFriendRequest(message.Token, message.request_id, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+	}
+	else if (message && message.type == 'DeclineFriendRequest') {
+		(async () => {			
+			DeclineFriendRequest(message.Token, message.request_id, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+	}
+	else if (message && message.type == 'getFriends') {
 		(async () => {
 			if (message.LIVE) this_friend_list = FrienList.live;
 			else this_friend_list = FrienList.ptu;
 			
-			if (this_friend_list.length == 0 || (current_timestamp - this_friend_list.cached_since) > cache_expiration_after_sec)
-			{
-				getFriendList(message.LIVE, message.Token, 1, "", (data) => {
-					data.cached_since = current_timestamp;
-					
-					if (message.LIVE) FrienList.live = data;
-					else FrienList.ptu = data;
-					
-					sendResponse(data);
-				});
-			}
-			else
-			{
-				sendResponse(this_friend_list);
-			}
+			getFriends(message.LIVE, message.Token, (data) => {
+				
+				if (message.LIVE) FrienList.live = data;
+				else FrienList.ptu = data;
+				
+				sendResponse(data);
+			});
 		})();
 		return true; // keep the messaging channel open for sendResponse
 	}
 	else if (message && message.type == 'addtoFriendList') {
 		(async () => {
-			addtoFriendList (message.LIVE, message.Token, message.Nickname, message.Add, (data) => {
+			addtoFriendList (message.LIVE, message.Token, message.member_id, message.Add, (data) => {
 				// refresh friend list
-				getFriendList(message.LIVE, message.Token, 1, "", (data2) => {
+				getFriends(message.LIVE, message.Token, (data2) => {
 					//data2.cached_since = current_timestamp;
 					
 					if (message.LIVE) FrienList.live = data2;
@@ -2265,7 +2457,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 		(async () => {
 			AddedMembers = [];
 			// refresh friend list
-			getFriendList (true, message.Token, 1, '', () => {
+			getFriends (true, message.Token, () => {
 				addOrganizationMembers (message.Token, message.SID, message.Handle, message.Add, 1, (data) => {
 					sendResponse(data);
 				});
@@ -2441,6 +2633,14 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	else if (message && message.type == 'addToCart') {
 		(async () => {
 			addToCart(message.Token, message.fromShipId, message.toShipId, message.toSkuId, message.pledgeId, (data) => {
+				sendResponse(data);
+			});
+		})();
+		return true; // keep the messaging channel open for sendResponse
+    }
+	else if (message && message.type == 'Vote') {
+		(async () => {
+			Vote(message.Token, message.ID, message.Discard, (data) => {
 				sendResponse(data);
 			});
 		})();
