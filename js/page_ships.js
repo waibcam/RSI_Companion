@@ -141,12 +141,10 @@ function refresh_ShipList_data(href, refresh)
 				if (! ship_image.startsWith('http')) ship_image = base_LIVE_Url + ship_image;
 				ship_image = sanitizeHTML(ship_image);
 				
-				if (! ship.url.startsWith("http")) ship.url = base_LIVE_Url + ship.url;
+				if (! ship.url.startsWith("http")) ship.url = base_LIVE_Url + ship.url.substr(1);
 				ship.url = sanitizeHTML(ship.url);
 				ship.id = sanitizeHTML(ship.id);
-				ship.owned = sanitizeHTML(ship.owned);
 				ship.nb = sanitizeHTML(ship.nb);
-				ship.loaner = sanitizeHTML(ship.loaner);
 				ship.name = sanitizeHTML(ship.name);
 				ship.manufacturer.id = sanitizeHTML(ship.manufacturer.id);
 				ship.manufacturer.name = sanitizeHTML(ship.manufacturer.name);
@@ -156,8 +154,8 @@ function refresh_ShipList_data(href, refresh)
 
 				$(href + ' .ship_list > .row').append('' +
 					'<div class="col mb-4 d-none">' +
-						'<a href="' + ship.url.substr(1) + '" target="_blank">' +
-							'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + ship.owned + '" data-nb="' + ship.nb + '"  data-loaner="' + ship.loaner + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
+						'<a href="' + ship.url + '" target="_blank">' +
+							'<div class="card bg-dark text-light" data-id="' + ship.id + '" data-owned="' + sanitizeHTML(ship.owned) + '" data-nb="' + ship.nb + '"  data-loaner="' + sanitizeHTML(ship.loaner) + '" data-name="' + ship.name + '" data-manufacturer_id="' + ship.manufacturer.id + '" data-manufacturer="' + ship.manufacturer.name + '" data-production_status="' + ship.production_status + '" data-type="' + ship.type + '" data-ship_focus="' + ship.focus + '" data-nb_found="0">' +
 								'<img class="card-img-top" src="' + ship_image + '" alt="' + ship.name + '" />' +
 								(ship.owned?'<span class="owner badge badge-success">x' + ship.nb + '</span>':'') +
 								(ship.loaner?'<span class="owner loaner badge badge-warning">Loaner</span>':'') +
