@@ -131,8 +131,11 @@ function display_contact(elem, id, friend)
 	friend.nickname = sanitizeHTML(friend.nickname);
 	friend.displayname = sanitizeHTML(friend.displayname);
 	friend.avatar = sanitizeHTML(friend.avatar);
-	request_data.status_name = sanitizeHTML(request_data.status_name);
-	request_data.id = sanitizeHTML(request_data.id);
+	if (friend_request)
+	{
+		request_data.status_name = sanitizeHTML(request_data.status_name);
+		request_data.id = sanitizeHTML(request_data.id);
+	}
 	
 	elem.append('' +
 		'<div class="col mb-4" data-date="' + id + '" data-handle="' + friend.nickname + '" data-displayname="' + friend.displayname + '">' +
@@ -202,7 +205,7 @@ function sort_card(sort_by, sort_type)
 			
 			$(contact_content).html('');
 			$(contact_array).each((index_contact, contact) => {
-				$(contact_content).append('' + sanitizeHTML(contact.html) + '');
+				$(contact_content).append('' + contact.html + '');
 			});
 		}
 	});
@@ -299,7 +302,7 @@ $(document).ready(function () {
 				if (result.success == 1) {
 					found_contacts = result.data.members;
 
-					$(found_contacts).each(function (id, friend) {							
+					$(found_contacts).each(function (id, friend) {
 						display_contact(live_row, id, friend);
 					});
 					
