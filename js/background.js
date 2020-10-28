@@ -12,7 +12,12 @@ const base_PTU_Url = "https://ptu.cloudimperiumgames.com/";
 // For cache, in sec
 const cache_expiration_after_sec = 60*60*6; // 6 hours
 
+function isDevMode() {
+    return !('update_url' in chrome.runtime.getManifest());
+}
+
 var display_log = false;
+if (isDevMode()) display_log = true;
 
 function show_log(log)
 {
@@ -20,13 +25,6 @@ function show_log(log)
 }
 
 
-// Using Management only to know if Extension was installed as developer mode or not (in order to display log in background page)
-chrome.management.getSelf((ExtensionInfo) => {
-	if (ExtensionInfo.installType == "development")
-	{
-		display_log = true;
-	}
-});
 
 
 var local_storage = {};
