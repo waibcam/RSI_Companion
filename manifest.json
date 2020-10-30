@@ -2,11 +2,10 @@
 	"manifest_version": 2,
 	"name": "RSI Companion",
 	"description": "Improve your RSI experience.",
-	"version": "0.2.11",
+	"version": "0.2.12",
 	"author": "Kamille92",
 	"permissions": [
 		"cookies",
-		"tabs",
 		"alarms",
 		"storage",
 		"https://ptu.cloudimperiumgames.com/*",
