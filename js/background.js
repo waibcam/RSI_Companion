@@ -1871,7 +1871,6 @@ function getBuyBack (LIVE_Token, page, callback)
 						bb_button_href = base_LIVE_Url + bb_button_href;
 					}
 					
-					
 					var fromshipid = false;
 					var toshipid = false;
 					var toskuid = false;
@@ -1902,7 +1901,7 @@ function getBuyBack (LIVE_Token, page, callback)
 						pledgeid = $(article).find('a.holosmallbtn').data('pledgeid');
 						if (typeof pledgeid == "undefined") pledgeid = false;
 						
-						bb_url = base_LIVE_Url + "pledge?openshipupgrade=1&fromshipid=" + fromshipid + "&toshipid=" + toshipid + "&toskuid=" + toskuid + "";
+						bb_url = base_LIVE_Url + "pledge?openshipupgrade=1&pledgeid=" + pledgeid + "&fromshipid=" + fromshipid + "&toshipid=" + toshipid + "&toskuid=" + toskuid + "";
 					}
 					
 					found = BuyBack_data.findIndex(element => element.id == pledgeid);
@@ -1997,7 +1996,6 @@ function getBuyBackDetails (LIVE_Token, bb_button_href, DATA, callback)
 				else image = '';
 				
 				DATA.image = image;
-				
 
 				currency = '';
 				price = 0;
@@ -2112,7 +2110,6 @@ function getBuyBackDetails (LIVE_Token, bb_button_href, DATA, callback)
 									contentType: 'application/json',
 									url: base_LIVE_Url + "pledge-store/api/upgrade",
 									success: (result) => {
-
 										var price = 0;
 										if (result[0].data.price != null) price = result[0].data.price.amount;
 										if (typeof price == "undefined") price = 0;
@@ -2168,89 +2165,113 @@ function getBuyBackDetails (LIVE_Token, bb_button_href, DATA, callback)
 
 function addToCart (LIVE_Token, fromShipId, toShipId, toSkuId, pledgeId, callback)
 {
-	$.ajax({
-		async: true,
-		type: "post",
-		url: base_LIVE_Url + "api/account/v2/setAuthToken",
-		success: (result) => {									
-			$.ajax({
-				async: true,
-				type: "post",
-				url: base_LIVE_Url + "api/ship-upgrades/setContextToken",
-				success: (result) => {
-					$.ajax({
-						async: true,
-						type: "post",
-						contentType: 'application/json',
-						url: base_LIVE_Url + "pledge-store/api/upgrade",
-						success: (result) => {
-							
-							$.ajax({
-								async: true,
-								type: "post",
-								contentType: 'application/json',
-								url: base_LIVE_Url + "pledge-store/api/upgrade",
-								success: (result) => {
-									$.ajax({
-										async: true,
-										type: "post",
-										contentType: 'application/json',
-										url: base_LIVE_Url + "pledge-store/api/upgrade",
-										success: (result) => {
-											$.ajax({
-												async: true,
-												type: "post",
-												contentType: 'application/json',
-												url: base_LIVE_Url + "api/store/v2/cart/token",
-												success: (result) => {
-													callback({success: 1, code: "OK", msg: "OK", data: {}});
-												},
-												error: (request, status, error) => {
-													callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-												},
-												data: "{\"jwt\":\"" + result[0].data.addToCart.jwt + "\"}",
-												headers: { "x-rsi-token": LIVE_Token }
-											});
-										},
-										error: (request, status, error) => {
-											callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-										},
-										data: "[{\"operationName\":\"addToCart\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"mutation addToCart($from: Int!, $to: Int!) {\\n  addToCart(from: $from, to: $to) {\\n    jwt\\n  }\\n}\\n\"}]",
-										headers: { "x-rsi-token": LIVE_Token }
-									});
-								},
-								error: (request, status, error) => {
-									callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-								},
-								data: "[{\"operationName\":\"getPrice\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"query getPrice($from: Int!, $to: Int!) {\\n  price(from: $from, to: $to) {\\n    amount\\n  }\\n}\\n\"}]",
-								headers: { "x-rsi-token": LIVE_Token }
-							});
-						},
-						error: (request, status, error) => {
-							callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-						},
-						data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      title\\n      available\\n      price\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    isAnonymous\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]",
-						headers: { "x-rsi-token": LIVE_Token }
-					});
-				},
-				error: (request, status, error) => {
-					callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-				},
-				data: {
-					"fromShipId": fromShipId,
-					"toShipId": toShipId,
-					"toSkuId": toSkuId,
-					"pledgeId": pledgeId
-				},
-				headers: { "x-rsi-token": LIVE_Token }
-			});
-		},
-		error: (request, status, error) => {
-			callback({success: 0, code: "KO", msg: request.responseText, data: {}});
-		},
-		data: {},
-		headers: { "x-rsi-token": LIVE_Token }
-	});
+	if (fromShipId == false)
+	{
+		$.ajax({
+			async: true,
+			type: "post",
+			url: base_LIVE_Url + "api/store/buyBackPledge",
+			success: (result) => {									
+				callback({success: 1, code: "OK", msg: 'OK', data: {}});
+			},
+			error: (request, status, error) => {
+				callback({success: 0, code: "KO", msg: 'KO', data: {}});
+			},
+			data: {
+				"id": pledgeId
+			},
+			headers: { "x-rsi-token": LIVE_Token }
+		});
+	}
+	else
+	{
+		$.ajax({
+			async: true,
+			type: "post",
+			url: base_LIVE_Url + "api/account/v2/setAuthToken",
+			success: (result) => {									
+				$.ajax({
+					async: true,
+					type: "post",
+					url: base_LIVE_Url + "api/ship-upgrades/setContextToken",
+					success: (result) => {
+						$.ajax({
+							async: true,
+							type: "post",
+							contentType: 'application/json',
+							url: base_LIVE_Url + "pledge-store/api/upgrade",
+							success: (result) => {
+								
+								$.ajax({
+									async: true,
+									type: "post",
+									contentType: 'application/json',
+									url: base_LIVE_Url + "pledge-store/api/upgrade",
+									success: (result) => {
+										$.ajax({
+											async: true,
+											type: "post",
+											contentType: 'application/json',
+											url: base_LIVE_Url + "pledge-store/api/upgrade",
+											success: (result) => {
+												if (typeof(result[0]) != undefined)
+												{
+													$.ajax({
+														async: true,
+														type: "post",
+														contentType: 'application/json',
+														url: base_LIVE_Url + "api/store/v2/cart/token",
+														success: (result2) => {
+															callback({success: 1, code: "OK", msg: "OK", data: {}});
+														},
+														error: (request, status, error) => {
+															callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+														},
+														data: "{\"jwt\":\"" + result[0].data.addToCart.jwt + "\"}",
+														headers: { "x-rsi-token": LIVE_Token }
+													});
+												}
+											},
+											error: (request, status, error) => {
+												callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+											},
+											data: "[{\"operationName\":\"addToCart\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"mutation addToCart($from: Int!, $to: Int!) {\\n  addToCart(from: $from, to: $to) {\\n    jwt\\n  }\\n}\\n\"}]",
+											headers: { "x-rsi-token": LIVE_Token }
+										});
+									},
+									error: (request, status, error) => {
+										callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+									},
+									data: "[{\"operationName\":\"getPrice\",\"variables\":{\"from\": " + fromShipId + ",\"to\": " + toSkuId + "},\"query\":\"query getPrice($from: Int!, $to: Int!) {\\n  price(from: $from, to: $to) {\\n    amount\\n  }\\n}\\n\"}]",
+									headers: { "x-rsi-token": LIVE_Token }
+								});
+							},
+							error: (request, status, error) => {
+								callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+							},
+							data: "[{\"operationName\":\"initShipUpgrade\",\"variables\":{},\"query\":\"query initShipUpgrade {\\n  ships {\\n    id\\n    name\\n    medias {\\n      productThumbMediumAndSmall\\n      slideShow\\n    }\\n    manufacturer {\\n      id\\n      name\\n    }\\n    focus\\n    type\\n    flyableStatus\\n    owned\\n    msrp\\n    link\\n    skus {\\n      id\\n      title\\n      available\\n      price\\n      body\\n    }\\n  }\\n  manufacturers {\\n    id\\n    name\\n  }\\n  app {\\n    version\\n    env\\n    cookieName\\n    sentryDSN\\n    pricing {\\n      currencyCode\\n      currencySymbol\\n      exchangeRate\\n      taxRate\\n      isTaxInclusive\\n    }\\n    mode\\n    isAnonymous\\n    buyback {\\n      credit\\n    }\\n  }\\n}\\n\"}]",
+							headers: { "x-rsi-token": LIVE_Token }
+						});
+					},
+					error: (request, status, error) => {
+						callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+					},
+					data: {
+						"fromShipId": fromShipId,
+						"toShipId": toShipId,
+						"toSkuId": toSkuId,
+						"pledgeId": pledgeId
+					},
+					headers: { "x-rsi-token": LIVE_Token }
+				});
+			},
+			error: (request, status, error) => {
+				callback({success: 0, code: "KO", msg: request.responseText, data: {}});
+			},
+			data: {},
+			headers: { "x-rsi-token": LIVE_Token }
+		});
+	}
 }
 
 

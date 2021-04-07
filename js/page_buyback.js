@@ -22,6 +22,7 @@ function LeftMenu_Click_BuyBack(elem, href)
 
 function addToCart(fromShipId, toShipId, toSkuId, pledgeId)
 {
+	$('html, div.buyback_list a > div').css('cursor', 'wait');
 	chrome.runtime.sendMessage({
 		type: 'addToCart',
 		Token: Rsi_LIVE_Token,
@@ -30,9 +31,9 @@ function addToCart(fromShipId, toShipId, toSkuId, pledgeId)
 		toSkuId: toSkuId,
 		pledgeId: pledgeId,
 	}, (result) => {
+		$('html, div.buyback_list a > div').removeAttr('style');
 		window.open(base_LIVE_Url + "pledge/cart");
-	});
-	
+	});	
 }
 
 
@@ -170,8 +171,8 @@ function refresh_BB_data(href, refresh)
 						
 						$(href + ' .buyback_list').append('' +
 							'<div class="col mb-4">' +
-								(BB.price > 0 ? '<a href="' + bb_url + '" target="_blank">' : '<div>') +
-									'<div class="card bg-dark' + (BB.price == 0 ? ' addToCart cursor' : '' ) + '" data-id="' + BB.id + '" data-full_name="' + BB.full_name + '" data-name="' + BB.name + '" data-type="' + BB.type + '" data-option="' + BB.option + '" data-date="' + BB.date + '" data-contained="' + BB.contained + '" data-price="' + BB.price + '" data-currency="' + BB.currency + '" data-insurance="' + BB.insurance + '" data-fromshipid="' + BB.upgrade.fromshipid + '" data-toshipid="' + BB.upgrade.toshipid + '" data-toskuid="' + BB.upgrade.toskuid + '">' +
+								'<a>' +
+									'<div class="card bg-dark cursor addToCart" data-id="' + BB.id + '" data-full_name="' + BB.full_name + '" data-name="' + BB.name + '" data-type="' + BB.type + '" data-option="' + BB.option + '" data-date="' + BB.date + '" data-contained="' + BB.contained + '" data-price="' + BB.price + '" data-currency="' + BB.currency + '" data-insurance="' + BB.insurance + '" data-fromshipid="' + BB.upgrade.fromshipid + '" data-toshipid="' + BB.upgrade.toshipid + '" data-toskuid="' + BB.upgrade.toskuid + '">' +
 										'<div class="bb_image d-flex">' + ship_image + '</div>' +
 										'<div class="card-body p-1 m-0">' +
 											'<div class="pb-2">' +
@@ -185,7 +186,7 @@ function refresh_BB_data(href, refresh)
 											'</div>' +
 										'</div>' +
 									'</div>' +
-								(BB.price>0?'</a>':'</div>') + 
+								'</a>'+ 
 							'</div>' +
 						'');
 					});
