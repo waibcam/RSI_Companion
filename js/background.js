@@ -6,6 +6,7 @@ const browser_action_default_title = manifestData.browser_action.default_title;
 
 
 const base_LIVE_Url = "https://robertsspaceindustries.com/";
+const base_LIVECDN_Url = "https://cdn.robertsspaceindustries.com/";
 const base_PTU_Url = "https://ptu.cloudimperiumgames.com/";
 
 
