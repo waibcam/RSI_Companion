@@ -118,7 +118,7 @@ function display_contact(elem, id, friend)
 		});
 	}
 	
-	if (friend.avatar == null) friend.avatar = base_LIVE_Url + "rsi/static/tavern/d761352b9e3c2bf075630b791c4aca28.jpg";
+	if (friend.avatar == null) friend.avatar = base_LIVECDN_Url + "static/images/account/avatar_default_big.jpg";
 	
 	var badges = '';
 	
