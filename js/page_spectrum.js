@@ -30,12 +30,16 @@ function get_Threads(connection_data)
 			var all_forums = [];
 			var all_threads = [];
 			// Official => 2, StarCitizen => 2, PTU => 63927
-			var forums = [1, 2, 63927];
-			
+			var forums = [1, 3, 190048];
+		
 			$(forums).each((index, forum) => {
-				$(channel_groups.find(elem => elem.id == forum).channels).each((index, value) => {
-					all_forums.push(value);
-				});
+				for (const key in channel_groups) {
+					$(channel_groups[key].channels).each((index, channel) => {
+						if (channel.id == forum) {
+						all_forums.push(channel);
+						}
+					});
+				}
 			});
 			
 			var done = 0;
