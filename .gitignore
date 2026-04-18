@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# Extension packages
+packages/extension/dist-chrome/
+packages/extension/dist-firefox/
+packages/extension/*.zip
+packages/extension/*.crx
+packages/extension/*.pem
+
+# Backend — PHP
+packages/backend/vendor/
+packages/backend/.env
+packages/backend/.env.local
+packages/backend/data/*.sqlite
+packages/backend/data/*.sqlite-journal
+packages/backend/data/*.sqlite-wal
+packages/backend/data/*.sqlite-shm
+packages/backend/logs/*
+!packages/backend/logs/.gitkeep
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage / test artifacts
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
