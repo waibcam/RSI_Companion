@@ -8,7 +8,9 @@ export default defineConfig({
     description: 'Improve your RSI experience on robertsspaceindustries.com.',
     // Firefox's validator rejects the object form of `author` — it must be
     // a plain string. Chrome accepts both shapes, so a string works on
-    // both stores with a single manifest.
+    // both stores with a single manifest. WXT's manifest types still only
+    // know the `{ email: string }` shape, hence the suppression.
+    // @ts-expect-error WXT typings lag behind the runtime (string is valid).
     author: 'Camille (waibcam)',
     permissions: ['cookies', 'alarms', 'storage', 'scripting', 'tabs'],
     host_permissions: [
@@ -28,6 +30,10 @@ export default defineConfig({
         // `rsi-companion@kamille.ovh` would require creating a brand new
         // listing and losing the review history. Left as-is.
         id: '{5f6df4d5-2bc0-4f21-9a05-ca509c64a7ff}',
+        // @ts-expect-error WXT typings don't yet know about Firefox's
+        // 2026 `data_collection_permissions` field (see
+        // https://mzl.la/firefox-builtin-data-consent) but AMO requires
+        // it. Runtime accepts it fine; only svelte-check complained.
         data_collection_permissions: {
           required: ['none'],
         },

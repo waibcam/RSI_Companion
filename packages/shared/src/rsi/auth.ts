@@ -126,7 +126,15 @@ const arrayOrRecord = <T extends z.ZodTypeAny>(inner: T) =>
 const Channel = z.object({
   id: z.coerce.number().int(),
   name: z.string().default(''),
-  color: z.string().default(''),
+  // RSI started returning `null` for some channel colors on community
+  // forum_channel_groups other than SC proper (see GH #25). Accept null
+  // and coerce to '' so downstream stays with the simpler `color: string`
+  // type and doesn't need null-guards all over the Spectrum module.
+  color: z
+    .string()
+    .nullable()
+    .default('')
+    .transform((v) => v ?? ''),
   slug: z.string().default(''),
 });
 
