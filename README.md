@@ -1,65 +1,124 @@
-# RSI Companion — v3
+# RSI Companion
 
-A browser extension for [robertsspaceindustries.com](https://robertsspaceindustries.com) (Star Citizen).
+A browser extension for [robertsspaceindustries.com](https://robertsspaceindustries.com)
+(Star Citizen). Supports Chrome, Edge and Firefox from a single Manifest V3 codebase.
 
-> **v3 is a ground-up rewrite.** The legacy v0.2.x source lives on the `master` branch and stopped
-> working when Chrome removed support for Manifest V2 in 2024. The `v3` branch is Manifest V3,
-> supports Chrome / Edge / Firefox from a single codebase, and ships with a modernized PHP backend.
+---
+
+## Build instructions (Firefox AMO reviewers)
+
+This section documents how to rebuild the extension from this source archive
+exactly as it was uploaded to the Firefox Add-ons store.
+
+### Operating system
+
+Any OS with Node.js and pnpm installed. Verified on Windows 10/11 and Linux.
+No platform-specific steps.
+
+### Required tooling
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Node.js | ≥ 20 (tested on 24.13.0) | https://nodejs.org/en/download |
+| pnpm    | ≥ 10 (tested on 10.33.0) | `corepack enable` (bundled with Node) or `npm install -g pnpm` |
+
+No other system dependencies. No native modules, no PHP, no compilers,
+no Python, no Rust.
+
+### Steps
+
+From the unzipped source archive root (contains `package.json`,
+`pnpm-workspace.yaml`, `pnpm-lock.yaml`, and a `packages/` directory):
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @rsi-companion/extension zip:firefox
+```
+
+Output:
+
+```
+packages/extension/dist/rsi-companionextension-1.0.0-firefox.zip
+```
+
+The content of this zip is byte-identical to the one submitted to AMO
+(timestamps aside). No remote code is fetched during the build. No
+dependency is patched. The lockfile pins every dependency to an exact
+version.
+
+### What the build does
+
+- `pnpm install --frozen-lockfile` installs the pinned dependency tree
+  defined in `pnpm-lock.yaml` into `node_modules/`.
+- `pnpm --filter @rsi-companion/extension zip:firefox` runs
+  `wxt zip -b firefox`, which type-checks and bundles the TypeScript +
+  Svelte 5 sources via Vite with Rollup, producing `dist/firefox-mv2/`
+  (background script, popup HTML + chunks, assets, manifest) and then
+  compresses that folder into the final `.zip`.
+
+### Source tree
+
+```
+packages/extension/    WXT + Svelte 5 + TypeScript + Tailwind v4 extension
+packages/shared/       Shared TypeScript types, Zod schemas and RSI API
+                       wrappers (workspace dependency of packages/extension)
+```
+
+No minified, transpiled, machine-generated or obfuscated source files
+are shipped in either package.
+
+### Third-party libraries (bundled)
+
+Runtime: `svelte` 5, `zod`, `lucide-svelte`, `linkedom`, `tailwindcss` v4.
+Build-only: `wxt`, `vite`, `typescript`, `svelte-check`,
+`@wxt-dev/module-svelte`, `@tailwindcss/vite`.
+
+All are open-source and installed from the public npm registry via the
+pinned `pnpm-lock.yaml`. No private packages.
+
+---
 
 ## Repository layout
 
 ```
-v3/
-├── packages/
-│   ├── extension/   WXT + Svelte 5 + TypeScript + Tailwind v4 browser extension (MV3)
-│   ├── backend/     PHP 7.4 / Slim 4 / SQLite API served at rsi-companion.kamille.ovh
-│   └── shared/      TypeScript types + Zod schemas shared with the extension
-├── package.json     pnpm workspace root
-└── pnpm-workspace.yaml
+packages/
+├── extension/   WXT + Svelte 5 + TypeScript + Tailwind v4 extension (MV3)
+└── shared/      TypeScript types, Zod schemas, RSI API wrappers
 ```
 
-## Prerequisites
-
-- Node.js ≥ 20, pnpm ≥ 9 (use `corepack enable` or `npm i -g pnpm`)
-- PHP ≥ 7.4 with `pdo_sqlite` (only needed to run the backend locally)
-- Composer
-
-## Quickstart
+## Development
 
 ```sh
 pnpm install
 
-# Extension (Chrome/Edge — auto-opens a profile with the extension loaded)
-pnpm dev
+pnpm dev                                       # Chrome/Edge dev profile
+pnpm --filter @rsi-companion/extension dev:firefox  # Firefox dev profile
 
-# Extension (Firefox)
-pnpm dev:firefox
-
-# Backend (serves on http://127.0.0.1:8080)
-cd packages/backend
-composer install
-cp .env.example .env
-sqlite3 data/app.sqlite < migrations/001_init.sql
-composer start
+pnpm --filter @rsi-companion/shared test       # run shared-package tests
 ```
 
 ## Building for release
 
 ```sh
-pnpm --filter=@rsi-companion/extension build           # Chrome/Edge bundle
-pnpm --filter=@rsi-companion/extension build:firefox   # Firefox bundle
-pnpm --filter=@rsi-companion/extension zip             # Chrome store ZIP
-pnpm --filter=@rsi-companion/extension zip:firefox     # AMO ZIP
+pnpm --filter @rsi-companion/extension zip           # Chrome Web Store ZIP
+pnpm --filter @rsi-companion/extension zip:edge      # Edge Add-ons ZIP
+pnpm --filter @rsi-companion/extension zip:firefox   # AMO ZIP (+ sources)
 ```
 
-## Roadmap of the rewrite
+## Privacy
 
-- **Phase 0** — Monorepo scaffold, branch split, tooling (✅ current).
-- **Phase 1** — Backend endpoints in PHP 7.4 / Slim, SQLite migrations, legacy data import, CORS + rate limiting, compatibility shims.
-- **Phase 2** — Extension core: auth/cookie handling, RSI API client, first feature end-to-end (Comm-Links).
-- **Phase 3** — Port the 7 remaining modules one by one (Ships, Buy-Back, Contacts, Organizations, Roadmap, Spectrum, Release Notes).
-- **Phase 4** — Hardening: strict CSP, DOMPurify, E2E with Playwright, audit, signed backend responses.
-- **Phase 5** — New features (TBD).
+The extension has no backend component and does not collect, transmit,
+sell or share any user data. All caching happens in `chrome.storage.local`
+inside the user's browser. See the full policy at
+<https://rsi-companion.kamille.ovh/Privacy_Policy.html>.
+
+## Source repository
+
+<https://github.com/waibcam/RSI_Companion> (branch `v3`)
+
+## Bug reports
+
+GitHub Issues: <https://github.com/waibcam/RSI_Companion/issues>
 
 ## License
 
@@ -67,5 +126,5 @@ GPL-3.0-only. See [COPYING](COPYING).
 
 ## Authors
 
-- [Kamille92](https://github.com/waibcam) — original author and v3 rewrite.
+- [Kamille92](https://github.com/waibcam) — original author and v1.0.0 rewrite.
 - See the full list of [contributors](https://github.com/waibcam/RSI_Companion/contributors) on the legacy branch.

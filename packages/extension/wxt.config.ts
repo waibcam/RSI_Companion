@@ -6,12 +6,33 @@ export default defineConfig({
   manifest: {
     name: 'RSI Companion',
     description: 'Improve your RSI experience on robertsspaceindustries.com.',
-    author: { email: 'contact@kamille.ovh' },
+    // Firefox's validator rejects the object form of `author` — it must be
+    // a plain string. Chrome accepts both shapes, so a string works on
+    // both stores with a single manifest.
+    author: 'Camille (waibcam)',
     permissions: ['cookies', 'alarms', 'storage', 'scripting', 'tabs'],
     host_permissions: [
       'https://robertsspaceindustries.com/*',
       'https://status.robertsspaceindustries.com/*',
     ],
+    // Firefox-specific metadata. `id` lets AMO track the extension across
+    // updates without the store-assigned id; `data_collection_permissions`
+    // is the new (2026) Mozilla privacy-consent declaration — `"none"`
+    // advertises that no user data is collected anywhere in the
+    // extension, matching the Privacy Policy.
+    browser_specific_settings: {
+      gecko: {
+        // UUID assigned by AMO on the first upload of v1.0.0 (before we
+        // set an explicit id). AMO binds the listing to this id, so every
+        // subsequent upload must match — switching to a vanity id like
+        // `rsi-companion@kamille.ovh` would require creating a brand new
+        // listing and losing the review history. Left as-is.
+        id: '{5f6df4d5-2bc0-4f21-9a05-ca509c64a7ff}',
+        data_collection_permissions: {
+          required: ['none'],
+        },
+      },
+    },
     action: {
       default_title: 'RSI Companion',
       default_popup: 'popup.html',
@@ -21,6 +42,30 @@ export default defineConfig({
       128: 'icon/128.png',
       256: 'icon/256.png',
     },
+  },
+  // The Firefox AMO reviewer must be able to rebuild the extension from
+  // the sources.zip produced next to the packaged zip. Default WXT
+  // `sourcesRoot` is the extension package only, which omits our
+  // workspace dependency `@rsi-companion/shared`. Widen the root to the
+  // monorepo and exclude the usual generated/vendored artifacts so the
+  // archive stays reasonably small. `pnpm-lock.yaml` is intentionally
+  // INCLUDED so `pnpm install --frozen-lockfile` reproduces the exact
+  // dependency tree.
+  zip: {
+    sourcesRoot: '../..',
+    excludeSources: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.wxt/**',
+      '**/.output/**',
+      '**/.turbo/**',
+      '**/.vite/**',
+      '**/.git/**',
+      '**/.DS_Store',
+      '**/coverage/**',
+      // v2 tree and legacy PHP backend — not required to build v3.
+      'packages/backend/**',
+    ],
   },
   vite: () => ({
     plugins: [tailwindcss()],
