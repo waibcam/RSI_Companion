@@ -1,5 +1,24 @@
 @import 'tailwindcss';
 
+/* Extra breakpoints for the `?mode=tab` full-screen view.
+ * Tailwind ships sm/md/lg/xl/2xl (max 1536px). Modern monitors commonly
+ * run 1920px and ultrawides 2560+, so the default max stops densifying
+ * our grids too early — Ships, Pledge Store, Contacts all benefit from
+ * 6-8 columns on those screens. Values align with common logical panel
+ * widths after the 176px sidebar is subtracted. */
+@theme {
+  --breakpoint-3xl: 120rem;  /* 1920px */
+  --breakpoint-4xl: 160rem;  /* 2560px */
+}
+
+/* Custom variant activated whenever we're inside the `?mode=tab` full-
+ * screen container (App.svelte applies a `.tab-mode` class to the root).
+ * Lets modules opt into layout changes that depend on *mode*, not just
+ * viewport width — e.g. reader views can relax their `max-w-prose` cap
+ * to use the whole viewport when popped into a tab, even on a narrow
+ * window where no size breakpoint would trigger. Usage: `tab:max-w-4xl`. */
+@custom-variant tab (.tab-mode &);
+
 html,
 body {
   margin: 0;
@@ -9,4 +28,69 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
+}
+
+/* Indeterminate loading bar slider, used by ModuleHeader and any module that
+   renders its own header inline (Ships). Kept global so the `animate-[loadbar_...]`
+   Tailwind arbitrary-value class resolves in every Svelte scope. */
+@keyframes loadbar {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+/* Thin, muted scrollbars that sit on top of the slate-950 background
+ * instead of Chrome's default chunky gray gutters. Uses the modern
+ * `scrollbar-*` CSS properties (Firefox + Chromium 121+) with a
+ * WebKit pseudo-element fallback for older Chromium builds. Track
+ * stays transparent so it blends with each panel's background; thumb
+ * picks up a subtle slate-700 that brightens on hover. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(51 65 85) transparent; /* slate-700 / transparent */
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(51 65 85); /* slate-700 */
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(71 85 105); /* slate-600 */
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Native "virtualization" for long list items.
+ *
+ * `content-visibility: auto` lets the browser skip rendering (layout, paint,
+ * style) of items that are offscreen, promoting them to on-demand work as the
+ * user scrolls. `contain-intrinsic-size` gives the engine a placeholder size
+ * so the scrollbar length stays stable and jump-scrolling works.
+ *
+ * Applied to the heaviest lists — Ships grid, Galactapedia index, Spectrum
+ * threads, Comm-Link, Patch Notes, Org Browser — where the rendered item
+ * count can reach several hundred and 60-80% of them are out of view at any
+ * one time. No JS virtualization library required. */
+.virt-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 140px;
+}
+.virt-item-lg {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
 }

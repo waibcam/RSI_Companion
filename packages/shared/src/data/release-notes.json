@@ -1,0 +1,92 @@
+[
+  {
+    "version": "1.0.0",
+    "released_at": 1776816000,
+    "notes": "{\"info\":[\"First stable release (1.0.0) after years of 0.x pre-release versions. Complete rebuild of the extension with a new stack and Firefox support. Legacy 0.1.x / 0.2.x notes are included below for reference.\"],\"features\":[\"Fresh redesign — Firefox now supported alongside Chrome and Edge\",\"Pledge Store: browse ships, paints, gear, game packages, packs, merch, add-ons, event tickets, gift cards and UEC — with live prices\",\"Shopping cart: add, remove and clear items directly from the extension; one-click jump to checkout on RSI\",\"CCU Upgrade tool: find cross-chassis upgrade routes from your owned ships with real-time pricing\",\"Ship detail pages built-in — specs, components, variants, editions and prices without leaving the extension\",\"Galactapedia reader — full articles with inline links, categories with thumbnails, featured picks and a random-article button\",\"Settings module — clear cache, customize the sidebar, toggle prefetch, export a debug bundle for bug reports\",\"Full-screen tab mode — open the extension in a browser tab with a responsive layout\",\"Favorites — star your ships and Galactapedia articles for quicker access\",\"RSI Status pill in the header — server health at a glance, with context on error banners\",\"Comm-Link full search — channel, series, type filters and sort options like on the official site\",\"Progress Tracker — roadmap cards grouped by category for a quick look at what CIG is working on\",\"Community Hub — Live, Events, Discover, Gameplay and Tutorial feeds\",\"Organizations — dedicated Membership, Invitations and Applications tabs\",\"Referral Program visible in the header and Dashboard, with recruits and prospects\",\"Faster — most modules render instantly on repeat opens\",\"Error-resilient — a crashing module no longer locks the whole popup; reload just that module\",\"Roadmap with change highlights — cards marked as new, moved or removed since your last visit\",\"Keyboard shortcuts — Ctrl/Cmd+K to focus search, Alt+1..9 to jump between modules, Esc to dismiss\"]}"
+  },
+  {
+    "version": "0.2.13",
+    "released_at": 1683709200,
+    "notes": "{\"info\":[],\"features\":[\"!: Fix issues with spectrum forums preventing the application to work properly\"]}"
+  },
+  {
+    "version": "0.2.12",
+    "released_at": 1604062800,
+    "notes": "{\"info\":[],\"features\":[\"-: Remove unnecessary \\\"Tabs\\\" permissions from extension itself\",\"#: \\\"Tabs\\\" was actually not necessary for managing the extension tab itself. So I removed it\"]}"
+  },
+  {
+    "version": "0.2.11",
+    "released_at": 1603872000,
+    "notes": "{\"info\":[],\"features\":[\"-: Remove unnecessary \\\"Management\\\" permissions from extension itself\",\"#: \\\"Management\\\" was used only to know if RSI Companion extension was installed as \\\"developer mode\\\" (in order to display log in background page). It turns out this rights was too powerful and I found a way to get this information without it so life is better for everyone :-)\"]}"
+  },
+  {
+    "version": "0.2.10",
+    "released_at": 1603702800,
+    "notes": "{\"info\":[],\"features\":[\"+: Added Privacy policy in the bottom bar\"]}"
+  },
+  {
+    "version": "0.2.9",
+    "released_at": 1596736800,
+    "notes": "{\"info\":[],\"features\":[\"!: Ships: Fix wrong URL\",\"!: Ships: Fix wrong \\\"My Hangar\\\" and \\\"My IG Ships\\\" being incorrect\",\"!: Contacts: Fix contact not being displayed correctly\"]}"
+  },
+  {
+    "version": "0.2.8",
+    "released_at": 1596668400,
+    "notes": "{\"info\":[],\"features\":[\"!: Fix Ship list error\",\"!: Fix BB search\",\"!: Fix some Roadmap image that didn't load correctly\",\"!: Fix potential Cross Site Scripting (XSS) Attack\",\"*: minor visual improvements\"]}"
+  },
+  {
+    "version": "0.2.7",
+    "released_at": 1596499200,
+    "notes": "{\"info\":[],\"features\":[\"+: Get notified on New Spectrum post from CIG\",\"+: Upgrade contacts with new Spectrum invite system\",\"+: Add Status from https://status.robertsspaceindustries.com/\",\"!: Fix \\\"PTU contact Sync\\\" function\",\"!: Fix Organizations Follow\",\"!: Fix issue when there was only one contact in live search\",\"!: Fix BB details and links (some price might be equal to 0)\",\"*: A lot of code improvements\",\"-: Removed some unused stuff\",\"#: Firefox version is still offline. I need to make FF version some adjustments. Should be done on 0.2.8, soon. Sorry for inconvenience\"]}"
+  },
+  {
+    "version": "0.2.6",
+    "released_at": 1581958800,
+    "notes": "{\"info\":[],\"features\":[\"!: Fix issue with price causing the BuyBack page to be blank\",\"!: Fix Roadmap values in progress bar being hidden in some cases\",\"!: Fix small issues with buttons going green without any reason\",\"!: Other small fixes and improvements\"]}"
+  },
+  {
+    "version": "0.2.5",
+    "released_at": 1581948000,
+    "notes": "{\"info\":[],\"features\":[\"*: Roadmap improvements by adding number of tasks\",\"*: Ships loaner origin is now displayed. If you don't see it, click the \\\"Refresh\\\" button in the Ships page\",\"*: Design unification for Ships and Buy Back pages\",\"*: Slight Menu changes with your account displayed on top of it\",\"*: Buyback data collection improved\",\"*: Contacts can be sorted. Default is by \\\"added date descending\\\"\",\"*: Improved behaviour and code for Contacts section\"]}"
+  },
+  {
+    "version": "0.2.4",
+    "released_at": 1581601511,
+    "notes": "{\"info\":[],\"features\":[\"!: Fix Buy Back element not being displayed in some specific cases\",\"!: Fix wrong value for referral program (Oops!)\"]}"
+  },
+  {
+    "version": "0.2.3",
+    "released_at": 1581546600,
+    "notes": "{\"info\":[],\"features\":[\"!: Fix new added forum (Patch Notes) to Spectrum\"]}"
+  },
+  {
+    "version": "0.2.2",
+    "released_at": 1581526600,
+    "notes": "{\"info\":[],\"features\":[\"+: Add Buy Back collection\",\"#: I tried to make the search as useful as possible in there. Every information displayed in the card is searchable\",\"#: Also, you can search for some specific price range using \\\">X <Y\\\"\",\"+: Cache is now always used for Ship list and Buy back token. You can refresh manually by clicking on the button\",\"#: This should improve drastically the time to open the application and, overall, avoid to collect information on the RSI website when, most of the time, this doesn't change\",\"#: In case, simply press the green \\\"Refresh\\\" button on top\",\"+: Referral program is now shown on top, with Buy Back available token\",\"*: Highlight owned ship (green) and loaner ship (orange)\",\"*: A message has been added when roadmap is being updated\",\"*: You can now type \\\"owned\\\" or \\\"loaner\\\" while searching for a ship\"]}"
+  },
+  {
+    "version": "0.2.1",
+    "released_at": 1581287400,
+    "notes": "{\"info\":[],\"features\":[\"+: Add RSI Companion Release Notes\",\"*: Ship detection is now done only from Hangar as detection rate should be better. Again, use the report button when some of your ships are not detected\",\"+: Add information about number of ship owned and if it's a loaner or not\",\"!: Fix an issue with cache during roadmap being updated\",\"!: Fix an issue where the App didn't show up after pressing the icon\"]}"
+  },
+  {
+    "version": "0.1.20",
+    "released_at": 1580925600,
+    "notes": "{\"info\":[],\"features\":[\"+: Add report functionality that can send the missing ships that are not detected yet\",\"*: Collect ships from Hangar & \\\"Update\\\" ships (ultimately, it will be only from Hangar)\",\"*: Prevent Application to load when cache is done ready yet. You'll see a WAIT message in the application icon. Please wait few sec\",\"!: Fix text too dark in card details on Roadmap\"]}"
+  },
+  {
+    "version": "0.1.19",
+    "released_at": 1580839200,
+    "notes": "{\"info\":[],\"features\":[\"*: Add link to Citizen spotlight post for RSI Companion\"]}"
+  },
+  {
+    "version": "0.1.18",
+    "released_at": 1580817600,
+    "notes": "{\"info\":[],\"features\":[\"*: Add Roadmap history\"]}"
+  },
+  {
+    "version": "0.1.17",
+    "released_at": 1580731200,
+    "notes": "{\"info\":[\"Line prefixes: + new feature, * improvement, ! bug fixed, - removed, # note\"],\"features\":[\"#: Initial Release\",\"+: Get latest News from RSI website\",\"+: Get latest CIG threads and notification (on threads replies but also new chat message or friend invite)\",\"+: Easily view and search thru ship list. Also, you may have an overview of your hangar and your In-Game ships (including loaners)\",\"+: Manage your contacts and Copy them into PTU\",\"+: View and Follow Organization members\",\"+: View latest roadmaps for SC & SQ42 (including difference from previous week)\"]}"
+  }
+]

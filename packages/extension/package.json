@@ -1,9 +1,9 @@
 {
   "name": "@rsi-companion/extension",
-  "version": "3.0.0-alpha.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "RSI Companion browser extension (Chrome/Edge/Firefox) — v3",
+  "description": "RSI Companion browser extension (Chrome/Edge/Firefox) — first stable release after 0.1/0.2 pre-release series",
   "scripts": {
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
