@@ -19,7 +19,7 @@ No platform-specific steps.
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Node.js | ≥ 20 (tested on 24.13.0) | https://nodejs.org/en/download |
+| Node.js | ≥ 24 (tested on 24.13.0) | https://nodejs.org/en/download |
 | pnpm    | ≥ 10 (tested on 10.33.0) | `corepack enable` (bundled with Node) or `npm install -g pnpm` |
 
 No other system dependencies. No native modules, no PHP, no compilers,
