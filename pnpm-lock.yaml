@@ -6,6 +6,7 @@ settings:
 
 overrides:
   tar: ^7.5.11
+  uuid: ^11.0.0
 
 importers:
 
@@ -2050,8 +2051,8 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
-  uuid@8.3.2:
-    resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
+  uuid@11.1.0:
+    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
     hasBin: true
 
   vite-node@3.2.4:
@@ -3474,7 +3475,7 @@ snapshots:
       is-wsl: 2.2.0
       semver: 7.7.4
       shellwords: 0.1.1
-      uuid: 8.3.2
+      uuid: 11.1.0
       which: 2.0.2
 
   normalize-path@3.0.0: {}
@@ -4002,7 +4003,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  uuid@8.3.2: {}
+  uuid@11.1.0: {}
 
   vite-node@3.2.4(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0):
     dependencies:
