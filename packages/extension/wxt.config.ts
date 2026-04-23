@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'wxt';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -75,6 +76,28 @@ export default defineConfig({
   },
   vite: () => ({
     plugins: [tailwindcss()],
+    // Two dev-server-only fixes, both reported in GH #26. Production
+    // Rollup builds don't need them — Rollup tree-shakes lucide-svelte
+    // into individual icon bundles (no bulk `.svelte` re-processing)
+    // and drops linkedom's optional `canvas` import via dead-code
+    // elimination. Vite's dev server pre-bundles differently and trips
+    // on both, so on a fresh clone `pnpm dev` would otherwise fail.
+    optimizeDeps: {
+      // esbuild (Vite's pre-bundler) has no `.svelte` loader; excluding
+      // lucide-svelte routes its 1500+ icon components through Vite's
+      // full pipeline where @sveltejs/vite-plugin-svelte handles them.
+      exclude: ['lucide-svelte'],
+    },
+    resolve: {
+      alias: {
+        // linkedom declares `canvas` as an optional peer dependency and
+        // references it only for HTMLCanvasElement image rendering,
+        // which the extension never invokes. Alias to an empty stub so
+        // Vite's dev resolver doesn't fail on machines without the
+        // (native-binary) canvas package installed globally.
+        canvas: fileURLToPath(new URL('./stubs/canvas.ts', import.meta.url)),
+      },
+    },
     build: {
       // Emit sourcemaps when ANALYZE=1. Used by the root `pnpm analyze`
       // script with source-map-explorer to break down chunk contents without
