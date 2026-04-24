@@ -154,25 +154,45 @@ describe('mergeHangarIntoMatrix', () => {
   });
 });
 
-// parseHangarPage is the raw RSI HTML scraper. It has to distinguish
-// ship rows (which we try to reconcile against the ship matrix) from
-// the ever-growing pile of non-ship pledge items the hangar surfaces
-// — paints, components, tools, subscriber flair, etc. — so that those
-// never land in the "unknown ships" report.
+// parseHangarPage is the raw RSI HTML scraper. A pledge row in RSI's
+// hangar wraps multiple items (ship + insurance + credits + digital
+// download + FPS equipment …); we care only about the ones tagged
+// `kind: Ship` or `kind: Vehicle`. Test fixtures below mirror the
+// real markup shape captured from a signed-in /account/pledges page.
 describe('parseHangarPage', () => {
-  const row = ({
+  /** One item row as RSI renders it inside a pledge. */
+  const item = ({
     title,
-    kind = '',
-    liner = '',
+    kind,
+    liner,
   }: {
     title: string;
     kind?: string;
     liner?: string;
   }): string => `
+    <div class="item ">
+      <div class="image"></div>
+      <div class="text">
+        <div class="title">${title}</div>
+        ${kind ? `<div class="kind">${kind}</div>` : ''}
+        ${liner ? `<div class="liner"><span>${liner}</span></div>` : ''}
+      </div>
+    </div>
+  `;
+
+  /** One pledge `<li>` wrapping N items. */
+  const pledge = (name: string, items: string[]): string => `
     <li>
-      <div class="title">${title}</div>
-      <div class="kind">${kind}</div>
-      <div class="liner"><span>${liner}</span></div>
+      <div class="row">
+        <div class="basic-infos">
+          <div class="title-col"><h3>${name}</h3></div>
+        </div>
+        <div class="items">
+          <div class="with-images">
+            ${items.join('\n')}
+          </div>
+        </div>
+      </div>
     </li>
   `;
 
@@ -184,81 +204,113 @@ describe('parseHangarPage', () => {
     </body></html>
   `;
 
-  it('accepts standard ship rows', () => {
+  it('extracts ships from standalone-ship pledges', () => {
     const html = page([
-      row({ title: 'Gladius', kind: 'Ship' }),
-      row({ title: 'Aurora MR', kind: 'Ship' }),
+      pledge('Standalone Ship - Tumbril Cyclone', [
+        item({ title: 'Cyclone', kind: 'Ship', liner: 'TMBL' }),
+        item({ title: '6 Month Insurance', kind: 'Insurance' }),
+      ]),
+      pledge('Standalone Ship - Anvil Arrow', [
+        item({ title: 'Arrow', kind: 'Ship', liner: 'ANVL' }),
+        item({ title: '6 Month Insurance', kind: 'Insurance' }),
+      ]),
     ]);
-    expect(parseHangarPage(html).names).toEqual(['Gladius', 'Aurora MR']);
+    expect(parseHangarPage(html).names).toEqual(['Cyclone', 'Arrow']);
   });
 
-  it('accepts GRIN-liner rows even when the kind is empty', () => {
-    const html = page([row({ title: 'Polaris', kind: '', liner: 'GRIN' })]);
-    expect(parseHangarPage(html).names).toEqual(['Polaris']);
-  });
-
-  it('accepts ground vehicles (kind = "Vehicle")', () => {
-    // @DAVosselman's PTV was dropped because its hangar row carried
-    // kind="Vehicle" and didn't happen to have a GRIN liner. Both
-    // ships and ground vehicles live in the ship-matrix and should
-    // flow through the scraper, so we accept "vehicle" as a kind.
+  it('extracts every ship inside a game-package pledge', () => {
+    // The showstopper case: a Package row (UEE Exploration 2948) has
+    // the Digital Download and the Insurance items listed BEFORE any
+    // of the ships. The old scraper's single-`.kind`-per-`<li>`
+    // logic saw "Insurance" first and dropped the whole pledge —
+    // meaning the user permanently lost all five package ships. The
+    // per-`.item` scan fixes it.
     const html = page([
-      row({ title: 'Greycat PTV', kind: 'Vehicle' }),
-      row({ title: 'Tumbril Ranger CV', kind: 'Vehicle' }),
+      pledge('Package - UEE Exploration 2948 Pack', [
+        item({ title: 'Star Citizen Digital Download' }),
+        item({ title: 'Lifetime Insurance', kind: 'Insurance' }),
+        item({ title: 'Starting Money: 20,000 UEC', kind: 'Credits' }),
+        item({ title: 'Sabre Comet', kind: 'Ship', liner: 'AEGS' }),
+        item({ title: 'Freelancer MIS', kind: 'Ship', liner: 'MISC' }),
+        item({ title: 'Prowler', kind: 'Ship', liner: 'ESPR' }),
+        item({ title: 'Vulture', kind: 'Ship', liner: 'DRAK' }),
+        item({ title: 'CCC Aves Helmet', kind: 'FPS Equipment' }),
+        item({
+          title: 'Carrack Expedition with Pisces Expedition',
+          kind: 'Ship',
+          liner: 'ANVL',
+        }),
+        item({ title: 'Anvil Manufacturer Shirt', kind: 'FPS Equipment' }),
+      ]),
     ]);
     expect(parseHangarPage(html).names).toEqual([
-      'Greycat PTV',
-      'Tumbril Ranger CV',
+      'Sabre Comet',
+      'Freelancer MIS',
+      'Prowler',
+      'Vulture',
+      'Carrack Expedition with Pisces Expedition',
     ]);
   });
 
-  it('still rejects vehicle-adjacent non-vehicle items', () => {
-    // Defensive: the new "vehicle" accept branch must not let through
-    // cosmetic or component rows that mention the word.
+  it('accepts ground vehicles tagged as "Vehicle"', () => {
+    // Modern RSI seems to tag every Greycat PTV as kind="Ship" but
+    // historical data has vehicles as kind="Vehicle". Keep accepting
+    // both so older accounts don't regress.
     const html = page([
-      row({ title: 'Vehicle Paint Pack', kind: 'Vehicle Paint' }),
-      row({ title: 'Vehicle Weapon Mount', kind: 'Vehicle Weapon' }),
+      pledge('Standalone Vehicle - Greycat PTV', [
+        item({ title: 'PTV', kind: 'Vehicle', liner: 'GRIN' }),
+      ]),
+    ]);
+    expect(parseHangarPage(html).names).toEqual(['PTV']);
+  });
+
+  it('rejects items that are neither Ship nor Vehicle', () => {
+    // Covers the whole zoo of non-ship item kinds the hangar can
+    // surface: insurance, credits, download, subscription flair,
+    // FPS gear, ship paint, components, multi-tools, etc.
+    const html = page([
+      pledge('Standalone Ship - Ship Paint + Flair', [
+        item({ title: 'Star Citizen Digital Download' }), // no kind
+        item({ title: 'Lifetime Insurance', kind: 'Insurance' }),
+        item({ title: 'Starting Money: 5,000 UEC', kind: 'Credits' }),
+        item({ title: 'Golden Ticket', kind: 'Subscriber Item' }),
+        item({ title: 'CCC Aves Helmet', kind: 'FPS Equipment' }),
+        item({ title: 'STV - Blue Steel Paint', kind: 'Ship Paint' }),
+        item({ title: 'Behring M7A Laser Cannon', kind: 'Ship Component' }),
+        item({ title: 'Pyro RYT Multi-Tool', kind: 'Multi-Tool' }),
+      ]),
     ]);
     expect(parseHangarPage(html).names).toEqual([]);
   });
 
-  it('rejects non-ship pledge items that RSI tags with a ship-adjacent kind', () => {
-    // These three strings were literally reported on Twitter by
-    // @DAVosselman — they surfaced as "unknown ships" because the
-    // old `kind.includes('ship')` check matched "Ship Paint" and
-    // similar labels. The deny-list now drops them cleanly.
+  it('ignores "Also Contains" items (hangar decorations, hats) that share the .item class', () => {
+    // The pledge's "Also Contains" section lists non-reclaimable
+    // extras like "Self-Land Hangar" or "Digital Star Citizen
+    // Manual". They use the same `.item` class but have NO `.kind`
+    // element — our `SHIP_ITEM_KINDS.has('')` check correctly drops
+    // them.
     const html = page([
-      row({ title: 'STV - Blue Steel Paint', kind: 'Ship Paint' }),
-      row({
-        title: 'MaxLift AA Transport Tractor Beam',
-        kind: 'Tractor Beam',
-      }),
-      row({
-        title: 'Pyro RYT "Black Cherry" Multi-Tool',
-        kind: 'Multi-Tool',
-      }),
+      pledge('Standalone Ship - Gladius', [
+        item({ title: 'Gladius', kind: 'Ship' }),
+        // "also-contains" items have no `.kind` in the real markup.
+        item({ title: 'VFG Industrial Hangar' }),
+        item({ title: 'Anvil Hat' }),
+      ]),
     ]);
-    expect(parseHangarPage(html).names).toEqual([]);
+    expect(parseHangarPage(html).names).toEqual(['Gladius']);
   });
 
-  it('does not let a deny-listed kind hide a real ship in the same page', () => {
-    // Defensive: one non-ship row in the middle shouldn't cause the
-    // scraper to skip the surrounding ship rows — the `continue`
-    // branch for deny-listed kinds must affect only that iteration.
-    const html = page([
-      row({ title: 'Gladius', kind: 'Ship' }),
-      row({ title: 'Blue Paint', kind: 'Ship Paint' }),
-      row({ title: 'Aurora MR', kind: 'Ship' }),
-    ]);
-    expect(parseHangarPage(html).names).toEqual(['Gladius', 'Aurora MR']);
-  });
-
-  it('catches subscriber flair and component-type deny-list entries', () => {
-    const html = page([
-      row({ title: 'Golden Ticket', kind: 'Subscriber Item' }),
-      row({ title: 'Behring M7A Laser Cannon', kind: 'Ship Component' }),
-      row({ title: 'Behring Shield', kind: 'Ship Module' }),
-    ]);
-    expect(parseHangarPage(html).names).toEqual([]);
+  it('reads pagination from the raquo.btn href', () => {
+    const html = `
+      <html><body>
+        <ul class="list-items">
+          ${pledge('Standalone Ship - Gladius', [item({ title: 'Gladius', kind: 'Ship' })])}
+        </ul>
+        <a class="raquo btn" href="/account/pledges?page=5&product-type=standalone_ship"></a>
+      </body></html>
+    `;
+    const { names, maxPage } = parseHangarPage(html);
+    expect(names).toEqual(['Gladius']);
+    expect(maxPage).toBe(5);
   });
 });

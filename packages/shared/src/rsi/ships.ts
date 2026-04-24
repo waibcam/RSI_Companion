@@ -95,65 +95,45 @@ export interface HangarPageResult {
   maxPage: number;
 }
 
-// Substrings that unambiguously identify a non-ship hangar row. RSI
-// surfaces a mix of non-ship pledge items in the hangar — paints,
-// components, tractor beams, multi-tools, etc. — and some of them
-// carry a `kind` string that contains "ship" (e.g. "Ship Paint",
-// "Ship Component") which would slip past the `includes('ship')`
-// acceptance check below. Deny them outright first.
-//
-// Reported on Twitter by @DAVosselman: three "unknown" entries in his
-// hangar turned out to be a ship paint, a vehicle tractor beam and a
-// multi-tool — none of which we should have tried to match against the
-// ship matrix in the first place.
-const NON_SHIP_KIND_PATTERNS: readonly string[] = [
-  'paint',
-  'skin',
-  'livery',
-  'component',
-  'module',
-  'weapon',
-  'multi-tool',
-  'multitool',
-  'tool',
-  'tractor beam',
-  'subscription',
-  'subscriber',
-  'flair',
-  'decoration',
-];
+// Kinds the RSI hangar uses on rows that ARE ships we want to match
+// against the ship-matrix. Exact-match (case-insensitive) so e.g.
+// "Ship Paint", "Ship Component", "Ship Weapon", "Insurance",
+// "Credits", "FPS Equipment" etc. are cleanly excluded. "Vehicle" is
+// here too for ground-vehicle pledges that some older RSI rows still
+// use (modern RSI tags PTV as "Ship", but we keep "Vehicle" as a
+// defensive fallback).
+const SHIP_ITEM_KINDS: ReadonlySet<string> = new Set(['ship', 'vehicle']);
 
 /** @internal Exposed solely for the parseHangarPage unit tests. */
 export function parseHangarPage(html: string): HangarPageResult {
   const { document } = parseHTML(html);
   const names: string[] = [];
 
-  const items = document.querySelectorAll('ul.list-items li');
-  for (const li of Array.from(items)) {
-    const kindEl = li.querySelector('.kind');
+  // Each pledge row (`<li>` under `ul.list-items`) wraps multiple
+  // "items" — one per sub-component of the pledge. A standalone ship
+  // pledge has the ship + insurance. A package has the ship(s) +
+  // insurance + credits + "Star Citizen Digital Download" + any FPS
+  // equipment (helmets, shirts) + subscription flair.
+  //
+  // The OLD scraper matched on the first `.kind` found inside the
+  // whole `<li>`, which silently dropped any pledge whose first item
+  // happened to be an Insurance or a Digital Download row (basically
+  // every Game Package). We now iterate the nested `div.item`
+  // elements directly and keep only the ones tagged `kind: Ship` or
+  // `kind: Vehicle`.
+  const items = document.querySelectorAll('div.item');
+  for (const item of Array.from(items)) {
+    // Both selectors below walk from `item` downwards. RSI's markup
+    // nests the text block either directly (`.item > .title`, seen in
+    // the "Also Contains" section) or inside a `.text` wrapper
+    // (`.item > .text > .title`, the default). `querySelector` takes
+    // the first match in document order in either case.
+    const kindEl = item.querySelector('.kind');
     const kind = (kindEl?.textContent ?? '').trim().toLowerCase();
-    const grinMatch = li.querySelector('.liner > span');
-    const grinText = (grinMatch?.textContent ?? '').trim();
-
-    // Short-circuit on known non-ship kinds even if they contain
-    // "ship" as a substring (e.g. "Ship Paint").
-    if (NON_SHIP_KIND_PATTERNS.some((p) => kind.includes(p))) continue;
-
-    // Accept ships AND ground vehicles. The ship-matrix treats both
-    // under the same umbrella (a Greycat PTV sits alongside an Aurora
-    // MR in `/ship-matrix/index`), and the user's hangar expects to
-    // see both here. Reported by @DAVosselman: his PTV was dropped
-    // because its kind is "Vehicle" — not "Ship" — and it happened
-    // not to carry a GRIN liner that would have caught it earlier.
-    if (
-      kind.includes('ship') ||
-      kind.includes('vehicle') ||
-      grinText === 'GRIN'
-    ) {
-      const titleEl = li.querySelector('.title');
-      const title = (titleEl?.textContent ?? '').trim();
-      if (title) names.push(title);
-    }
+    if (!SHIP_ITEM_KINDS.has(kind)) continue;
+    const titleEl = item.querySelector('.title');
+    const title = (titleEl?.textContent ?? '').trim();
+    if (title) names.push(title);
   }
 
   let maxPage = 1;
@@ -165,25 +145,39 @@ export function parseHangarPage(html: string): HangarPageResult {
   return { names, maxPage };
 }
 
+// Product types we crawl. The RSI hangar bundles EVERY kind of pledge
+// item under /account/pledges by default — standalone ships, game
+// packages, upgrades, paints, flair, components, weapons, hangar
+// decorations. Using the `product-type` filter gives us server-side
+// separation so we only ever parse pages that are supposed to contain
+// ships. Packages specifically matter because a package pledge row
+// nests the ships it contains (e.g. "UEE Exploration 2948 Pack" =
+// Carrack Expedition + Sabre Comet + Freelancer MIS + Prowler +
+// Vulture) — those would otherwise never appear on the standalone-ship
+// listing.
+const HANGAR_PRODUCT_TYPES = ['standalone_ship', 'game_package'] as const;
+
 export async function fetchHangar(): Promise<string[]> {
   const names: string[] = [];
-  let page = 1;
 
-  while (true) {
-    const url = `${RSI_BASE_URL}/account/pledges?page=${page}&pagesize=10`;
-    const response = await fetchWithTimeout(url, {
-      method: 'GET',
-      credentials: 'include',
-    });
-    assertRsiOk(response, `hangar page ${page}`);
-    assertRsiNotRedirectedToLogin(response);
-    const html = await response.text();
-    assertRsiHtmlNotLogin(html);
-    const { names: pageNames, maxPage } = parseHangarPage(html);
-    names.push(...pageNames);
-    if (page >= maxPage) break;
-    page += 1;
-    if (page > 50) break; // safety cap
+  for (const productType of HANGAR_PRODUCT_TYPES) {
+    let page = 1;
+    while (true) {
+      const url = `${RSI_BASE_URL}/account/pledges?page=${page}&product-type=${productType}`;
+      const response = await fetchWithTimeout(url, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      assertRsiOk(response, `hangar ${productType} page ${page}`);
+      assertRsiNotRedirectedToLogin(response);
+      const html = await response.text();
+      assertRsiHtmlNotLogin(html);
+      const { names: pageNames, maxPage } = parseHangarPage(html);
+      names.push(...pageNames);
+      if (page >= maxPage) break;
+      page += 1;
+      if (page > 50) break; // safety cap
+    }
   }
 
   return names;
