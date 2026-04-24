@@ -262,16 +262,24 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
   // from hangar names at lookup time, covering the opposite asymmetry.
   const allPrefixes = new Set<string>();
   for (const entry of matrix) {
+    // RSI occasionally ships matrix entries with stray whitespace around
+    // the name (seen in the wild: `"C8X Pisces Expedition "` with a
+    // trailing space — reported by @DAVosselman on 2026-04-24 when the
+    // exact-match lookup failed against the hangar-side trimmed form).
+    // Normalise once here so every downstream index sees a clean key
+    // and the UI doesn't display stray whitespace either.
+    const normalizedName = entry.name.trim();
     const ship: Ship = {
       ...entry,
-      sortedName: `${entry.manufacturer.name} - ${entry.name}`.toLowerCase(),
+      name: normalizedName,
+      sortedName: `${entry.manufacturer.name} - ${normalizedName}`.toLowerCase(),
       owned: ccuMode ? ccuOwnedIds!.has(entry.id) : false,
       count: 0,
       loaner: false,
       image: resolveImage(entry),
     };
     byId.set(entry.id, ship);
-    byName.set(entry.name, ship);
+    byName.set(normalizedName, ship);
 
     // Extra index: same ship keyed by its name minus the manufacturer
     // prefix. "Crusader Mercury Star Runner" also lives under
@@ -280,7 +288,7 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
     // start with a prefix — then this entry is its own canonical form.
     const prefixes = manufacturerPrefixes(entry.manufacturer);
     for (const p of prefixes) allPrefixes.add(p);
-    const stripped = stripPrefix(entry.name, prefixes);
+    const stripped = stripPrefix(normalizedName, prefixes);
     // Only register stripped variants when they don't already clash
     // with another ship's canonical name — prevents a stripped
     // "Outland Mustang" from shadowing a real "Mustang" entry.

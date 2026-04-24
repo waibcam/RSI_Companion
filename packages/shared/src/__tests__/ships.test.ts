@@ -152,6 +152,27 @@ describe('mergeHangarIntoMatrix', () => {
     const titan = out.ships.find((s) => s.id === 1)!;
     expect(titan.loaner).toBe(true);
   });
+
+  it('matches when the matrix entry name has stray trailing whitespace', () => {
+    // Reported on 2026-04-24: @DAVosselman's "C8X Pisces Expedition"
+    // pledge appeared as "unknown" even though the matrix had the
+    // ship. Turned out the matrix entry came back as
+    // "C8X Pisces Expedition " with a trailing space — string-strict
+    // byName lookup failed. The mapper now trims matrix names at the
+    // indexing step.
+    const out = mergeHangarIntoMatrix({
+      matrix: [entry(42, 'C8X Pisces Expedition ')], // note the trailing space
+      hangarNames: ['C8X Pisces Expedition'],
+      nameCatalog: [],
+      loanerTable: {},
+    });
+    const pisces = out.ships.find((s) => s.id === 42)!;
+    expect(pisces.owned).toBe(true);
+    expect(pisces.count).toBe(1);
+    expect(out.notFound).toEqual([]);
+    // Trimmed name flows through to the UI too.
+    expect(pisces.name).toBe('C8X Pisces Expedition');
+  });
 });
 
 // parseHangarPage is the raw RSI HTML scraper. A pledge row in RSI's
