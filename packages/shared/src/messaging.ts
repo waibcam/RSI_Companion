@@ -127,6 +127,26 @@ export interface ContactsActionResponsePayload {
   ok: true;
 }
 
+/** Send a contact request to an RSI handle when only the nickname is
+ *  known — the Orgs module scrapes member rows from HTML which doesn't
+ *  expose the numeric member id that the friend-request endpoint
+ *  needs. The background handler does a two-step resolve:
+ *    1. `searchMembers(nickname)` → MemberHit[]
+ *    2. exact-match on nickname (case-insensitive) → MemberHit.id
+ *    3. `sendFriendRequest(id)`
+ *  Returns `sent: false` with a reason when the lookup doesn't find a
+ *  match (very rare — member hidden their profile since the scrape,
+ *  typo in the nickname) so the UI can surface a useful error. */
+export interface ContactsSendByNicknameRequest {
+  type: 'contacts.sendByNickname';
+  nickname: string;
+}
+export interface ContactsSendByNicknameResponsePayload {
+  sent: boolean;
+  /** Present when `sent: false`. */
+  reason?: 'not_found';
+}
+
 export interface OrgsRequest {
   type: 'orgs.myList';
   force?: boolean;
@@ -830,6 +850,7 @@ export type RsiMessage =
   | ContactsRequest
   | ContactsSearchRequest
   | ContactsActionRequest
+  | ContactsSendByNicknameRequest
   | OrgsRequest
   | OrgsInvitationsRequest
   | OrgsApplicationsRequest
@@ -892,6 +913,7 @@ interface ResponseMap {
   'contacts.list': ContactsResponsePayload;
   'contacts.search': ContactsSearchResponsePayload;
   'contacts.action': ContactsActionResponsePayload;
+  'contacts.sendByNickname': ContactsSendByNicknameResponsePayload;
   'orgs.myList': OrgsResponsePayload;
   'orgs.invitations': OrgsInvitationsResponsePayload;
   'orgs.applications': OrgsApplicationsResponsePayload;

@@ -3,6 +3,7 @@
   import {
     AlertTriangle,
     Building2,
+    Check,
     ChevronRight,
     Database,
     ExternalLink,
@@ -12,6 +13,7 @@
     RefreshCw,
     Send,
     User,
+    UserPlus,
     Users,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
@@ -166,6 +168,59 @@
 
   function refreshMembers(sid: string) {
     void loadMembers(sid, true);
+  }
+
+  // Per-nickname state for the "Add contact" button on each member row.
+  // Keyed by lowercased nickname so capitalisation drift between the
+  // org scrape and the autocomplete lookup doesn't split state. The row
+  // only has a nickname (no numeric member_id), so the background
+  // handler resolves nickname → id via Spectrum's autocomplete before
+  // firing the friend-request POST.
+  type AddState =
+    | { status: 'idle' }
+    | { status: 'sending' }
+    | { status: 'sent' }
+    | { status: 'error'; message: string };
+  let addStates = $state<Record<string, AddState>>({});
+
+  function addStateOf(nickname: string): AddState {
+    return addStates[nickname.toLowerCase()] ?? { status: 'idle' };
+  }
+
+  async function sendContactRequest(nickname: string) {
+    const key = nickname.toLowerCase();
+    // Guard against double-clicks while a request is already in flight
+    // or already resolved for this session.
+    const current = addStates[key];
+    if (current && current.status !== 'idle' && current.status !== 'error') {
+      return;
+    }
+    addStates = { ...addStates, [key]: { status: 'sending' } };
+    try {
+      const res = await sendRsiMessage({
+        type: 'contacts.sendByNickname',
+        nickname,
+      });
+      if (res.sent) {
+        addStates = { ...addStates, [key]: { status: 'sent' } };
+      } else {
+        addStates = {
+          ...addStates,
+          [key]: {
+            status: 'error',
+            message:
+              res.reason === 'not_found'
+                ? 'RSI could not find this handle (member may have hidden their profile).'
+                : 'Unknown error.',
+          },
+        };
+      }
+    } catch (e) {
+      addStates = {
+        ...addStates,
+        [key]: { status: 'error', message: errorMessage(e) },
+      };
+    }
   }
 
   function switchTab(next: Tab) {
@@ -440,12 +495,15 @@
                     {:else}
                       <ul class="grid grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4 4xl:grid-cols-5">
                         {#each state.members as m (m.nickname)}
-                          <li>
+                          {@const add = addStateOf(m.nickname)}
+                          <li
+                            class="flex items-center gap-1 rounded bg-slate-900/60 pr-1 ring-1 ring-inset ring-slate-800 transition hover:ring-sky-600"
+                          >
                             <a
                               href={m.profileUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              class="flex items-center gap-2 rounded bg-slate-900/60 p-1.5 ring-1 ring-inset ring-slate-800 transition hover:ring-sky-600"
+                              class="flex min-w-0 flex-1 items-center gap-2 rounded p-1.5"
                             >
                               <div
                                 class="size-8 shrink-0 overflow-hidden rounded-full bg-slate-950 ring-1 ring-slate-800"
@@ -490,6 +548,41 @@
                                 {/if}
                               </div>
                             </a>
+                            <!-- Add-contact button. Separate from the
+                                 anchor so the click doesn't open the
+                                 profile in a new tab. Disabled once a
+                                 request has been sent this session so
+                                 the user can't spam the RSI endpoint. -->
+                            <button
+                              type="button"
+                              onclick={() => void sendContactRequest(m.nickname)}
+                              disabled={add.status === 'sending' ||
+                                add.status === 'sent'}
+                              title={add.status === 'sent'
+                                ? 'Contact request sent'
+                                : add.status === 'sending'
+                                  ? 'Sending…'
+                                  : add.status === 'error'
+                                    ? `Retry — ${add.message}`
+                                    : 'Send contact request'}
+                              aria-label="Send contact request"
+                              class="shrink-0 rounded p-1.5 text-slate-500 transition hover:bg-slate-800 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-60 {add.status ===
+                              'error'
+                                ? 'text-rose-400 hover:text-rose-300'
+                                : ''} {add.status === 'sent'
+                                ? 'text-emerald-400 hover:bg-transparent hover:text-emerald-400'
+                                : ''}"
+                            >
+                              {#if add.status === 'sending'}
+                                <Loader2 class="size-3.5 animate-spin" />
+                              {:else if add.status === 'sent'}
+                                <Check class="size-3.5" />
+                              {:else if add.status === 'error'}
+                                <AlertTriangle class="size-3.5" />
+                              {:else}
+                                <UserPlus class="size-3.5" />
+                              {/if}
+                            </button>
                           </li>
                         {/each}
                       </ul>

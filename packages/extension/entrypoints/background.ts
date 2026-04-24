@@ -553,6 +553,22 @@ async function handleContactsSearch(query: string) {
   return { hits };
 }
 
+// Two-step resolver used by the Orgs module (member rows it scrapes from
+// HTML only carry the nickname, not the numeric member id the friend-
+// request endpoint needs). Goes through the same autocomplete endpoint
+// the Contacts search box uses, then matches case-insensitively — RSI
+// handles aren't case-sensitive so "DeusMaximus" must equal "deusmaximus".
+async function handleContactsSendByNickname(nickname: string) {
+  const normalized = nickname.trim();
+  if (!normalized) return { sent: false, reason: 'not_found' as const };
+  const hits = await Rsi.searchMembers(normalized);
+  const needle = normalized.toLowerCase();
+  const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
+  if (!exact) return { sent: false, reason: 'not_found' as const };
+  await Rsi.sendFriendRequest(exact.id);
+  return { sent: true };
+}
+
 async function handleContactsAction(
   action: 'accept' | 'decline' | 'cancel' | 'send' | 'remove',
   id: number,
@@ -2232,6 +2248,8 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleContactsSearch(message.query) };
       case 'contacts.action':
         return { ok: true, data: await handleContactsAction(message.action, message.id) };
+      case 'contacts.sendByNickname':
+        return { ok: true, data: await handleContactsSendByNickname(message.nickname) };
       case 'orgs.myList':
         return { ok: true, data: await handleOrgsList(message.force ?? false) };
       case 'orgs.invitations':
