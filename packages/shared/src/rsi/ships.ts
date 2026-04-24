@@ -145,39 +145,47 @@ export function parseHangarPage(html: string): HangarPageResult {
   return { names, maxPage };
 }
 
-// Product types we crawl. The RSI hangar bundles EVERY kind of pledge
-// item under /account/pledges by default — standalone ships, game
-// packages, upgrades, paints, flair, components, weapons, hangar
-// decorations. Using the `product-type` filter gives us server-side
-// separation so we only ever parse pages that are supposed to contain
-// ships. Packages specifically matter because a package pledge row
-// nests the ships it contains (e.g. "UEE Exploration 2948 Pack" =
-// Carrack Expedition + Sabre Comet + Freelancer MIS + Prowler +
-// Vulture) — those would otherwise never appear on the standalone-ship
-// listing.
-const HANGAR_PRODUCT_TYPES = ['standalone_ship', 'game_package'] as const;
-
 export async function fetchHangar(): Promise<string[]> {
+  // Scrape the unfiltered "All" view of the hangar rather than the
+  // per-product-type filtered URLs. Reason: legacy referral-ladder
+  // rewards (reported by @DAVosselman on 2026-04-24: "Surf and Turf"
+  // containing a PTV, "Gladius and Gold" containing an F7A Hornet
+  // Mk II) have NO product_type classification on the server side —
+  // they only show up under the default "All" view. Filtering by
+  // product-type caused those pledges (and their ships) to be
+  // silently dropped.
+  //
+  // Safety against the original reason we added the filter in the
+  // first place (paints / tools / flair slipping through) is now the
+  // per-\`div.item\` `kind` check in parseHangarPage: only items with
+  // kind="Ship" or kind="Vehicle" are kept, so paint/component/
+  // subscriber-flair pledges are harmless even when they live in the
+  // same page we're walking.
+  //
+  // Known edge case this trades: the "upgrade" product-type carries
+  // unapplied CCUs whose rows list the target ship. A user sitting
+  // on pending CCUs will count those targets as owned here. Applied
+  // CCUs don't show as separate rows (the original pledge morphs
+  // into the upgraded ship), so most users aren't affected. If
+  // anyone reports phantom ownership we'll revisit.
   const names: string[] = [];
 
-  for (const productType of HANGAR_PRODUCT_TYPES) {
-    let page = 1;
-    while (true) {
-      const url = `${RSI_BASE_URL}/account/pledges?page=${page}&product-type=${productType}`;
-      const response = await fetchWithTimeout(url, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      assertRsiOk(response, `hangar ${productType} page ${page}`);
-      assertRsiNotRedirectedToLogin(response);
-      const html = await response.text();
-      assertRsiHtmlNotLogin(html);
-      const { names: pageNames, maxPage } = parseHangarPage(html);
-      names.push(...pageNames);
-      if (page >= maxPage) break;
-      page += 1;
-      if (page > 50) break; // safety cap
-    }
+  let page = 1;
+  while (true) {
+    const url = `${RSI_BASE_URL}/account/pledges?page=${page}`;
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      credentials: 'include',
+    });
+    assertRsiOk(response, `hangar page ${page}`);
+    assertRsiNotRedirectedToLogin(response);
+    const html = await response.text();
+    assertRsiHtmlNotLogin(html);
+    const { names: pageNames, maxPage } = parseHangarPage(html);
+    names.push(...pageNames);
+    if (page >= maxPage) break;
+    page += 1;
+    if (page > 50) break; // safety cap
   }
 
   return names;
