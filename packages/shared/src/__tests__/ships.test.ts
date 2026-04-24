@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeHangarIntoMatrix } from '../rsi/ships.js';
+import { mergeHangarIntoMatrix, parseHangarPage } from '../rsi/ships.js';
 import type { ShipMatrixEntry } from '../rsi/ships.js';
 
 // mergeHangarIntoMatrix is the core correctness boundary for the Ships module:
@@ -151,5 +151,89 @@ describe('mergeHangarIntoMatrix', () => {
     // The good id still took effect, the bad one was silently dropped.
     const titan = out.ships.find((s) => s.id === 1)!;
     expect(titan.loaner).toBe(true);
+  });
+});
+
+// parseHangarPage is the raw RSI HTML scraper. It has to distinguish
+// ship rows (which we try to reconcile against the ship matrix) from
+// the ever-growing pile of non-ship pledge items the hangar surfaces
+// — paints, components, tools, subscriber flair, etc. — so that those
+// never land in the "unknown ships" report.
+describe('parseHangarPage', () => {
+  const row = ({
+    title,
+    kind = '',
+    liner = '',
+  }: {
+    title: string;
+    kind?: string;
+    liner?: string;
+  }): string => `
+    <li>
+      <div class="title">${title}</div>
+      <div class="kind">${kind}</div>
+      <div class="liner"><span>${liner}</span></div>
+    </li>
+  `;
+
+  const page = (rows: string[]): string => `
+    <html><body>
+      <ul class="list-items">
+        ${rows.join('\n')}
+      </ul>
+    </body></html>
+  `;
+
+  it('accepts standard ship rows', () => {
+    const html = page([
+      row({ title: 'Gladius', kind: 'Ship' }),
+      row({ title: 'Aurora MR', kind: 'Ship' }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual(['Gladius', 'Aurora MR']);
+  });
+
+  it('accepts GRIN-liner rows even when the kind is empty', () => {
+    const html = page([row({ title: 'Polaris', kind: '', liner: 'GRIN' })]);
+    expect(parseHangarPage(html).names).toEqual(['Polaris']);
+  });
+
+  it('rejects non-ship pledge items that RSI tags with a ship-adjacent kind', () => {
+    // These three strings were literally reported on Twitter by
+    // @DAVosselman — they surfaced as "unknown ships" because the
+    // old `kind.includes('ship')` check matched "Ship Paint" and
+    // similar labels. The deny-list now drops them cleanly.
+    const html = page([
+      row({ title: 'STV - Blue Steel Paint', kind: 'Ship Paint' }),
+      row({
+        title: 'MaxLift AA Transport Tractor Beam',
+        kind: 'Tractor Beam',
+      }),
+      row({
+        title: 'Pyro RYT "Black Cherry" Multi-Tool',
+        kind: 'Multi-Tool',
+      }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual([]);
+  });
+
+  it('does not let a deny-listed kind hide a real ship in the same page', () => {
+    // Defensive: one non-ship row in the middle shouldn't cause the
+    // scraper to skip the surrounding ship rows — the `continue`
+    // branch for deny-listed kinds must affect only that iteration.
+    const html = page([
+      row({ title: 'Gladius', kind: 'Ship' }),
+      row({ title: 'Blue Paint', kind: 'Ship Paint' }),
+      row({ title: 'Aurora MR', kind: 'Ship' }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual(['Gladius', 'Aurora MR']);
+  });
+
+  it('catches subscriber flair and component-type deny-list entries', () => {
+    const html = page([
+      row({ title: 'Golden Ticket', kind: 'Subscriber Item' }),
+      row({ title: 'Behring M7A Laser Cannon', kind: 'Ship Component' }),
+      row({ title: 'Behring Shield', kind: 'Ship Module' }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual([]);
   });
 });

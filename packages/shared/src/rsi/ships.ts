@@ -89,12 +89,42 @@ export async function fetchShipMatrix(): Promise<ShipMatrixEntry[]> {
   return parsed.data.data;
 }
 
-interface HangarPageResult {
+/** @internal Exposed alongside `parseHangarPage` for its unit tests. */
+export interface HangarPageResult {
   names: string[];
   maxPage: number;
 }
 
-function parseHangarPage(html: string): HangarPageResult {
+// Substrings that unambiguously identify a non-ship hangar row. RSI
+// surfaces a mix of non-ship pledge items in the hangar — paints,
+// components, tractor beams, multi-tools, etc. — and some of them
+// carry a `kind` string that contains "ship" (e.g. "Ship Paint",
+// "Ship Component") which would slip past the `includes('ship')`
+// acceptance check below. Deny them outright first.
+//
+// Reported on Twitter by @DAVosselman: three "unknown" entries in his
+// hangar turned out to be a ship paint, a vehicle tractor beam and a
+// multi-tool — none of which we should have tried to match against the
+// ship matrix in the first place.
+const NON_SHIP_KIND_PATTERNS: readonly string[] = [
+  'paint',
+  'skin',
+  'livery',
+  'component',
+  'module',
+  'weapon',
+  'multi-tool',
+  'multitool',
+  'tool',
+  'tractor beam',
+  'subscription',
+  'subscriber',
+  'flair',
+  'decoration',
+];
+
+/** @internal Exposed solely for the parseHangarPage unit tests. */
+export function parseHangarPage(html: string): HangarPageResult {
   const { document } = parseHTML(html);
   const names: string[] = [];
 
@@ -104,6 +134,10 @@ function parseHangarPage(html: string): HangarPageResult {
     const kind = (kindEl?.textContent ?? '').trim().toLowerCase();
     const grinMatch = li.querySelector('.liner > span');
     const grinText = (grinMatch?.textContent ?? '').trim();
+
+    // Short-circuit on known non-ship kinds even if they contain
+    // "ship" as a substring (e.g. "Ship Paint").
+    if (NON_SHIP_KIND_PATTERNS.some((p) => kind.includes(p))) continue;
 
     if (kind.includes('ship') || grinText === 'GRIN') {
       const titleEl = li.querySelector('.title');
