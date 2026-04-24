@@ -1,6 +1,6 @@
 {
   "name": "rsi-companion",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "Browser extension for robertsspaceindustries.com — first stable release (full rebuild, third-generation codebase)",
   "license": "GPL-3.0-only",
