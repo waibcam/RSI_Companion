@@ -13,7 +13,12 @@
 // resolve from the same call.
 
 import { z } from 'zod';
-import { RSI_BASE_URL, RSI_COOKIE_LIVE } from '../constants.js';
+import {
+  RSI_BASE_URL,
+  RSI_COOKIE_LIVE,
+  RSI_COOKIE_PTU,
+  RSI_PTU_BASE_URL,
+} from '../constants.js';
 import { fetchWithTimeout } from '../net.js';
 
 export const RsiIdentity = z.object({
@@ -467,6 +472,60 @@ export async function identifyRsi(
 
 export async function requireToken(): Promise<string> {
   const token = await readRsiToken();
+  if (!token) throw new RsiNotAuthenticatedError();
+  return token;
+}
+
+// --- PTU parallel helpers -------------------------------------------------
+//
+// The PTU (Public Test Universe) site is a separate deployment at
+// ptu.cloudimperiumgames.com with its own `Rsi-PTU-Token` cookie and
+// `x-rsi-ptu-token` header. Its spectrum API mirrors the LIVE paths
+// 1:1 — identify, search, friend-request/create all accept identical
+// payloads. Kept as standalone functions (vs. adding an `env` param to
+// readRsiToken / identifyFull / etc.) so the many LIVE call sites don't
+// need to change and the PTU-only code path stays opt-in.
+//
+// Unlike the LIVE helpers there's no caching here — PTU contact sync
+// is a rare, user-triggered action, so fetching fresh state every
+// time is correct and simpler.
+
+export async function readPtuToken(): Promise<string | null> {
+  const cookie = await chrome.cookies.get({
+    url: RSI_PTU_BASE_URL,
+    name: RSI_COOKIE_PTU,
+  });
+  return cookie?.value ?? null;
+}
+
+export async function identifyPtu(): Promise<IdentifyData | null> {
+  const token = await readPtuToken();
+  if (!token) return null;
+  const response = await fetchWithTimeout(`${RSI_PTU_BASE_URL}/api/spectrum/auth/identify`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-rsi-ptu-token': token,
+      'x-tavern-id': token,
+    },
+    body: JSON.stringify({}),
+  });
+  if (response.status === 401 || response.status === 403) return null;
+  if (!response.ok) {
+    throw new Error(`PTU identify returned ${response.status}`);
+  }
+  const raw = (await response.json()) as unknown;
+  const parsed = IdentifyResponse.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`PTU identify response invalid: ${parsed.error.message}`);
+  }
+  if (parsed.data.success !== 1 || !parsed.data.data) return null;
+  return parsed.data.data;
+}
+
+export async function requirePtuToken(): Promise<string> {
+  const token = await readPtuToken();
   if (!token) throw new RsiNotAuthenticatedError();
   return token;
 }

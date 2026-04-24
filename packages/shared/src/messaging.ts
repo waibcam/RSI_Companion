@@ -147,6 +147,42 @@ export interface ContactsSendByNicknameResponsePayload {
   reason?: 'not_found';
 }
 
+/** Mirror the signed-in LIVE friend list onto the PTU account by
+ *  sending friend-requests for anyone missing on PTU. The handler does
+ *  the whole diff + fan-out in one call:
+ *    1. Read LIVE friends (from the cached identify).
+ *    2. Fetch PTU friends + pending requests fresh.
+ *    3. For each LIVE friend absent from PTU (and not already pending):
+ *         a. PTU member autocomplete on the nickname.
+ *         b. If an exact-match hit exists, send a PTU friend-request.
+ *    4. Return a per-row summary so the popup can render a log + totals.
+ *  `signedIn` short-circuits the two common failure modes (no LIVE
+ *  cookie → live: false, no PTU cookie → ptu: false) so the UI can
+ *  direct the user to sign in on the right site before retrying. */
+export interface ContactsSyncToPtuRequest {
+  type: 'contacts.syncToPtu';
+}
+export interface ContactsSyncToPtuEntry {
+  nickname: string;
+  displayName: string;
+  avatar: string;
+  status: 'added' | 'alreadyFriend' | 'alreadyPending' | 'notFound' | 'error';
+  /** Present when status is 'error' — short explanation for the log row. */
+  error?: string;
+}
+export interface ContactsSyncToPtuResponsePayload {
+  signedIn: { live: boolean; ptu: boolean };
+  /** Absent when either side is not signed in. */
+  entries?: ContactsSyncToPtuEntry[];
+  counts?: {
+    added: number;
+    alreadyFriend: number;
+    alreadyPending: number;
+    notFound: number;
+    error: number;
+  };
+}
+
 export interface OrgsRequest {
   type: 'orgs.myList';
   force?: boolean;
@@ -851,6 +887,7 @@ export type RsiMessage =
   | ContactsSearchRequest
   | ContactsActionRequest
   | ContactsSendByNicknameRequest
+  | ContactsSyncToPtuRequest
   | OrgsRequest
   | OrgsInvitationsRequest
   | OrgsApplicationsRequest
@@ -914,6 +951,7 @@ interface ResponseMap {
   'contacts.search': ContactsSearchResponsePayload;
   'contacts.action': ContactsActionResponsePayload;
   'contacts.sendByNickname': ContactsSendByNicknameResponsePayload;
+  'contacts.syncToPtu': ContactsSyncToPtuResponsePayload;
   'orgs.myList': OrgsResponsePayload;
   'orgs.invitations': OrgsInvitationsResponsePayload;
   'orgs.applications': OrgsApplicationsResponsePayload;

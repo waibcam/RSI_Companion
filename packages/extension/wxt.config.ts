@@ -17,6 +17,13 @@ export default defineConfig({
     host_permissions: [
       'https://robertsspaceindustries.com/*',
       'https://status.robertsspaceindustries.com/*',
+      // PTU (public test universe) spectrum — used exclusively by the
+      // opt-in "Sync LIVE → PTU" contacts workflow in the Contacts
+      // module. The PTU social graph is a separate database from LIVE,
+      // so users who want their LIVE friends on PTU have to mirror
+      // manually. Contacted only when the user clicks the sync button;
+      // same endpoints as LIVE, different host and cookie name.
+      'https://ptu.cloudimperiumgames.com/*',
     ],
     // Firefox-specific metadata. `id` lets AMO track the extension across
     // updates without the store-assigned id; `data_collection_permissions`

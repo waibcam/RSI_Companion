@@ -9,9 +9,16 @@
 // require the RSI-Token on both x-rsi-token and x-tavern-id headers.
 
 import { z } from 'zod';
-import { RSI_BASE_URL } from '../constants.js';
+import { RSI_BASE_URL, RSI_PTU_BASE_URL } from '../constants.js';
 import { fetchWithTimeout } from '../net.js';
-import { assertRsiOk, identifyFull, requireToken, RsiNotAuthenticatedError } from './auth.js';
+import {
+  assertRsiOk,
+  identifyFull,
+  identifyPtu,
+  requirePtuToken,
+  requireToken,
+  RsiNotAuthenticatedError,
+} from './auth.js';
 
 export const Contact = z.object({
   nickname: z.string(),
@@ -171,4 +178,93 @@ export function sendFriendRequest(memberId: number): Promise<void> {
 
 export function removeFriend(memberId: number): Promise<void> {
   return spectrumAction('/api/spectrum/friend/remove', { member_id: memberId });
+}
+
+// --- PTU parallel helpers -------------------------------------------------
+//
+// PTU spectrum mirrors LIVE's endpoints 1:1 — only the base URL,
+// cookie name and token header change. These functions duplicate the
+// LIVE helpers with PTU plumbing so the "Sync LIVE → PTU" workflow can
+// read PTU state and fire PTU friend-requests without leaking an `env`
+// parameter through every LIVE call site.
+
+async function ptuSpectrumPost<T>(path: string, body: unknown): Promise<T> {
+  const token = await requirePtuToken();
+  const response = await fetchWithTimeout(`${RSI_PTU_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-rsi-ptu-token': token,
+      'x-tavern-id': token,
+    },
+    body: JSON.stringify(body),
+  });
+  assertRsiOk(response, `PTU ${path}`);
+  return (await response.json()) as T;
+}
+
+async function ptuSpectrumAction(path: string, body: unknown): Promise<void> {
+  const raw = await ptuSpectrumPost<unknown>(path, body);
+  const parsed = SuccessResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    throw new Error(parsed.success ? parsed.data.msg || `${path} failed` : 'invalid response');
+  }
+}
+
+export async function fetchPtuContactsBundle(): Promise<ContactsBundle> {
+  const data = await identifyPtu();
+  if (!data) throw new RsiNotAuthenticatedError();
+
+  const contacts: Contact[] = [];
+  for (const f of data.friends ?? []) {
+    if (!f.nickname) continue;
+    contacts.push({
+      nickname: f.nickname,
+      displayname: f.displayname ?? '',
+      avatar: f.avatar ?? '',
+    });
+  }
+
+  const incoming: ContactRequest[] = [];
+  const outgoing: ContactRequest[] = [];
+  for (const r of data.friend_requests ?? []) {
+    const member = r.member;
+    if (!member?.nickname) continue;
+    const req: ContactRequest = {
+      id: r.id,
+      direction: r.type === 'out' ? 'out' : 'in',
+      nickname: member.nickname,
+      displayname: member.displayname ?? '',
+      avatar: member.avatar ?? '',
+    };
+    if (req.direction === 'out') outgoing.push(req);
+    else incoming.push(req);
+  }
+
+  return { contacts, incoming, outgoing };
+}
+
+export async function searchPtuMembers(query: string): Promise<MemberHit[]> {
+  const text = query.trim();
+  if (text.length < 2) return [];
+  const raw = await ptuSpectrumPost<unknown>('/api/spectrum/search/member/autocomplete', {
+    community_id: null,
+    ignore_self: true,
+    text,
+  });
+  const parsed = MemberAutocompleteResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) return [];
+  return (parsed.data.data ?? []).map((m) => ({
+    id: m.id,
+    nickname: m.nickname,
+    displayname: m.displayname ?? '',
+    avatar: m.avatar ?? '',
+  }));
+}
+
+export function sendPtuFriendRequest(memberId: number): Promise<void> {
+  return ptuSpectrumAction('/api/spectrum/friend-request/create', {
+    member_id: memberId,
+  });
 }

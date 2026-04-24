@@ -24,6 +24,8 @@ import {
   SHIP_NAME_CATALOG,
   fetchWithTimeout,
   log,
+  type ContactsSyncToPtuEntry,
+  type ContactsSyncToPtuResponsePayload,
   type RsiMessage,
   type RsiMessageResult,
 } from '@rsi-companion/shared';
@@ -567,6 +569,120 @@ async function handleContactsSendByNickname(nickname: string) {
   if (!exact) return { sent: false, reason: 'not_found' as const };
   await Rsi.sendFriendRequest(exact.id);
   return { sent: true };
+}
+
+// Sync LIVE → PTU. Fans out up to N friend requests against the PTU
+// spectrum API; uses a small concurrency window to keep the wall-clock
+// reasonable without DDOSing the endpoint (5 parallel searches + sends
+// runs ~50 contacts in under 10s in practice).
+const PTU_SYNC_CONCURRENCY = 5;
+
+async function handleContactsSyncToPtu(): Promise<
+  ContactsSyncToPtuResponsePayload
+> {
+  // Step 0 — check both sessions up front so the UI can direct the
+  // user to the right sign-in page instead of surfacing a generic
+  // "not authenticated" error.
+  const liveToken = await Rsi.readRsiToken();
+  const ptuToken = await Rsi.readPtuToken();
+  const signedIn = { live: liveToken !== null, ptu: ptuToken !== null };
+  if (!signedIn.live || !signedIn.ptu) return { signedIn };
+
+  // Step 1 — read both friend lists + PTU pending.
+  const [liveBundle, ptuBundle] = await Promise.all([
+    Rsi.fetchContactsBundle(),
+    Rsi.fetchPtuContactsBundle(),
+  ]);
+  // Lowercased lookup sets: RSI handles are case-insensitive, so match
+  // on `lowercased(nickname)` to avoid missing an already-added friend
+  // just because the display capitalisation differs.
+  const ptuFriends = new Set(ptuBundle.contacts.map((c) => c.nickname.toLowerCase()));
+  const ptuOutgoing = new Set(
+    ptuBundle.outgoing.map((r) => r.nickname.toLowerCase()),
+  );
+
+  // Step 2 — classify each LIVE friend.
+  type Pending = {
+    nickname: string;
+    displayName: string;
+    avatar: string;
+  };
+  const entries: ContactsSyncToPtuEntry[] = [];
+  const toAdd: Pending[] = [];
+  for (const f of liveBundle.contacts) {
+    const nick = f.nickname.toLowerCase();
+    const base = {
+      nickname: f.nickname,
+      displayName: f.displayname || f.nickname,
+      avatar: f.avatar || '',
+    };
+    if (ptuFriends.has(nick)) {
+      entries.push({ ...base, status: 'alreadyFriend' });
+    } else if (ptuOutgoing.has(nick)) {
+      entries.push({ ...base, status: 'alreadyPending' });
+    } else {
+      toAdd.push(base);
+    }
+  }
+
+  // Step 3 — for each LIVE friend missing on PTU, autocomplete the
+  // nickname on PTU to resolve its member id, then fire the friend
+  // request. Bounded concurrency so a 100-friend list doesn't launch
+  // 200 simultaneous requests.
+  async function addOne(p: Pending): Promise<ContactsSyncToPtuEntry> {
+    try {
+      const hits = await Rsi.searchPtuMembers(p.nickname);
+      const needle = p.nickname.toLowerCase();
+      const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
+      if (!exact) return { ...p, status: 'notFound' };
+      await Rsi.sendPtuFriendRequest(exact.id);
+      return { ...p, status: 'added' };
+    } catch (e) {
+      return { ...p, status: 'error', error: (e as Error).message ?? 'unknown' };
+    }
+  }
+
+  // Simple fixed-pool concurrency — pull work off a shared queue index.
+  let cursor = 0;
+  const workers: Promise<void>[] = [];
+  const addedEntries: ContactsSyncToPtuEntry[] = [];
+  for (let i = 0; i < Math.min(PTU_SYNC_CONCURRENCY, toAdd.length); i++) {
+    workers.push(
+      (async () => {
+        while (true) {
+          const next = cursor++;
+          if (next >= toAdd.length) return;
+          const entry = await addOne(toAdd[next]!);
+          addedEntries.push(entry);
+        }
+      })(),
+    );
+  }
+  await Promise.all(workers);
+  entries.push(...addedEntries);
+
+  // Step 4 — counts for the UI summary card. Sort entries by status →
+  // display name so the log reads "added, pending, already, notFound,
+  // error" in a stable order.
+  const statusOrder: Record<ContactsSyncToPtuEntry['status'], number> = {
+    added: 0,
+    alreadyPending: 1,
+    alreadyFriend: 2,
+    notFound: 3,
+    error: 4,
+  };
+  entries.sort((a, b) => {
+    const order = statusOrder[a.status] - statusOrder[b.status];
+    return order !== 0 ? order : a.displayName.localeCompare(b.displayName);
+  });
+  const counts = {
+    added: entries.filter((e) => e.status === 'added').length,
+    alreadyFriend: entries.filter((e) => e.status === 'alreadyFriend').length,
+    alreadyPending: entries.filter((e) => e.status === 'alreadyPending').length,
+    notFound: entries.filter((e) => e.status === 'notFound').length,
+    error: entries.filter((e) => e.status === 'error').length,
+  };
+  return { signedIn, entries, counts };
 }
 
 async function handleContactsAction(
@@ -2250,6 +2366,8 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleContactsAction(message.action, message.id) };
       case 'contacts.sendByNickname':
         return { ok: true, data: await handleContactsSendByNickname(message.nickname) };
+      case 'contacts.syncToPtu':
+        return { ok: true, data: await handleContactsSyncToPtu() };
       case 'orgs.myList':
         return { ok: true, data: await handleOrgsList(message.force ?? false) };
       case 'orgs.invitations':

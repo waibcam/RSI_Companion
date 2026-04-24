@@ -1,13 +1,24 @@
 <script lang="ts">
-  import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
+  import {
+    sendRsiMessage,
+    RSI_BASE_URL,
+    type ContactsSyncToPtuEntry,
+    type ContactsSyncToPtuResponsePayload,
+    type Rsi,
+  } from '@rsi-companion/shared';
   import {
     AlertTriangle,
     Check,
+    Clock,
+    HelpCircle,
     Loader2,
+    RefreshCw,
     Search,
+    TriangleAlert,
     UserMinus,
     UserPlus,
     UserRound,
+    Users,
     X,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
@@ -19,7 +30,9 @@
   type Contact = Rsi.Contact;
   type ContactRequest = Rsi.ContactRequest;
   type MemberHit = Rsi.MemberHit;
-  type Tab = 'all' | 'pending' | 'find';
+  type Tab = 'all' | 'pending' | 'find' | 'sync';
+  type SyncResponse = ContactsSyncToPtuResponsePayload;
+  type SyncEntry = ContactsSyncToPtuEntry;
 
   let contacts = $state<Contact[]>([]);
   let incoming = $state<ContactRequest[]>([]);
@@ -41,6 +54,77 @@
   // Per-row action state: keyed by request id or member id depending on context
   let busyId = $state<number | null>(null);
   let actionError = $state<string | null>(null);
+
+  // "Sync LIVE → PTU" workflow. Single bulk operation, fires when the
+  // user clicks the button on the Sync tab. Background handler does
+  // the diff + fan-out and returns a summary we render inline.
+  let syncing = $state(false);
+  let syncError = $state<string | null>(null);
+  let syncResult = $state<SyncResponse | null>(null);
+  let syncLogOpen = $state(false);
+
+  async function runSync() {
+    if (syncing) return;
+    syncing = true;
+    syncError = null;
+    try {
+      syncResult = await sendRsiMessage({ type: 'contacts.syncToPtu' });
+    } catch (e) {
+      syncError = errorMessage(e);
+    } finally {
+      syncing = false;
+    }
+  }
+
+  // Pre-built Tailwind class strings per status — Tailwind's JIT scanner
+  // can only extract statically-written classes, so dynamic templates
+  // like `text-${color}-400` silently generate no CSS. Keeping the full
+  // strings here is ugly but guaranteed to produce every class.
+  const SYNC_STATUS_META: Record<
+    SyncEntry['status'],
+    {
+      label: string;
+      icon: typeof Check;
+      /** Used on the totals-card status label. */
+      textClass: string;
+      /** Used on the log-row status chip. */
+      chipClass: string;
+    }
+  > = {
+    added: {
+      label: 'Added',
+      icon: Check,
+      textClass: 'text-emerald-400',
+      chipClass:
+        'bg-emerald-500/10 text-emerald-300 ring-1 ring-inset ring-emerald-500/30',
+    },
+    alreadyPending: {
+      label: 'Pending',
+      icon: Clock,
+      textClass: 'text-amber-400',
+      chipClass:
+        'bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/30',
+    },
+    alreadyFriend: {
+      label: 'Already friend',
+      icon: Users,
+      textClass: 'text-sky-400',
+      chipClass: 'bg-sky-500/10 text-sky-300 ring-1 ring-inset ring-sky-500/30',
+    },
+    notFound: {
+      label: 'No PTU account',
+      icon: HelpCircle,
+      textClass: 'text-slate-400',
+      chipClass:
+        'bg-slate-500/10 text-slate-300 ring-1 ring-inset ring-slate-500/30',
+    },
+    error: {
+      label: 'Error',
+      icon: TriangleAlert,
+      textClass: 'text-rose-400',
+      chipClass: 'bg-rose-500/10 text-rose-300 ring-1 ring-inset ring-rose-500/30',
+    },
+  };
 
   async function load(force = false) {
     loading = true;
@@ -194,7 +278,7 @@
 
   {#if signedIn}
     <div class="flex border-b border-slate-800 bg-slate-950/20 px-3 text-xs">
-      {#each [['all', `All (${contacts.length})`], ['pending', `Pending${pendingCount ? ` (${pendingCount})` : ''}`], ['find', 'Find']] as const as [id, label] (id)}
+      {#each [['all', `All (${contacts.length})`], ['pending', `Pending${pendingCount ? ` (${pendingCount})` : ''}`], ['find', 'Find'], ['sync', 'Sync to PTU']] as const as [id, label] (id)}
         <button
           type="button"
           onclick={() => (tab = id)}
@@ -473,6 +557,193 @@
             {/each}
           </ul>
         {/if}
+      {:else if tab === 'sync'}
+        <!-- Sync LIVE → PTU. The PTU social graph is a separate database
+             from LIVE — CIG resets it on each test wave and never
+             mirrors back from LIVE. This workflow copies every LIVE
+             friend that the user doesn't already have on PTU (or have
+             pending) by firing a PTU friend-request per candidate. -->
+        <div class="mx-auto flex max-w-3xl flex-col gap-3">
+          <div class="rounded-md border border-slate-800 bg-slate-900/40 p-3 text-xs text-slate-300">
+            <p class="flex items-center gap-1 font-semibold text-slate-200">
+              <RefreshCw class="size-3.5 text-sky-400" /> Sync your LIVE contacts to PTU
+            </p>
+            <p class="mt-1.5 leading-relaxed text-slate-400">
+              PTU has its own Spectrum database separate from LIVE, so
+              your friend list there doesn't carry over automatically.
+              Running this action sends a contact request from your PTU
+              account to every LIVE friend who isn't already on it.
+            </p>
+            <p class="mt-1.5 leading-relaxed text-slate-500">
+              You need to be signed in on both
+              <a
+                href="https://robertsspaceindustries.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
+                >robertsspaceindustries.com</a
+              >
+              and
+              <a
+                href="https://ptu.cloudimperiumgames.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
+                >ptu.cloudimperiumgames.com</a
+              >
+              — the extension reads each site's session cookie independently.
+            </p>
+          </div>
+
+          <div class="flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onclick={runSync}
+              disabled={syncing}
+              class="inline-flex items-center gap-1.5 rounded-md bg-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-300 ring-1 ring-sky-500/40 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {#if syncing}
+                <Loader2 class="size-3.5 animate-spin" />
+                Syncing…
+              {:else}
+                <RefreshCw class="size-3.5" />
+                {syncResult ? 'Run again' : 'Sync now'}
+              {/if}
+            </button>
+            {#if syncResult?.counts}
+              {@const c = syncResult.counts}
+              <p class="text-[11px] text-slate-500">
+                {c.added + c.alreadyFriend + c.alreadyPending + c.notFound + c.error} contacts processed
+              </p>
+            {/if}
+          </div>
+
+          {#if syncError}
+            <div class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-2.5 text-xs text-rose-200">
+              <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+              <div class="min-w-0 flex-1 break-all">
+                <p class="font-semibold">Sync failed</p>
+                <p class="mt-0.5 text-rose-300/80">{syncError}</p>
+              </div>
+            </div>
+          {/if}
+
+          {#if syncResult && !syncResult.signedIn.live}
+            <div class="flex items-start gap-2 rounded-md border border-amber-900/60 bg-amber-950/40 p-2.5 text-xs text-amber-200">
+              <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold">Not signed in on LIVE</p>
+                <p class="mt-0.5 text-amber-300/80">
+                  Sign in at
+                  <a
+                    href="https://robertsspaceindustries.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="underline decoration-amber-600 hover:decoration-amber-400"
+                    >robertsspaceindustries.com</a
+                  >
+                  first, then come back and run the sync.
+                </p>
+              </div>
+            </div>
+          {/if}
+
+          {#if syncResult && !syncResult.signedIn.ptu}
+            <div class="flex items-start gap-2 rounded-md border border-amber-900/60 bg-amber-950/40 p-2.5 text-xs text-amber-200">
+              <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold">Not signed in on PTU</p>
+                <p class="mt-0.5 text-amber-300/80">
+                  Sign in at
+                  <a
+                    href="https://ptu.cloudimperiumgames.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="underline decoration-amber-600 hover:decoration-amber-400"
+                    >ptu.cloudimperiumgames.com</a
+                  >
+                  first, then come back and run the sync.
+                </p>
+              </div>
+            </div>
+          {/if}
+
+          {#if syncResult?.counts && syncResult.entries}
+            {@const c = syncResult.counts}
+            <!-- Totals card — each status gets its own mini-card so the
+                 user can see at a glance what happened without opening
+                 the full log. -->
+            <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+              {#each [['added', c.added], ['alreadyPending', c.alreadyPending], ['alreadyFriend', c.alreadyFriend], ['notFound', c.notFound], ['error', c.error]] as const as [status, n] (status)}
+                {@const meta = SYNC_STATUS_META[status]}
+                {@const SvelteIcon = meta.icon}
+                <div
+                  class="rounded-md bg-slate-900/60 p-2 ring-1 ring-slate-800 text-center"
+                >
+                  <div
+                    class="flex items-center justify-center gap-1 text-[10px] uppercase tracking-wider {meta.textClass}"
+                  >
+                    <SvelteIcon class="size-3" />
+                    {meta.label}
+                  </div>
+                  <div class="mt-0.5 font-mono text-lg font-semibold text-slate-100">
+                    {n}
+                  </div>
+                </div>
+              {/each}
+            </div>
+
+            {#if syncResult.entries.length > 0}
+              <details
+                class="rounded-md border border-slate-800 bg-slate-900/40"
+                bind:open={syncLogOpen}
+              >
+                <summary
+                  class="cursor-pointer list-none px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200"
+                >
+                  {syncLogOpen ? '▼' : '▶'} Detailed log ({syncResult.entries.length})
+                </summary>
+                <ul class="divide-y divide-slate-800 border-t border-slate-800">
+                  {#each syncResult.entries as e (e.nickname)}
+                    {@const meta = SYNC_STATUS_META[e.status]}
+                    {@const SvelteIcon = meta.icon}
+                    <li class="flex items-center gap-2 px-3 py-1.5 text-[11px]">
+                      {#if e.avatar}
+                        <img
+                          src={avatarUrl(e.avatar) ?? ''}
+                          alt=""
+                          loading="lazy"
+                          class="size-5 shrink-0 rounded-full bg-slate-950 object-cover ring-1 ring-slate-800"
+                        />
+                      {:else}
+                        <div
+                          class="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-950 ring-1 ring-slate-800 text-slate-700"
+                        >
+                          <UserRound class="size-3" />
+                        </div>
+                      {/if}
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate text-slate-100">{e.displayName}</p>
+                        <p class="truncate text-[10px] text-slate-500">@{e.nickname}</p>
+                      </div>
+                      <span
+                        class="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider {meta.chipClass}"
+                        title={e.error}
+                      >
+                        <SvelteIcon class="size-2.5" />
+                        {meta.label}
+                      </span>
+                    </li>
+                  {/each}
+                </ul>
+              </details>
+            {:else if !syncing}
+              <p class="text-center text-[11px] italic text-slate-500">
+                No LIVE contacts to process — your friend list is empty.
+              </p>
+            {/if}
+          {/if}
+        </div>
       {/if}
     {/if}
   </div>
