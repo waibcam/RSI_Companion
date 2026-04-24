@@ -91,6 +91,13 @@ export interface ShipsResponsePayload {
   loanerIds: number[];
   ownedCount: number;
   notFound: string[];
+  /** Every ship-like name the hangar scraper extracted on this run,
+   *  before matching against the ship matrix. Used by the "Copy
+   *  hangar dump" button to produce a shareable debug snapshot —
+   *  lets maintainers see what RSI actually returned without asking
+   *  the user to type each row by hand. Empty when the user isn't
+   *  signed in (no hangar to scrape). */
+  rawHangarNames: string[];
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;

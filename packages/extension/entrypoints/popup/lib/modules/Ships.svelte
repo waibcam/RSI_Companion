@@ -2,6 +2,8 @@
   import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
   import {
     AlertTriangle,
+    Check,
+    ClipboardCopy,
     Database,
     Download,
     Loader2,
@@ -26,6 +28,13 @@
   let loanerIds = $state<number[]>([]);
   let ownedCount = $state(0);
   let notFound = $state<string[]>([]);
+  // Every ship-like name the background handler got out of the hangar
+  // scrape on the last fetch, ahead of the matrix-matching step. Only
+  // used by the "Copy hangar dump" button — it's a debug aid for users
+  // reporting that a ship is missing from the Ships module, and for the
+  // maintainer to see what RSI actually returned without asking users
+  // to type every pledge row by hand. Empty when signed out.
+  let rawHangarNames = $state<string[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let fromCache = $state(false);
@@ -65,6 +74,7 @@
       loanerIds = res.loanerIds;
       ownedCount = res.ownedCount;
       notFound = res.notFound;
+      rawHangarNames = res.rawHangarNames;
       fromCache = res.fromCache;
       // If the hangar call surfaced an auth failure even though the cookie is
       // still present, push the signed-out state up to authState so every
@@ -287,8 +297,54 @@
     window.open(DISCORD_INVITE_URL, '_blank', 'noopener,noreferrer');
   }
 
+  // Full hangar export for debugging. Dumps every name the scraper
+  // pulled out of the hangar (matched + unmatched), along with the
+  // version, timestamp and a short summary. Solves the annoying case
+  // of users with 50+ ships being asked to type out their hangar by
+  // hand when a single missing ship needs investigation.
+  let dumpCopied = $state(false);
+  let dumpCopiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function copyHangarDump(): Promise<void> {
+    const version = chrome.runtime.getManifest?.()?.version ?? '—';
+    const now = new Date().toISOString();
+    const matchedNamesSet = new Set(rawHangarNames);
+    for (const n of notFound) matchedNamesSet.delete(n);
+    const matched = [...matchedNamesSet].sort((a, b) => a.localeCompare(b));
+    const unknown = [...notFound].sort((a, b) => a.localeCompare(b));
+    const lines: string[] = [];
+    lines.push(`**RSI Companion hangar dump** (v${version})`);
+    lines.push(`Generated: ${now}`);
+    lines.push('');
+    lines.push(
+      `Summary: ${rawHangarNames.length} scraped · ${ownedCount} owned (incl. duplicates) · ${loanerIds.length} loaners · ${unknown.length} unknown`,
+    );
+    lines.push('');
+    lines.push(`## Matched ships (${matched.length})`);
+    if (matched.length === 0) lines.push('_(none)_');
+    else for (const n of matched) lines.push(`- ${n}`);
+    lines.push('');
+    lines.push(`## Unknown / unmatched (${unknown.length})`);
+    if (unknown.length === 0) lines.push('_(none)_');
+    else for (const n of unknown) lines.push(`- ${n}`);
+    const payload = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(payload);
+      dumpCopied = true;
+      if (dumpCopiedTimer) clearTimeout(dumpCopiedTimer);
+      dumpCopiedTimer = setTimeout(() => (dumpCopied = false), 4000);
+    } catch {
+      // Clipboard denied — last-resort: open a tab with the dump
+      // pre-filled so the user can copy it manually.
+      const url =
+        'data:text/plain;charset=utf-8,' + encodeURIComponent(payload);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
   $effect(() => () => {
     if (reportCopiedTimer) clearTimeout(reportCopiedTimer);
+    if (dumpCopiedTimer) clearTimeout(dumpCopiedTimer);
   });
 </script>
 
@@ -367,6 +423,31 @@
       >
         <Download class="size-3.5" />
       </button>
+      <!-- Copy hangar dump: emits a Markdown block with every
+           scraped hangar name + the unmatched subset, plus version
+           and timestamp. Used when a ship goes missing and we need
+           to see what RSI actually returned. Always available (even
+           when the unknown-ships modal isn't open) so users whose
+           missing ship is NOT in the unknown list — it's just absent
+           entirely — can still share their data. -->
+      <button
+        type="button"
+        class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50 {dumpCopied
+          ? 'text-emerald-300'
+          : ''}"
+        disabled={loading || !signedIn}
+        onclick={() => void copyHangarDump()}
+        title={dumpCopied
+          ? 'Copied!'
+          : 'Copy hangar dump to clipboard (for debug reports)'}
+        aria-label="Copy hangar dump"
+      >
+        {#if dumpCopied}
+          <Check class="size-3.5" />
+        {:else}
+          <ClipboardCopy class="size-3.5" />
+        {/if}
+      </button>
       <button
         type="button"
         class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50"
@@ -428,7 +509,25 @@
             <span class="text-[10px] italic text-emerald-300">
               Copied to clipboard — paste in Discord
             </span>
+          {:else if dumpCopied}
+            <span class="text-[10px] italic text-emerald-300">
+              Full hangar dump copied to clipboard
+            </span>
           {/if}
+          <button
+            type="button"
+            onclick={() => void copyHangarDump()}
+            title="Copy the full hangar scrape (matched + unmatched) for debugging"
+            class="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-700/60"
+          >
+            {#if dumpCopied}
+              <Check class="size-3" />
+              Copied
+            {:else}
+              <ClipboardCopy class="size-3" />
+              Copy full dump
+            {/if}
+          </button>
           <button
             type="button"
             onclick={() => void reportUnknownShipsToDiscord(notFound)}

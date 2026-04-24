@@ -411,10 +411,19 @@ async function handleShipsList(force: boolean) {
       loanerIds: number[];
       ownedCount: number;
       notFound: string[];
+      rawHangarNames: string[];
       fetchedAt: number;
     }>(key);
     if (cached) {
-      return { ...cached, signedIn, fromCache: true };
+      return {
+        ...cached,
+        // Old cache entries written before rawHangarNames was added
+        // lack the field. Defaulting here keeps the popup happy on
+        // the first load after an update.
+        rawHangarNames: cached.rawHangarNames ?? [],
+        signedIn,
+        fromCache: true,
+      };
     }
   }
 
@@ -431,7 +440,7 @@ async function handleShipsList(force: boolean) {
       loanerTable: {},
     });
     const fetchedAt = Date.now();
-    const payload = { ...bundle, fetchedAt };
+    const payload = { ...bundle, rawHangarNames: [], fetchedAt };
     await cacheSet(key, payload, TTL.ships);
     return { ...payload, signedIn: false, fromCache: false };
   }
@@ -489,7 +498,7 @@ async function handleShipsList(force: boolean) {
     });
 
     const fetchedAt = Date.now();
-    const payload = { ...bundle, fetchedAt };
+    const payload = { ...bundle, rawHangarNames: hangarNames, fetchedAt };
     await cacheSet(key, payload, TTL.ships);
 
     return { ...payload, signedIn: true, fromCache: false };
@@ -508,7 +517,7 @@ async function handleShipsList(force: boolean) {
         loanerTable: {},
       });
       const fetchedAt = Date.now();
-      const payload = { ...bundle, fetchedAt };
+      const payload = { ...bundle, rawHangarNames: [], fetchedAt };
       await cacheSet('ships:list:public', payload, TTL.ships);
       return { ...payload, signedIn: false, fromCache: false };
     }
