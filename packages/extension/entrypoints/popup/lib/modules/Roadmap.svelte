@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    Rsi,
     Schemas,
     RSI_BASE_URL,
     sendRsiMessage,
@@ -49,12 +50,15 @@
     new Map((payload?.categories ?? []).map((c) => [c.id, c.name])),
   );
 
+  // Trust `isReleasedRelease` (status-string based) over the numeric
+  // `r.released` field — RSI lies on the numeric one for some patches
+  // (see the shared helper for the full story).
   const upcoming = $derived<Release[]>(
-    (payload?.releases ?? []).filter((r) => !r.released),
+    (payload?.releases ?? []).filter((r) => !Rsi.isReleasedRelease(r)),
   );
   const released = $derived<Release[]>(
     (payload?.releases ?? [])
-      .filter((r) => r.released)
+      .filter((r) => Rsi.isReleasedRelease(r))
       .slice()
       .reverse(),
   );

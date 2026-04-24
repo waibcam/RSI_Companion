@@ -1284,10 +1284,13 @@ async function handleProgressTracker(force: boolean) {
     (data.categories ?? []).map((c) => [c.id, c.name]),
   );
 
-  // Collect active (non-released) cards and group by category.
+  // Collect active (non-released) cards and group by category. Use
+  // the status-string check rather than the numeric `released` field
+  // because RSI lies on the latter for some patches — see the
+  // `isReleasedRelease` helper for the full story.
   const byCategory = new Map<number, { id: number; name: string; status: string; releaseName: string }[]>();
   for (const release of data.releases ?? []) {
-    if (release.released) continue;
+    if (Rsi.isReleasedRelease(release)) continue;
     for (const card of release.cards ?? []) {
       if (!byCategory.has(card.category_id)) byCategory.set(card.category_id, []);
       byCategory.get(card.category_id)!.push({

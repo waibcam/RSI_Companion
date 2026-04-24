@@ -12,7 +12,27 @@
 import { z } from 'zod';
 import { RSI_BASE_URL, DEFAULT_ROADMAP_BOARD_ID } from '../constants.js';
 import { fetchWithTimeout } from '../net.js';
-import { RoadmapPayload, type RoadmapPayload as RoadmapPayloadType } from '../schemas/backend.js';
+import {
+  RoadmapPayload,
+  type RoadmapPayload as RoadmapPayloadType,
+  type RoadmapRelease,
+} from '../schemas/backend.js';
+
+// Authoritative "is this release shipped?" check. RSI's numeric
+// `released` flag on a release object has been observed lying —
+// reported via Twitter on 2026-04-24: patches 4.4, 4.5, 4.6 and 4.7
+// all came back with `released: 0` even though each of them carried
+// `status: "Released"` and showed as RELEASED on the official
+// roadmap site. The website itself trusts `status` for its badge, so
+// we do the same. The numeric field stays as a fallback for the case
+// where `status` is null (hasn't been observed in the wild but the
+// schema allows it).
+export function isReleasedRelease(r: Pick<RoadmapRelease, 'released' | 'status'>): boolean {
+  if (r.status != null && r.status.trim() !== '') {
+    return r.status.trim().toLowerCase() === 'released';
+  }
+  return r.released === 1;
+}
 
 // The RSI roadmap response wraps the payload in an envelope
 // `{success, code, msg, data}`. We only need the inner `data`.
