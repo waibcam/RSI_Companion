@@ -1,8 +1,13 @@
 [
   {
+    "version": "1.1.0",
+    "released_at": 1777507200,
+    "notes": "{\"info\":[\"Two new features — both carry-overs from the v2 extension that we brought back by popular demand — plus the bug fixes from v1.0.2 (which only reached the Firefox store).\"],\"features\":[\"Organizations: each org member row now has a UserPlus button to send a contact request with one click — no more copy-pasting handles into the search box\",\"Contacts → Sync to PTU: one-click workflow that mirrors your LIVE friend list onto your PTU account. PTU's social graph is a separate database from LIVE and never auto-syncs, so testers who switch to PTU would otherwise start with an empty contact list every wave\",\"Spectrum now handles channels with a null color — before the fix, those channels crashed the entire identify response and broke every signed-in module for some community configurations\",\"Background script is now compatible with older Firefox-based browsers (Waterfox, older ESRs) that predate Firefox 114's auto-promisified chrome.* APIs — the extension stopped flooding the console with storage errors on those engines\"]}"
+  },
+  {
     "version": "1.0.2",
     "released_at": 1777420800,
-    "notes": "{\"info\":[\"Maintenance release with two user-facing fixes on top of v1.0.0.\"],\"features\":[\"Fixed Spectrum / signed-in features for users enrolled in communities beyond Star Citizen proper — some channels with a null color were breaking the whole identify response (GH #25)\",\"Fixed the background script flooding the console with errors on Firefox-based browsers that predate Firefox 114's auto-promisified chrome.* APIs (Waterfox was the original report — thanks Etyx)\"]}"
+    "notes": "{\"info\":[\"Maintenance release with two user-facing fixes on top of v1.0.0. Published on Firefox only — Chrome and Edge users skipped 1.0.2 and will get the same fixes as part of 1.1.0.\"],\"features\":[\"Fixed Spectrum / signed-in features for users enrolled in communities beyond Star Citizen proper — some channels with a null color were breaking the whole identify response (GH #25)\",\"Fixed the background script flooding the console with errors on Firefox-based browsers that predate Firefox 114's auto-promisified chrome.* APIs (Waterfox was the original report — thanks Etyx)\"]}"
   },
   {
     "version": "1.0.0",
