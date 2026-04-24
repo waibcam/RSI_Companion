@@ -23,7 +23,8 @@
     "format:check": "prettier --check \"**/*.{ts,js,svelte,json,md,yaml,yml}\"",
     "typecheck": "pnpm -r typecheck",
     "analyze:build": "pnpm dlx cross-env ANALYZE=1 pnpm --filter=@rsi-companion/extension build",
-    "analyze": "pnpm analyze:build && pnpm dlx source-map-explorer --no-border-checks \"packages/extension/dist/chrome-mv3/chunks/popup-*.js\" \"packages/extension/dist/chrome-mv3/background.js\""
+    "analyze": "pnpm analyze:build && pnpm dlx source-map-explorer --no-border-checks \"packages/extension/dist/chrome-mv3/chunks/popup-*.js\" \"packages/extension/dist/chrome-mv3/background.js\"",
+    "release:body": "node scripts/generate-release-body.mjs"
   },
   "devDependencies": {
     "prettier": "^3.3.3",
