@@ -1,3 +1,18 @@
+// Firefox cross-version polyfill: `chrome.*` APIs only auto-promisify in
+// Firefox 114+ (2023). Before that, and on forks that lag behind (Waterfox
+// on Linux was the original report — see the Etyx Discord thread and the
+// `TypeError: can't access property "notify:state" of undefined` backlog),
+// `chrome.storage.local.get(key)` without a callback returns `undefined`,
+// so every `await chrome.storage.*` below would resolve to `undefined` and
+// the next `.property` access throws. The `browser` global has been
+// Promise-returning since Firefox 45 (2016), so aliasing `chrome → browser`
+// at the top of the service worker fixes the whole call tree in one line.
+// No-op on Chrome/Edge where `browser` doesn't exist.
+declare const browser: typeof chrome | undefined;
+if (typeof browser !== 'undefined') {
+  (globalThis as unknown as { chrome: typeof chrome }).chrome = browser;
+}
+
 import {
   LOANERS,
   Notify,
