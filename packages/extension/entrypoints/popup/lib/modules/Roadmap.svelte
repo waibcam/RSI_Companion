@@ -50,14 +50,23 @@
     new Map((payload?.categories ?? []).map((c) => [c.id, c.name])),
   );
 
-  // Trust `isReleasedRelease` (status-string based) over the numeric
-  // `r.released` field — RSI lies on the numeric one for some patches
-  // (see the shared helper for the full story).
+  // Visible releases: start by dropping any release with zero cards —
+  // RSI's payload occasionally carries "zombie" entries (e.g. a
+  // duplicate 3.8 at id=26 with `released: 0, status: "", cards: []`,
+  // paired with the real 3.8 at id=28 with all 22 cards). These
+  // zombies have no content to display and only muddy the Upcoming
+  // list. Trust `isReleasedRelease` (status-string based) over the
+  // numeric `r.released` field for the Upcoming/Released split — RSI
+  // lies on the numeric one for some patches (see the shared helper
+  // for the full story).
+  const visibleReleases = $derived<Release[]>(
+    (payload?.releases ?? []).filter((r) => (r.cards?.length ?? 0) > 0),
+  );
   const upcoming = $derived<Release[]>(
-    (payload?.releases ?? []).filter((r) => !Rsi.isReleasedRelease(r)),
+    visibleReleases.filter((r) => !Rsi.isReleasedRelease(r)),
   );
   const released = $derived<Release[]>(
-    (payload?.releases ?? [])
+    visibleReleases
       .filter((r) => Rsi.isReleasedRelease(r))
       .slice()
       .reverse(),
