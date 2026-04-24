@@ -321,13 +321,25 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
 
   const prefixList = [...allPrefixes];
   const notFound: string[] = [];
+  // In CCU mode the catalogue already seeded ship.owned from the
+  // server-side truth. We now additionally UNION in any match we see
+  // from the hangar scrape — if a ship shows up in the hangar, the
+  // user owns it, regardless of whether the CCU catalogue knows about
+  // it (legacy referral-ladder rewards and subscriber bundles are
+  // absent from CCU but very much present in the hangar — reported
+  // by @DAVosselman on 2026-04-24 with PTV + F7A Hornet Mk II showing
+  // as matched in her dump yet hidden from the Ships grid because
+  // their CCU-sourced `owned` was still false).
+  //
+  // Legacy path (ccuMode === false) still drives `owned` entirely
+  // from the hangar, same as before.
   for (const rawName of hangarNames) {
     const name = rawName.trim();
     if (!name) continue;
 
     const direct = byName.get(name);
     if (direct) {
-      if (!ccuMode) direct.owned = true;
+      direct.owned = true;
       direct.count += 1;
       continue;
     }
@@ -339,7 +351,7 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
     if (stripped) {
       const after = byName.get(stripped);
       if (after) {
-        if (!ccuMode) after.owned = true;
+        after.owned = true;
         after.count += 1;
         continue;
       }
@@ -348,7 +360,7 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
     const aliased = byAlias.get(name);
     if (aliased) {
       for (const ship of aliased) {
-        if (!ccuMode) ship.owned = true;
+        ship.owned = true;
         ship.count += 1;
       }
       continue;

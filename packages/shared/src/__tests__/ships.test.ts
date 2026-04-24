@@ -153,6 +153,35 @@ describe('mergeHangarIntoMatrix', () => {
     expect(titan.loaner).toBe(true);
   });
 
+  it('unions hangar matches with CCU ownership in ccuMode (no ccu-gatekeep)', () => {
+    // @DAVosselman, 2026-04-24: her F7A Hornet Mk II and PTV were
+    // scraped and matched (both appeared in the hangar-dump matched
+    // list) but still didn't show as owned in the Ships grid. Root
+    // cause: those pledges are legacy referral rewards missing from
+    // RSI's CCU catalogue, so `ccuOwnedIds` didn't contain their
+    // ids. In ccuMode the merge function previously refused to set
+    // `ship.owned = true` from a hangar match — only CCU could flip
+    // it. Fix is to union both signals: whichever source says
+    // "owned", it's owned.
+    const out = mergeHangarIntoMatrix({
+      matrix: [
+        entry(1, 'F7A Hornet Mk II'),
+        entry(2, 'Aurora MR', MFG_RSI),
+      ],
+      hangarNames: ['F7A Hornet Mk II', 'Aurora MR'],
+      nameCatalog: [],
+      loanerTable: {},
+      // CCU only reports Aurora — the F7A is the legacy-reward case.
+      ccuOwnedIds: new Set([2]),
+    });
+    const hornet = out.ships.find((s) => s.id === 1)!;
+    const aurora = out.ships.find((s) => s.id === 2)!;
+    expect(hornet.owned).toBe(true);
+    expect(hornet.count).toBe(1);
+    expect(aurora.owned).toBe(true);
+    expect(aurora.count).toBe(1);
+  });
+
   it('matches when the matrix entry name has stray trailing whitespace', () => {
     // Reported on 2026-04-24: @DAVosselman's "C8X Pisces Expedition"
     // pledge appeared as "unknown" even though the matrix had the
