@@ -139,7 +139,17 @@ export function parseHangarPage(html: string): HangarPageResult {
     // "ship" as a substring (e.g. "Ship Paint").
     if (NON_SHIP_KIND_PATTERNS.some((p) => kind.includes(p))) continue;
 
-    if (kind.includes('ship') || grinText === 'GRIN') {
+    // Accept ships AND ground vehicles. The ship-matrix treats both
+    // under the same umbrella (a Greycat PTV sits alongside an Aurora
+    // MR in `/ship-matrix/index`), and the user's hangar expects to
+    // see both here. Reported by @DAVosselman: his PTV was dropped
+    // because its kind is "Vehicle" — not "Ship" — and it happened
+    // not to carry a GRIN liner that would have caught it earlier.
+    if (
+      kind.includes('ship') ||
+      kind.includes('vehicle') ||
+      grinText === 'GRIN'
+    ) {
       const titleEl = li.querySelector('.title');
       const title = (titleEl?.textContent ?? '').trim();
       if (title) names.push(title);

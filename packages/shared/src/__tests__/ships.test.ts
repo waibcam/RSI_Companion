@@ -197,6 +197,31 @@ describe('parseHangarPage', () => {
     expect(parseHangarPage(html).names).toEqual(['Polaris']);
   });
 
+  it('accepts ground vehicles (kind = "Vehicle")', () => {
+    // @DAVosselman's PTV was dropped because its hangar row carried
+    // kind="Vehicle" and didn't happen to have a GRIN liner. Both
+    // ships and ground vehicles live in the ship-matrix and should
+    // flow through the scraper, so we accept "vehicle" as a kind.
+    const html = page([
+      row({ title: 'Greycat PTV', kind: 'Vehicle' }),
+      row({ title: 'Tumbril Ranger CV', kind: 'Vehicle' }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual([
+      'Greycat PTV',
+      'Tumbril Ranger CV',
+    ]);
+  });
+
+  it('still rejects vehicle-adjacent non-vehicle items', () => {
+    // Defensive: the new "vehicle" accept branch must not let through
+    // cosmetic or component rows that mention the word.
+    const html = page([
+      row({ title: 'Vehicle Paint Pack', kind: 'Vehicle Paint' }),
+      row({ title: 'Vehicle Weapon Mount', kind: 'Vehicle Weapon' }),
+    ]);
+    expect(parseHangarPage(html).names).toEqual([]);
+  });
+
   it('rejects non-ship pledge items that RSI tags with a ship-adjacent kind', () => {
     // These three strings were literally reported on Twitter by
     // @DAVosselman — they surfaced as "unknown ships" because the
