@@ -52,3 +52,45 @@ updates:
       # reproposing the same breaking bump every release cycle.
       - dependency-name: "lucide-svelte"
         update-types: ["version-update:semver-major"]
+
+      # Major bumps deferred to manual review for the rest of our
+      # direct runtime / build-time deps. Minors and patches stay
+      # open — those are usually safe and we want them. Each entry
+      # below has a specific reason it deserves a code-read before
+      # the bump lands, so we don't want Dependabot reopening the
+      # same major-bump PR every cycle.
+
+      # zod 4.x — full rewrite of the schema/error API.
+      # `.email()` / `.url()` moved off `string()`, `.default()`
+      # semantics changed, error format restructured. Every Rsi.*
+      # message schema in @rsi-companion/shared parses via zod, so
+      # a major bump means rereading every parser. Defer.
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+
+      # typescript — generally manageable across majors but we want
+      # a deliberate "is svelte-check happy?" pass before adopting
+      # 6.x (decorator changes, isolated declarations, stricter
+      # narrowing on union types tend to surface latent bugs).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+      # svelte — we just landed on 5.x stable. Svelte 6 will mean
+      # another runes-style migration; not worth chasing on
+      # autopilot.
+      - dependency-name: "svelte"
+        update-types: ["version-update:semver-major"]
+
+      # tailwindcss — same story: we just stabilised on 4.x after
+      # the beta tail. 5.x will get a manual look.
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@tailwindcss/vite"
+        update-types: ["version-update:semver-major"]
+
+      # wxt — still pre-1.0 (we're on 0.19.x). Every minor in 0.x
+      # behaves like a major in semver terms; we already validate
+      # those manually. Block actual majors (when 1.0 lands) until
+      # we've read the migration guide.
+      - dependency-name: "wxt"
+        update-types: ["version-update:semver-major"]
