@@ -151,9 +151,19 @@
 
 <svelte:window onkeydown={handleGlobalKey} />
 
+<!-- Popup dimensions: tab mode takes the whole browser tab (h-screen
+     w-screen). Toolbar-popup mode reads `settingsState.popup{Width,Height}`
+     so the user can tune the popup size from Settings → Popup size. The
+     state has its own clamping and persists to localStorage; we just
+     read it here and let inline style apply pixel dimensions outside
+     Tailwind's static class set. Default is 760×520 (the historic
+     hard-coded size). -->
 <div
   class="relative flex flex-col bg-slate-950 font-sans text-slate-100 antialiased
-    {isTabMode ? 'tab-mode h-screen w-screen' : 'h-[520px] w-[760px]'}"
+    {isTabMode ? 'tab-mode h-screen w-screen' : ''}"
+  style={isTabMode
+    ? ''
+    : `width: ${settingsState.popupWidth}px; height: ${settingsState.popupHeight}px;`}
 >
   <Header />
 

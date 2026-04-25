@@ -118,7 +118,31 @@ const PREFS_KEYS = {
   prefetch: 'settings:prefetchEnabled',
   moduleOrder: 'settings:moduleOrder',
   moduleHidden: 'settings:moduleHidden',
+  popupWidth: 'settings:popupWidth',
+  popupHeight: 'settings:popupHeight',
 } as const;
+
+// Browser-imposed popup dimension limits. Chromium and Firefox both cap
+// extension popups around 800x600 — set anything beyond and the chrome
+// silently truncates. Floors are our own call: below ~360x400 the
+// modules collapse into illegible single-column views with overflow.
+export const POPUP_SIZE_LIMITS = {
+  minWidth: 360,
+  maxWidth: 800,
+  minHeight: 400,
+  maxHeight: 600,
+  defaultWidth: 760,
+  defaultHeight: 520,
+} as const;
+
+function clampPopupWidth(v: number): number {
+  if (!Number.isFinite(v)) return POPUP_SIZE_LIMITS.defaultWidth;
+  return Math.min(POPUP_SIZE_LIMITS.maxWidth, Math.max(POPUP_SIZE_LIMITS.minWidth, Math.round(v)));
+}
+function clampPopupHeight(v: number): number {
+  if (!Number.isFinite(v)) return POPUP_SIZE_LIMITS.defaultHeight;
+  return Math.min(POPUP_SIZE_LIMITS.maxHeight, Math.max(POPUP_SIZE_LIMITS.minHeight, Math.round(v)));
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -146,6 +170,19 @@ function createSettingsState() {
   // blob from an earlier version.
   let moduleOrder = $state<ModuleId[]>(readJson(PREFS_KEYS.moduleOrder, []));
   let moduleHidden = $state<ModuleId[]>(readJson(PREFS_KEYS.moduleHidden, []));
+  // Popup dimensions when opened from the toolbar (NOT in tab mode).
+  // Browsers fix the popup window themselves but honour CSS-driven
+  // body sizing up to ~800x600 — we expose two sliders in Settings
+  // that let the user tune the popup to their screen and density
+  // preference. Stored values are always clamped within the
+  // platform-supported envelope so a corrupt prefs blob can't ship a
+  // 50px-wide popup.
+  let popupWidth = $state<number>(
+    clampPopupWidth(readJson(PREFS_KEYS.popupWidth, POPUP_SIZE_LIMITS.defaultWidth)),
+  );
+  let popupHeight = $state<number>(
+    clampPopupHeight(readJson(PREFS_KEYS.popupHeight, POPUP_SIZE_LIMITS.defaultHeight)),
+  );
 
   return {
     get prefetchEnabled() {
@@ -172,15 +209,39 @@ function createSettingsState() {
       moduleHidden = [...set];
       writeJson(PREFS_KEYS.moduleHidden, moduleHidden);
     },
+    get popupWidth(): number {
+      return popupWidth;
+    },
+    setPopupWidth(v: number) {
+      popupWidth = clampPopupWidth(v);
+      writeJson(PREFS_KEYS.popupWidth, popupWidth);
+    },
+    get popupHeight(): number {
+      return popupHeight;
+    },
+    setPopupHeight(v: number) {
+      popupHeight = clampPopupHeight(v);
+      writeJson(PREFS_KEYS.popupHeight, popupHeight);
+    },
+    resetPopupSize() {
+      popupWidth = POPUP_SIZE_LIMITS.defaultWidth;
+      popupHeight = POPUP_SIZE_LIMITS.defaultHeight;
+      writeJson(PREFS_KEYS.popupWidth, popupWidth);
+      writeJson(PREFS_KEYS.popupHeight, popupHeight);
+    },
     /** Drop all settings back to defaults. Used by the Settings "Reset"
      *  button. Does NOT clear caches — that's a separate action. */
     resetAll() {
       prefetchEnabled = true;
       moduleOrder = [];
       moduleHidden = [];
+      popupWidth = POPUP_SIZE_LIMITS.defaultWidth;
+      popupHeight = POPUP_SIZE_LIMITS.defaultHeight;
       writeJson(PREFS_KEYS.prefetch, true);
       writeJson(PREFS_KEYS.moduleOrder, []);
       writeJson(PREFS_KEYS.moduleHidden, []);
+      writeJson(PREFS_KEYS.popupWidth, popupWidth);
+      writeJson(PREFS_KEYS.popupHeight, popupHeight);
     },
   };
 }

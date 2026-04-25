@@ -27,6 +27,7 @@
     HelpCircle,
     Info,
     Loader2,
+    Maximize2,
     RefreshCw,
     RotateCcw,
     Settings as SettingsIcon,
@@ -36,7 +37,9 @@
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import {
     appState,
+    isTabMode,
     MODULES,
+    POPUP_SIZE_LIMITS,
     settingsState,
     type ModuleId,
   } from '../state.svelte';
@@ -513,6 +516,103 @@
             No prefetch run recorded this session yet.
           </div>
         {/if}
+      </section>
+
+      <!-- =================================================== POPUP SIZE ===== -->
+      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+        <header class="mb-2 flex items-center gap-2">
+          <Maximize2 class="size-4 text-sky-400" />
+          <h2 class="text-sm font-semibold text-slate-100">Popup size</h2>
+        </header>
+        <p class="mb-2 text-[11px] text-slate-400">
+          Tune the popup window dimensions. The browser caps extension
+          popups at {POPUP_SIZE_LIMITS.maxWidth}×{POPUP_SIZE_LIMITS.maxHeight}px;
+          beyond that, use the
+          {#if isTabMode}<em>full-tab</em>{:else}
+            <button
+              type="button"
+              class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
+              onclick={() => {
+                const url = chrome.runtime?.getURL?.('popup.html?mode=tab');
+                if (url) window.open(url, '_blank', 'noopener,noreferrer');
+              }}
+              >full-tab</button
+            >
+          {/if}
+          mode for unlimited canvas. Changes apply immediately and persist across popup opens.
+        </p>
+        {#if isTabMode}
+          <p class="rounded bg-slate-950/40 px-2 py-1.5 text-[11px] italic text-slate-500 ring-1 ring-inset ring-slate-800/60">
+            You're already in tab mode — these sliders only affect the
+            toolbar popup. Open the popup to see your changes.
+          </p>
+        {/if}
+        <div class="space-y-2">
+          <!-- Width slider -->
+          <label class="block text-[11px] text-slate-300">
+            <div class="mb-1 flex items-baseline justify-between">
+              <span>Width</span>
+              <span class="font-mono text-slate-400">
+                {settingsState.popupWidth}px
+              </span>
+            </div>
+            <input
+              type="range"
+              min={POPUP_SIZE_LIMITS.minWidth}
+              max={POPUP_SIZE_LIMITS.maxWidth}
+              step="10"
+              value={settingsState.popupWidth}
+              oninput={(e) =>
+                settingsState.setPopupWidth(
+                  Number.parseInt(e.currentTarget.value, 10),
+                )}
+              class="w-full accent-sky-500"
+            />
+            <div class="mt-0.5 flex justify-between text-[9px] text-slate-600">
+              <span>{POPUP_SIZE_LIMITS.minWidth}px</span>
+              <span>default {POPUP_SIZE_LIMITS.defaultWidth}px</span>
+              <span>{POPUP_SIZE_LIMITS.maxWidth}px</span>
+            </div>
+          </label>
+
+          <!-- Height slider -->
+          <label class="block text-[11px] text-slate-300">
+            <div class="mb-1 flex items-baseline justify-between">
+              <span>Height</span>
+              <span class="font-mono text-slate-400">
+                {settingsState.popupHeight}px
+              </span>
+            </div>
+            <input
+              type="range"
+              min={POPUP_SIZE_LIMITS.minHeight}
+              max={POPUP_SIZE_LIMITS.maxHeight}
+              step="10"
+              value={settingsState.popupHeight}
+              oninput={(e) =>
+                settingsState.setPopupHeight(
+                  Number.parseInt(e.currentTarget.value, 10),
+                )}
+              class="w-full accent-sky-500"
+            />
+            <div class="mt-0.5 flex justify-between text-[9px] text-slate-600">
+              <span>{POPUP_SIZE_LIMITS.minHeight}px</span>
+              <span>default {POPUP_SIZE_LIMITS.defaultHeight}px</span>
+              <span>{POPUP_SIZE_LIMITS.maxHeight}px</span>
+            </div>
+          </label>
+
+          <button
+            type="button"
+            onclick={() => settingsState.resetPopupSize()}
+            disabled={settingsState.popupWidth === POPUP_SIZE_LIMITS.defaultWidth &&
+              settingsState.popupHeight === POPUP_SIZE_LIMITS.defaultHeight}
+            class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RotateCcw class="size-3" />
+            Reset to default
+          </button>
+        </div>
       </section>
 
       <!-- =================================================== MODULES ========= -->
