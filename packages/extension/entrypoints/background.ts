@@ -2016,7 +2016,25 @@ async function notifyStateSet(state: Notify.NotifyState): Promise<void> {
 
 async function updateBadge(state: Notify.NotifyState): Promise<void> {
   const total = Notify.totalUnread(state.counts);
-  const action = chrome.action;
+  // MV3 Chromium and Firefox MV3 expose the toolbar API as
+  // `chrome.action`; Firefox MV2 (our actual Firefox build target —
+  // WXT defaults Firefox to MV2) uses `chrome.browserAction` instead.
+  // The two APIs are otherwise compatible at the call sites we use
+  // (setBadgeText / setBadgeBackgroundColor accept identical {text}
+  // / {color} payloads). Pick whichever is defined at runtime.
+  // Reported by @ravensrook on GH #30, Firefox 149 / Windows: every
+  // notification poll surfaced `TypeError: can't access property
+  // "setBadgeText", n is undefined` because chrome.action is
+  // undefined on MV2. Caught by the try/catch below, but still
+  // costs us the badge entirely on Firefox.
+  const action =
+    chrome.action ??
+    (chrome as unknown as { browserAction?: typeof chrome.action })
+      .browserAction;
+  if (!action) {
+    log.debug('badge', 'no toolbar action API available on this browser');
+    return;
+  }
   try {
     if (total > 0) {
       await action.setBadgeText({ text: total > 99 ? '99+' : String(total) });
