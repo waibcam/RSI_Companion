@@ -13,7 +13,7 @@
   // automatic polling — the Settings module is rarely open and users open
   // it specifically to inspect a snapshot.
 
-  import { sendRsiMessage } from '@rsi-companion/shared';
+  import { log, sendRsiMessage } from '@rsi-companion/shared';
   import {
     AlertTriangle,
     ArrowDown,
@@ -28,11 +28,14 @@
     Info,
     Loader2,
     Maximize2,
+    Minus,
+    Plus,
     RefreshCw,
     RotateCcw,
     Settings as SettingsIcon,
     ShieldCheck,
     Trash2,
+    ZoomIn,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import {
@@ -293,6 +296,101 @@
 
   let copiedFlash = $state(false);
 
+  // --- Popup size draft state ------------------------------------------------
+  // The actual popup dimensions live in settingsState. Sliders below
+  // bind to these "draft" values so the displayed % label updates
+  // smoothly during a drag, while the popup window itself is only
+  // resized on slider release (`onchange`). Without this split,
+  // resizing the popup live during a drag yanked the slider thumb out
+  // from under the user's cursor as the Settings panel reflowed —
+  // dragging shorter became impossible. Reported by Kamille while
+  // testing 7a9d180.
+  let widthDraft = $state(settingsState.popupWidth);
+  let heightDraft = $state(settingsState.popupHeight);
+  // Re-sync the drafts whenever the persisted values change from
+  // outside the sliders (e.g. the Reset button or a stored value
+  // being clamped at startup). Reading the getter inside the effect
+  // sets up the dependency so this fires automatically.
+  $effect(() => {
+    widthDraft = settingsState.popupWidth;
+  });
+  $effect(() => {
+    heightDraft = settingsState.popupHeight;
+  });
+
+  // --- UI scale section (tab mode only) --------------------------------------
+  //
+  // Wraps the browser's native per-tab zoom (Ctrl + / Ctrl − /
+  // Ctrl-scroll) behind a small Settings UI affordance — same effect,
+  // just discoverable. The browser handles per-site persistence on
+  // its own, so we don't need our own storage. Only meaningful in
+  // tab mode (`?mode=tab`) — toolbar popups don't have a tab id and
+  // browsers don't respond to zoom shortcuts on extension popups.
+  //
+  // Reported on GH #29 by @epoptic. The popup-size sliders (above)
+  // already cover popup mode; this complements them for tab mode on
+  // high-DPI / 4K displays where the default density feels cramped.
+
+  const ZOOM_STEP = 0.1;
+  const ZOOM_MIN = 0.3;
+  const ZOOM_MAX = 5;
+
+  let currentZoom = $state(1);
+
+  async function readZoom(): Promise<void> {
+    if (!isTabMode) return;
+    try {
+      const tab = await chrome.tabs.getCurrent();
+      if (!tab?.id) return;
+      currentZoom = await chrome.tabs.getZoom(tab.id);
+    } catch (e) {
+      log.warn('settings', 'tabs.getZoom failed', e);
+    }
+  }
+
+  async function applyZoom(factor: number): Promise<void> {
+    if (!isTabMode) return;
+    try {
+      const tab = await chrome.tabs.getCurrent();
+      if (!tab?.id) return;
+      const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, factor));
+      await chrome.tabs.setZoom(tab.id, clamped);
+      currentZoom = clamped;
+    } catch (e) {
+      log.warn('settings', 'tabs.setZoom failed', e);
+    }
+  }
+
+  function zoomIn(): Promise<void> {
+    return applyZoom(currentZoom + ZOOM_STEP);
+  }
+  function zoomOut(): Promise<void> {
+    return applyZoom(currentZoom - ZOOM_STEP);
+  }
+  function resetZoom(): Promise<void> {
+    return applyZoom(1);
+  }
+
+  // Subscribe to the browser's onZoomChange event so the % label
+  // stays in sync if the user uses Ctrl+scroll while Settings is
+  // open (rather than only updating after a manual button click).
+  $effect(() => {
+    if (!isTabMode) return;
+    void readZoom();
+    const onZoomChange = (info: chrome.tabs.ZoomChangeInfo) => {
+      void chrome.tabs.getCurrent().then((tab) => {
+        if (tab?.id === info.tabId) currentZoom = info.newZoomFactor;
+      });
+    };
+    chrome.tabs.onZoomChange.addListener(onZoomChange);
+    return () => chrome.tabs.onZoomChange.removeListener(onZoomChange);
+  });
+
+  function openInTab(): void {
+    const url = chrome.runtime?.getURL?.('popup.html?mode=tab');
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   // --- Initial load ----------------------------------------------------------
 
   $effect(() => {
@@ -525,9 +623,11 @@
           <h2 class="text-sm font-semibold text-slate-100">Popup size</h2>
         </header>
         <p class="mb-2 text-[11px] text-slate-400">
-          Tune the popup window dimensions. The browser caps extension
-          popups at {POPUP_SIZE_LIMITS.maxWidth}×{POPUP_SIZE_LIMITS.maxHeight}px;
-          beyond that, use the
+          Tune the popup window dimensions. The slider tops out at
+          {POPUP_SIZE_LIMITS.maxWidth}×{POPUP_SIZE_LIMITS.maxHeight}px —
+          browsers reserve a few extra pixels of scrollbar gutter
+          beyond that and won't actually grant the larger size. For
+          unlimited canvas, use the
           {#if isTabMode}<em>full-tab</em>{:else}
             <button
               type="button"
@@ -539,7 +639,7 @@
               >full-tab</button
             >
           {/if}
-          mode for unlimited canvas. Changes apply immediately and persist across popup opens.
+          mode. Changes apply immediately and persist across popup opens.
         </p>
         {#if isTabMode}
           <p class="rounded bg-slate-950/40 px-2 py-1.5 text-[11px] italic text-slate-500 ring-1 ring-inset ring-slate-800/60">
@@ -548,12 +648,17 @@
           </p>
         {/if}
         <div class="space-y-2">
-          <!-- Width slider -->
+          <!-- Width slider. `oninput` only updates the local draft
+               (drives the live label below), `onchange` commits to
+               settingsState which actually triggers the popup resize.
+               Splitting the two prevents the popup from reflowing
+               under the cursor mid-drag — see the comment block on
+               widthDraft/heightDraft above for the full rationale. -->
           <label class="block text-[11px] text-slate-300">
             <div class="mb-1 flex items-baseline justify-between">
               <span>Width</span>
               <span class="font-mono text-slate-400">
-                {settingsState.popupWidth}px
+                {widthDraft}px
               </span>
             </div>
             <input
@@ -561,8 +666,10 @@
               min={POPUP_SIZE_LIMITS.minWidth}
               max={POPUP_SIZE_LIMITS.maxWidth}
               step="10"
-              value={settingsState.popupWidth}
+              value={widthDraft}
               oninput={(e) =>
+                (widthDraft = Number.parseInt(e.currentTarget.value, 10))}
+              onchange={(e) =>
                 settingsState.setPopupWidth(
                   Number.parseInt(e.currentTarget.value, 10),
                 )}
@@ -575,12 +682,12 @@
             </div>
           </label>
 
-          <!-- Height slider -->
+          <!-- Height slider — same release-to-commit pattern as width. -->
           <label class="block text-[11px] text-slate-300">
             <div class="mb-1 flex items-baseline justify-between">
               <span>Height</span>
               <span class="font-mono text-slate-400">
-                {settingsState.popupHeight}px
+                {heightDraft}px
               </span>
             </div>
             <input
@@ -588,8 +695,10 @@
               min={POPUP_SIZE_LIMITS.minHeight}
               max={POPUP_SIZE_LIMITS.maxHeight}
               step="10"
-              value={settingsState.popupHeight}
+              value={heightDraft}
               oninput={(e) =>
+                (heightDraft = Number.parseInt(e.currentTarget.value, 10))}
+              onchange={(e) =>
                 settingsState.setPopupHeight(
                   Number.parseInt(e.currentTarget.value, 10),
                 )}
@@ -613,6 +722,74 @@
             Reset to default
           </button>
         </div>
+      </section>
+
+      <!-- =================================================== UI SCALE ====== -->
+      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+        <header class="mb-2 flex items-center gap-2">
+          <ZoomIn class="size-4 text-sky-400" />
+          <h2 class="text-sm font-semibold text-slate-100">UI scale</h2>
+        </header>
+        {#if isTabMode}
+          <p class="mb-2 text-[11px] text-slate-400">
+            Adjusts the tab-mode zoom level — same effect as
+            <kbd class="rounded bg-slate-950/60 px-1 py-0.5 font-mono text-[10px] ring-1 ring-inset ring-slate-700">Ctrl</kbd>
+            +
+            <kbd class="rounded bg-slate-950/60 px-1 py-0.5 font-mono text-[10px] ring-1 ring-inset ring-slate-700">scroll</kbd>
+            on the page. Your browser persists this per site
+            automatically. Useful on high-DPI / 4K displays where the
+            default density feels too tight.
+          </p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick={() => void zoomOut()}
+              disabled={currentZoom <= ZOOM_MIN + 0.001}
+              title="Zoom out"
+              aria-label="Zoom out"
+              class="flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Minus class="size-3.5" />
+            </button>
+            <div class="flex-1 text-center font-mono text-sm text-slate-100">
+              {Math.round(currentZoom * 100)}%
+            </div>
+            <button
+              type="button"
+              onclick={() => void zoomIn()}
+              disabled={currentZoom >= ZOOM_MAX - 0.001}
+              title="Zoom in"
+              aria-label="Zoom in"
+              class="flex size-7 items-center justify-center rounded-md border border-slate-700 text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Plus class="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onclick={() => void resetZoom()}
+              disabled={Math.abs(currentZoom - 1) < 0.001}
+              class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <RotateCcw class="size-3" />
+              Reset
+            </button>
+          </div>
+        {:else}
+          <p class="text-[11px] leading-relaxed text-slate-400">
+            UI scaling is only available in tab mode — browsers don't
+            respond to zoom shortcuts on extension popups, and the
+            popup window itself is intentionally fixed-size (see the
+            sliders above). Open the extension in a tab via the
+            <button
+              type="button"
+              onclick={openInTab}
+              class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
+              >full-tab</button
+            >
+            icon at the top right of the header (or click that link),
+            then revisit this section to scale the UI to your display.
+          </p>
+        {/if}
       </section>
 
       <!-- =================================================== MODULES ========= -->
