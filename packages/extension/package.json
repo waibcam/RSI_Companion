@@ -21,16 +21,16 @@
   "dependencies": {
     "@rsi-companion/shared": "workspace:*",
     "lucide-svelte": "^0.456.0",
-    "svelte": "^5.1.9",
+    "svelte": "^5.55.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0-beta.4",
+    "@tailwindcss/vite": "^4.2.4",
     "@types/chrome": "^0.0.280",
     "@types/firefox-webext-browser": "^120.0.4",
     "@wxt-dev/module-svelte": "^2.0.2",
     "svelte-check": "^4.0.6",
-    "tailwindcss": "^4.0.0-beta.4",
+    "tailwindcss": "^4.2.4",
     "typescript": "^5.6.3",
     "wxt": "^0.19.13"
   }
