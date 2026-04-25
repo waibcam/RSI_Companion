@@ -57,8 +57,15 @@
   }
 </script>
 
+<!-- Tab-mode density tweaks (the `tab:` Tailwind variant fires only
+     when App.svelte is in `?mode=tab`): wider sidebar, more vertical
+     padding per row, slightly larger icons + text. Popup mode stays
+     tight because it has to fit 14 modules in a 520px height budget.
+     Reported on GH #29 by @epoptic — on 4K displays the popup-tuned
+     density felt cramped in tab mode. -->
 <nav
-  class="flex w-44 shrink-0 flex-col gap-0.5 border-r border-slate-800 bg-slate-950/40 p-2"
+  class="flex w-44 shrink-0 flex-col gap-0.5 border-r border-slate-800 bg-slate-950/40 p-2
+    tab:w-56 tab:gap-1 tab:p-3"
 >
   {#each visibleModules as mod (mod.id)}
     {@const Icon = ICONS[mod.id]}
@@ -67,13 +74,14 @@
     <button
       type="button"
       class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition
+        tab:gap-3 tab:px-3.5 tab:py-2.5 tab:text-sm
         {active
         ? 'bg-sky-500/15 text-sky-300 ring-1 ring-inset ring-sky-500/30'
         : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'}
         {mod.ready ? '' : 'opacity-60'}"
       onclick={() => appState.setActiveModule(mod.id)}
     >
-      <Icon class="size-4 shrink-0" />
+      <Icon class="size-4 shrink-0 tab:size-5" />
       <span class="flex-1 truncate">{mod.label}</span>
       {#if !mod.ready}
         <span
