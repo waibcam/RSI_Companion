@@ -31,7 +31,7 @@
     "@wxt-dev/module-svelte": "^2.0.2",
     "svelte-check": "^4.0.6",
     "tailwindcss": "^4.2.4",
-    "typescript": "^5.6.3",
+    "typescript": "^6.0.3",
     "wxt": "^0.19.13"
   }
 }
