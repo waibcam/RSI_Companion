@@ -28,8 +28,8 @@ importers:
         specifier: workspace:*
         version: link:../shared
       lucide-svelte:
-        specifier: ^0.456.0
-        version: 0.456.0(svelte@5.55.4)
+        specifier: ^1.0.1
+        version: 1.0.1(svelte@5.55.4)
       svelte:
         specifier: ^5.1.9
         version: 5.55.4
@@ -1490,8 +1490,8 @@ packages:
     resolution: {integrity: sha512-9ie8ItPR6tjY5uYJh8K/Zrv/RMZ5VOlOWvtZdEHYSTFKZfIBPQa9tOAEeAWhd+AnIneLJ22w5fjOYtoutpWq5w==}
     engines: {node: '>=18'}
 
-  lucide-svelte@0.456.0:
-    resolution: {integrity: sha512-SSdmxJOmL1h42ZypuGr54dYsXAT5o6WkQPKVDFnnrD0liOaXzfNNJuA7JbpkO9FFozBchyVpB1A1mKRmXOD8ug==}
+  lucide-svelte@1.0.1:
+    resolution: {integrity: sha512-WvzZgk0pqzgda+AErLvgWxHkfg/+GgUwqKMRHvzt0IqyMdmyEDzDCk3Z+Wo/3y753oIgx8u9Q4eUbWkghFa8Jg==}
     peerDependencies:
       svelte: ^3 || ^4 || ^5.0.0-next.42
 
@@ -3394,7 +3394,7 @@ snapshots:
       strip-ansi: 7.2.0
       wrap-ansi: 9.0.2
 
-  lucide-svelte@0.456.0(svelte@5.55.4):
+  lucide-svelte@1.0.1(svelte@5.55.4):
     dependencies:
       svelte: 5.55.4
 

@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@rsi-companion/shared": "workspace:*",
-    "lucide-svelte": "^0.456.0",
+    "lucide-svelte": "^1.0.1",
     "svelte": "^5.1.9",
     "zod": "^3.23.8"
   },
