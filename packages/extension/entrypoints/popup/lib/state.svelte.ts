@@ -18,6 +18,7 @@ export type ModuleId =
   | 'org-browser'
   | 'community-hub'
   | 'galactapedia'
+  | 'support'
   | 'settings';
 
 export interface ModuleDescriptor {
@@ -50,6 +51,11 @@ export const MODULES: ReadonlyArray<ModuleDescriptor> = [
   { id: 'organizations',  label: 'Organizations', ready: true },
   { id: 'org-browser',    label: 'Org Browser',   ready: true },
   { id: 'galactapedia',   label: 'Galactapedia',  ready: true },
+  // Support sits just before Settings — it's a sibling concept (extension
+  // self-care: bug reports, feedback, FAQ, links to GitHub/Discord/privacy)
+  // but stays hide-able like any normal module. Settings remains the only
+  // pinned-always-visible entry.
+  { id: 'support',        label: 'Support',       ready: true },
   { id: 'settings',       label: 'Settings',      ready: true },
 ];
 
@@ -121,6 +127,22 @@ const PREFS_KEYS = {
   popupWidth: 'settings:popupWidth',
   popupHeight: 'settings:popupHeight',
 } as const;
+
+// Settings module's top-level tab IDs. Persisted via the popup-scoped
+// `persistedState` helper (under the `popup:` namespace, alongside
+// every other module's tab state) so reopening the extension lands
+// the user on the same tab they were last using — e.g. someone
+// troubleshooting a cache issue keeps coming back to Performance.
+// Validated as a string-union on read.
+export type SettingsTabId = 'appearance' | 'performance' | 'diagnostics';
+const SETTINGS_TABS: readonly SettingsTabId[] = [
+  'appearance',
+  'performance',
+  'diagnostics',
+];
+export function isSettingsTabId(v: unknown): v is SettingsTabId {
+  return typeof v === 'string' && (SETTINGS_TABS as readonly string[]).includes(v);
+}
 
 // Browser-imposed popup dimension limits. Chromium and Firefox both
 // document an 800x600 cap on extension popups, but in practice the
