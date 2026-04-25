@@ -1,0 +1,43 @@
+# Dependabot configuration for the v3 monorepo.
+#
+# We keep Dependabot's security alerts active by default — they catch
+# real upstream vulnerabilities in our direct runtime dependencies
+# (svelte, zod, lucide-svelte, linkedom, tailwindcss, etc.) which we
+# do want to know about and ship fixes for.
+#
+# What we explicitly opt out of below are dev-only transitive
+# dependencies whose CVE paths cannot be reached from our build:
+# silencing them stops the noisy `package_ecosystem` job loop where
+# Dependabot bumps the threshold every few weeks, opens a PR our
+# pnpm.overrides can't satisfy, and fails the GitHub Action.
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+    ignore:
+      # uuid — pulled in via wxt → web-ext-run → node-notifier → uuid.
+      # node-notifier's only call is `const { v4: uuid } = require('uuid')`
+      # which uses v4 (random UUIDs). The current open advisory
+      # ("Missing buffer bounds check in v3/v5/v6 when buf is provided",
+      # GHSA-… on uuid <14.0.0) affects v3/v5/v6 specifically when a
+      # caller supplies a custom output buffer — neither of which
+      # apply to node-notifier's v4 usage. The whole chain is
+      # dev-only (web-ext-run runs only during `pnpm dev:firefox`)
+      # and is never shipped to extension users. We pin uuid to
+      # `^11.0.0` via pnpm.overrides for our own dependency hygiene
+      # but the underlying advisory is not reachable in our code path.
+      - dependency-name: "uuid"
+
+      # tar — pulled in via wxt → giget → tar. giget uses tar to
+      # extract project templates, a code path we never invoke
+      # (we don't run `wxt init` from this repo). Dev-only,
+      # not shipped to users. Pinned to `^7.5.11` via pnpm.overrides
+      # to stay above the latest fixed version, but Dependabot keeps
+      # finding new advisories on tar 7.x that don't apply to our
+      # never-extracted path either.
+      - dependency-name: "tar"
