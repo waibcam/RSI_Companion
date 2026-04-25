@@ -41,3 +41,14 @@ updates:
       # finding new advisories on tar 7.x that don't apply to our
       # never-extracted path either.
       - dependency-name: "tar"
+
+      # lucide-svelte — staying on the 0.x line on purpose. lucide
+      # 1.0 dropped brand icons (GitHub, Twitter, etc.) for
+      # trademark reasons; we use the GitHub mark in the Support
+      # panel and don't need any of the ~4000 new generic icons
+      # v1 added. Revisit only when we actually want a v1-only icon
+      # — at which point we'll inline an SVG for the GitHub mark
+      # ourselves. Pinning the major to keep Dependabot from
+      # reproposing the same breaking bump every release cycle.
+      - dependency-name: "lucide-svelte"
+        update-types: ["version-update:semver-major"]
