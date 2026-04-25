@@ -122,15 +122,27 @@ const PREFS_KEYS = {
   popupHeight: 'settings:popupHeight',
 } as const;
 
-// Browser-imposed popup dimension limits. Chromium and Firefox both cap
-// extension popups around 800x600 — set anything beyond and the chrome
-// silently truncates. Floors are our own call: below ~360x400 the
-// modules collapse into illegible single-column views with overflow.
+// Browser-imposed popup dimension limits. Chromium and Firefox both
+// document an 800x600 cap on extension popups, but in practice the
+// effective ceiling is ~10px lower on each axis on most platforms —
+// the browser reserves a scrollbar gutter on the popup window
+// itself, and asking for the documented 800x600 makes the inner
+// content overflow that gutter and surface a window-level scrollbar
+// that our `overflow: hidden` can't suppress (it's a browser-chrome
+// element, not part of the document).
+//
+// Verified on Firefox 149 / Windows 10: requesting 800x600 yields a
+// 790x600 actual viewport with a horizontal scrollbar. Capping the
+// sliders at 790x590 leaves enough margin to dodge the gutter on
+// every browser/OS combination we've tested.
+//
+// Floors are our own call: below ~360x400 the modules collapse into
+// illegible single-column views with overflow.
 export const POPUP_SIZE_LIMITS = {
   minWidth: 360,
-  maxWidth: 800,
+  maxWidth: 790,
   minHeight: 400,
-  maxHeight: 600,
+  maxHeight: 590,
   defaultWidth: 760,
   defaultHeight: 520,
 } as const;
