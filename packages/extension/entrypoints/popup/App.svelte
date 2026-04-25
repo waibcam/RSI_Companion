@@ -39,6 +39,7 @@
     spectrum: () => import('./lib/modules/Spectrum.svelte'),
     'community-hub': () => import('./lib/modules/CommunityHub.svelte'),
     galactapedia: () => import('./lib/modules/Galactapedia.svelte'),
+    support: () => import('./lib/modules/Support.svelte'),
     settings: () => import('./lib/modules/Settings.svelte'),
   };
   const comingSoonLoader: ModuleLoader = () => import('./lib/modules/ComingSoon.svelte');

@@ -7,6 +7,7 @@
     FileText,
     GitCommitHorizontal,
     LayoutDashboard,
+    LifeBuoy,
     Ship,
     Newspaper,
     MessagesSquare,
@@ -37,6 +38,7 @@
     'org-browser':      Globe,
     'community-hub':    Users,
     galactapedia:       BookOpen,
+    support:            LifeBuoy,
     settings:           SettingsIcon,
   };
 
