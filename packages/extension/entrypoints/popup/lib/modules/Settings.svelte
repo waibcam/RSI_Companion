@@ -390,7 +390,7 @@
   $effect(() => {
     if (!isTabMode) return;
     void readZoom();
-    const onZoomChange = (info: chrome.tabs.ZoomChangeInfo) => {
+    const onZoomChange = (info: chrome.tabs.OnZoomChangeInfo) => {
       void chrome.tabs.getCurrent().then((tab) => {
         if (tab?.id === info.tabId) currentZoom = info.newZoomFactor;
       });
