@@ -38,10 +38,10 @@ export default defineConfig({
         // `rsi-companion@kamille.ovh` would require creating a brand new
         // listing and losing the review history. Left as-is.
         id: '{5f6df4d5-2bc0-4f21-9a05-ca509c64a7ff}',
-        // @ts-expect-error WXT typings don't yet know about Firefox's
-        // 2026 `data_collection_permissions` field (see
-        // https://mzl.la/firefox-builtin-data-consent) but AMO requires
-        // it. Runtime accepts it fine; only svelte-check complained.
+        // Firefox 2026 `data_collection_permissions` — AMO requires it
+        // for new submissions, see https://mzl.la/firefox-builtin-data-consent.
+        // wxt 0.20+ has the typing for this; before that we needed a
+        // ts-expect-error.
         data_collection_permissions: {
           required: ['none'],
         },
