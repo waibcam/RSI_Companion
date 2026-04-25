@@ -153,17 +153,27 @@
 
 <!-- Popup dimensions: tab mode takes the whole browser tab (h-screen
      w-screen). Toolbar-popup mode reads `settingsState.popup{Width,Height}`
-     so the user can tune the popup size from Settings → Popup size. The
-     state has its own clamping and persists to localStorage; we just
-     read it here and let inline style apply pixel dimensions outside
-     Tailwind's static class set. Default is 760×520 (the historic
-     hard-coded size). -->
+     so the user can tune the popup size from Settings → Popup size.
+     The state has its own clamping and persists to localStorage.
+
+     Pixel sizing notes:
+     - We clamp each dimension with `min(Npx, 100vw/vh)`. At 800×600
+       (the platform max) Firefox and Chromium both allocate a viewport
+       slightly smaller than what we ask for to leave room for their
+       own UI chrome / scrollbars. Without the clamp, our hard
+       `width: 800px` overflowed the actual available viewport by 1-2
+       pixels on popup re-open and triggered system scrollbars on the
+       outer popup chrome.
+     - `overflow: hidden` belt-and-suspenders against the same: even
+       if a child sneaks a sub-pixel overflow, the popup itself
+       refuses to scroll. Modules already provide their own internal
+       scroll containers where they need them. -->
 <div
-  class="relative flex flex-col bg-slate-950 font-sans text-slate-100 antialiased
+  class="relative flex flex-col overflow-hidden bg-slate-950 font-sans text-slate-100 antialiased
     {isTabMode ? 'tab-mode h-screen w-screen' : ''}"
   style={isTabMode
     ? ''
-    : `width: ${settingsState.popupWidth}px; height: ${settingsState.popupHeight}px;`}
+    : `width: min(${settingsState.popupWidth}px, 100vw); height: min(${settingsState.popupHeight}px, 100vh);`}
 >
   <Header />
 

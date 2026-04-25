@@ -28,6 +28,13 @@ body {
     'Segoe UI',
     Roboto,
     sans-serif;
+  /* Modules manage their own scroll containers internally — the popup
+   * window itself should never scroll. Browsers occasionally round
+   * popup viewport allocations 1-2 pixels short of what we request
+   * (especially at the 800×600 platform max), which without this
+   * would surface a system scrollbar on the outer popup chrome on
+   * re-open. `overflow: hidden` on root makes that impossible. */
+  overflow: hidden;
 }
 
 /* Indeterminate loading bar slider, used by ModuleHeader and any module that
