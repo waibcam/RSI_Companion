@@ -18,13 +18,10 @@
     AlertTriangle,
     ArrowDown,
     ArrowUp,
-    Bug,
     ClipboardCopy,
     Database,
-    ExternalLink,
     Eye,
     EyeOff,
-    HelpCircle,
     Info,
     Loader2,
     Maximize2,
@@ -40,13 +37,29 @@
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import {
     appState,
+    isSettingsTabId,
     isTabMode,
     MODULES,
     POPUP_SIZE_LIMITS,
     settingsState,
     type ModuleId,
+    type SettingsTabId,
   } from '../state.svelte';
   import { errorMessage } from '../error';
+  import { persistedState } from '../persist.svelte';
+
+  // Three top-level tabs: Appearance / Performance / Diagnostics. The
+  // module had grown to nine sections plus the Support card; tabs cut
+  // the cognitive load by 2-3× and let users find what they need
+  // (cache wipe, popup sizing, debug bundle) without scrolling past
+  // unrelated cards. The Support section moved out of Settings
+  // entirely into its own sidebar module — see Support.svelte.
+  const tabP = persistedState<SettingsTabId>(
+    'settings:activeTab',
+    'appearance',
+    isSettingsTabId,
+  );
+  const tab = $derived(tabP.value);
 
   // --- Cache section ---------------------------------------------------------
 
@@ -421,10 +434,35 @@
 <section class="flex h-full flex-col overflow-hidden">
   <ModuleHeader title="Settings" loading={cacheLoading || sessionLoading} onRefresh={refreshAll} />
 
+  <!-- Top-level tabs. Same visual pattern as Galactapedia / Contacts
+       so the active-tab indicator looks consistent across modules.
+       Each tab maps to a coherent group of cards below. -->
+  <div class="flex border-b border-slate-800 bg-slate-950/20 px-3 text-xs">
+    {#each [
+      ['appearance',  'Appearance'],
+      ['performance', 'Performance'],
+      ['diagnostics', 'Diagnostics'],
+    ] as const as [id, label] (id)}
+      <button
+        type="button"
+        onclick={() => (tabP.value = id)}
+        class="relative px-3 py-1.5 transition {tab === id
+          ? 'text-sky-300'
+          : 'text-slate-400 hover:text-slate-200'}"
+      >
+        {label}
+        {#if tab === id}
+          <span class="absolute inset-x-1 bottom-0 h-px bg-sky-400"></span>
+        {/if}
+      </button>
+    {/each}
+  </div>
+
   <div class="flex-1 overflow-y-auto p-3">
     <div class="mx-auto flex max-w-3xl flex-col gap-3">
 
       <!-- =================================================== CACHE =========== -->
+      {#if tab === 'performance'}
       <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
         <header class="mb-2 flex items-center gap-2">
           <Database class="size-4 text-sky-400" />
@@ -496,8 +534,10 @@
           </button>
         </div>
       </section>
+      {/if}
 
       <!-- =================================================== SESSIONS ======== -->
+      {#if tab === 'diagnostics'}
       <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
         <header class="mb-2 flex items-center gap-2">
           <ShieldCheck class="size-4 text-emerald-400" />
@@ -580,8 +620,10 @@
           </button>
         </div>
       </section>
+      {/if}
 
       <!-- =================================================== PREFETCH ======== -->
+      {#if tab === 'performance'}
       <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
         <header class="mb-2 flex items-center gap-2">
           <RefreshCw class="size-4 text-sky-400" />
@@ -615,8 +657,10 @@
           </div>
         {/if}
       </section>
+      {/if}
 
       <!-- =================================================== POPUP SIZE ===== -->
+      {#if tab === 'appearance'}
       <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
         <header class="mb-2 flex items-center gap-2">
           <Maximize2 class="size-4 text-sky-400" />
@@ -849,39 +893,10 @@
           {/each}
         </ul>
       </section>
-
-      <!-- =================================================== SUPPORT ========= -->
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-        <header class="mb-2 flex items-center gap-2">
-          <HelpCircle class="size-4 text-sky-400" />
-          <h2 class="text-sm font-semibold text-slate-100">Support &amp; bug reports</h2>
-        </header>
-        <p class="mb-2 text-[11px] text-slate-400">
-          Found a bug or want to request a feature? Open an issue on GitHub —
-          copying the debug bundle from the section below makes triage much
-          faster.
-        </p>
-        <div class="flex flex-wrap items-center justify-end gap-2">
-          <a
-            href="https://github.com/waibcam/RSI_Companion"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-800 hover:text-slate-100"
-          >
-            View repository <ExternalLink class="size-3" />
-          </a>
-          <a
-            href="https://github.com/waibcam/RSI_Companion/issues/new"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-1.5 rounded-md bg-sky-500/20 px-3 py-1.5 text-[11px] font-semibold text-sky-300 ring-1 ring-sky-500/40 transition hover:bg-sky-500/30"
-          >
-            <Bug class="size-3" /> Report a bug
-          </a>
-        </div>
-      </section>
+      {/if}
 
       <!-- =================================================== DEBUG =========== -->
+      {#if tab === 'diagnostics'}
       <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
         <header class="mb-2 flex items-center gap-2">
           <Info class="size-4 text-slate-400" />
@@ -965,6 +980,7 @@
           </button>
         </div>
       </section>
+      {/if}
     </div>
   </div>
 </section>
