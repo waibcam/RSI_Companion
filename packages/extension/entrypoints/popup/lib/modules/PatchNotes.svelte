@@ -7,15 +7,9 @@
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import { notifyState } from '../notify.svelte';
-  import { persistedState } from '../persist.svelte';
   import { errorMessage } from '../error';
 
   type PatchNote = Rsi.PatchNote;
-  type Channel = 'ALL' | PatchNote['channel'];
-
-  const CHANNELS: readonly Channel[] = ['ALL', 'LIVE', 'PTU', 'EPTU', 'TECH-PREVIEW', 'UNKNOWN'];
-  const isChannel = (v: unknown): v is Channel =>
-    typeof v === 'string' && (CHANNELS as readonly string[]).includes(v);
 
   let notes = $state<PatchNote[]>([]);
   let nextPage = $state(1);
@@ -24,7 +18,6 @@
   let error = $state<string | null>(null);
   let fromCache = $state(false);
   let query = $state('');
-  const channelP = persistedState<Channel>('patchnotes:channel', 'ALL', isChannel);
   let sentinel = $state<HTMLElement | null>(null);
 
   async function loadPage(page: number, force = false) {
@@ -59,16 +52,13 @@
     loadPage(1, true);
   }
 
-  // The observer re-attaches whenever the channel filter changes so that if the
-  // sentinel is still visible after filtering (e.g. PTU has 0 matches on the
-  // loaded pages), it can trigger another fetch rather than silently sitting
-  // still on the last-reported intersection state.
+  // Observer triggers the next page fetch when the sentinel scrolls
+  // into view. Single-attach lifetime — no longer rebuilt on filter
+  // changes since we dropped the channel filter (CIG only publishes
+  // LIVE patches as Comm-Links nowadays, so PTU/EPTU tabs were
+  // permanently empty and confusing — see Dakota's report on Discord).
   $effect(() => {
     if (!sentinel) return;
-    // Read the channel filter so Svelte re-runs the effect (rebuild observer)
-    // on tab switch. The assignment is the simplest way to create a tracked read.
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _filter = channelP.value;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting) return;
@@ -83,14 +73,11 @@
 
   const filtered = $derived.by<PatchNote[]>(() => {
     const q = query.trim().toLowerCase();
-    const terms = q ? q.split(/\s+/).filter(Boolean) : [];
+    if (!q) return notes;
+    const terms = q.split(/\s+/).filter(Boolean);
     return notes.filter((n) => {
-      if (channelP.value !== 'ALL' && n.channel !== channelP.value) return false;
-      if (terms.length > 0) {
-        const hay = `${n.title} ${n.version ?? ''} ${n.channel}`.toLowerCase();
-        if (!terms.every((t) => hay.includes(t))) return false;
-      }
-      return true;
+      const hay = `${n.title} ${n.version ?? ''} ${n.channel}`.toLowerCase();
+      return terms.every((t) => hay.includes(t));
     });
   });
 
@@ -127,20 +114,6 @@
       <span class="text-[10px] text-slate-500">{filtered.length}/{notes.length}</span>
     {/snippet}
     {#snippet controls()}
-      <div class="flex items-center gap-1 text-[10px]">
-        {#each ['ALL', 'LIVE', 'PTU', 'EPTU', 'TECH-PREVIEW'] as const as ch (ch)}
-          <button
-            type="button"
-            onclick={() => (channelP.value = ch)}
-            class="rounded px-1.5 py-0.5 uppercase tracking-wider transition {channelP.value === ch
-              ? 'bg-sky-500/20 text-sky-300 ring-1 ring-inset ring-sky-500/40'
-              : 'text-slate-500 hover:text-slate-200'}"
-          >
-            {ch}
-          </button>
-        {/each}
-      </div>
-
       <input
         type="search"
         placeholder="Filter..."
@@ -172,7 +145,7 @@
            single column on very narrow viewports. -->
       <ul class="grid grid-cols-1 gap-1 sm:grid-cols-2 3xl:grid-cols-3 4xl:grid-cols-4">
         {#each filtered as n, i (n.href)}
-          {@const isNew = !query.trim() && channelP.value === 'ALL' && i < unreadAtOpen}
+          {@const isNew = !query.trim() && i < unreadAtOpen}
           <li class="virt-item">
             <a
               href={n.url}
@@ -233,11 +206,7 @@
 
       {#if filtered.length === 0 && notes.length > 0}
         <p class="mt-6 text-center text-xs italic text-slate-500">
-          {#if channelP.value !== 'ALL' && !query.trim()}
-            No {channelP.value} patches in the latest {notes.length} entries.
-          {:else}
-            No patches match.
-          {/if}
+          No patches match.
         </p>
       {/if}
 
