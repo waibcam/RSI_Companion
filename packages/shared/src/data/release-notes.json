@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.2.2",
+    "released_at": 1777189510,
+    "notes": "{\"info\":[\"Tiny hotfix on top of v1.2.1 fixing a 404 on every Community Hub post link.\"],\"features\":[\"Community Hub: clicking a post in the Discover / Gameplay / Tutorial tabs no longer 404s. RSI collapsed the per-user post routes during their late-2025 hub rework, so /community-hub/user/{nickname}/post/{slug} stopped resolving in favour of /community-hub/post/{slug}-{uid}. The Live and Events tabs were already on the new format and were unaffected.\"]}"
+  },
+  {
     "version": "1.2.1",
     "released_at": 1777151928,
     "notes": "{\"info\":[\"Maintenance hotfix on top of v1.2.0 — three small but visible fixes from the first week of reports.\"],\"features\":[\"Firefox / Waterfox: fixed a crash in the toolbar-badge code that prevented unread counts (Comm-Link, Patch Notes, Status alerts) from updating on Firefox-MV2 builds. The popup itself was unaffected — only the numeric badge on the extension icon. Thanks @ravensrook for the report.\",\"Patch Notes: removed the LIVE / PTU / EPTU / TECH-PREVIEW channel filter. CIG only publishes LIVE patches as Comm-Links these days so the other three tabs were permanently empty and confusing. Channel detection still runs per-card so the coloured badges keep telling you what kind of build each note covers. Thanks Dakota for the heads-up.\",\"Release Notes module: fixed the date displayed next to each v1.x entry — six versions had stale placeholder timestamps stuck in the future (v1.2.0 was showing 3 May when it actually shipped 25 Apr). All entries now use the real git-tag dates.\"]}"
