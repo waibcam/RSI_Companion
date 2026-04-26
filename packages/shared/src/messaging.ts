@@ -41,6 +41,7 @@ import type { MyOrg, OrgMember, PublicOrg, PublicOrgSearchParams } from './rsi/o
 import type { RsiIdentity } from './rsi/auth.js';
 import type { Ship } from './rsi/ships.js';
 import type {
+  SpectrumCommunity,
   SpectrumForumGroup,
   SpectrumLobby,
   SpectrumNotification,
@@ -306,12 +307,27 @@ export interface SpectrumLobbiesResponsePayload {
   fromCache: boolean;
 }
 
+export interface SpectrumCommunitiesRequest {
+  type: 'spectrum.communities';
+  force?: boolean;
+}
+export interface SpectrumCommunitiesResponsePayload {
+  communities: SpectrumCommunity[];
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
 export interface SpectrumForumGroupsRequest {
   type: 'spectrum.forumGroups';
+  /** SC (id=1) by default. Pass any joined org community id to browse
+   *  its forum tree instead. */
+  communityId?: number;
   force?: boolean;
 }
 export interface SpectrumForumGroupsResponsePayload {
   groups: SpectrumForumGroup[];
+  communityId: number;
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
@@ -319,6 +335,9 @@ export interface SpectrumForumGroupsResponsePayload {
 
 export interface SpectrumForumThreadsRequest {
   type: 'spectrum.forumThreads';
+  /** SC by default; required for org channels so the background can
+   *  look up the channel slug + community slug to build thread URLs. */
+  communityId?: number;
   channelId: number;
   /** Defaults to 'hot' to match the desktop SPA's default sort. */
   sort?: SpectrumSort;
@@ -947,6 +966,7 @@ export type RsiMessage =
   | SpectrumNotificationsRequest
   | SpectrumMarkReadRequest
   | SpectrumLobbiesRequest
+  | SpectrumCommunitiesRequest
   | SpectrumForumGroupsRequest
   | SpectrumForumThreadsRequest
   | DashboardRequest
@@ -1013,6 +1033,7 @@ interface ResponseMap {
   'spectrum.notifications': SpectrumNotificationsResponsePayload;
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
+  'spectrum.communities': SpectrumCommunitiesResponsePayload;
   'spectrum.forumGroups': SpectrumForumGroupsResponsePayload;
   'spectrum.forumThreads': SpectrumForumThreadsResponsePayload;
   'dashboard.summary': DashboardResponsePayload;

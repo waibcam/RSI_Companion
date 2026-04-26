@@ -102,8 +102,13 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:trending': 1,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
-  'spectrum:forumGroups': 1,
-  'spectrum:forumThreads': 1,
+  'spectrum:communities': 1,
+  // v2: groups + threads cache keys gained the communityId prefix in
+  // Phase 3 so SC and org communities can coexist in the cache without
+  // colliding. v1 entries (no community prefix) become orphans on
+  // first boot — fine, they expire on their own LIVE/ACCOUNT TTL.
+  'spectrum:forumGroups': 2,
+  'spectrum:forumThreads': 2,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';
@@ -1986,34 +1991,93 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
-async function handleSpectrumForumGroups(force: boolean) {
+async function handleSpectrumCommunities(force: boolean) {
   const token = await Rsi.readRsiToken();
   if (!token) {
     return {
-      groups: [],
+      communities: [],
       signedIn: false,
       fetchedAt: Date.now(),
       fromCache: false,
     };
   }
-  const key = 'spectrum:forumGroups';
+  const key = 'spectrum:communities';
   if (!force) {
-    const cached = await cacheGet<{ groups: Rsi.SpectrumForumGroup[]; fetchedAt: number }>(key);
+    const cached = await cacheGet<{ communities: Rsi.SpectrumCommunity[]; fetchedAt: number }>(key);
     if (cached) return { ...cached, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
-    const groups = await Rsi.fetchSpectrumForumGroups();
+    const communities = await Rsi.fetchSpectrumCommunities(token);
     const fetchedAt = Date.now();
-    // 30-min TTL (TTL.spectrum is ACCOUNT_TTL): forum channel structure
-    // changes rarely (CIG adds a new channel maybe a couple of times a
-    // year), but we don't have a longer-than-account TTL bucket and the
-    // user can hit refresh if they need it sooner.
-    await cacheSet(key, { groups, fetchedAt }, TTL.spectrum);
-    return { groups, signedIn: true as const, fetchedAt, fromCache: false };
+    // Joined-org membership rarely changes between popup opens — same
+    // 30-min TTL as the per-community forum structure.
+    await cacheSet(key, { communities, fetchedAt }, TTL.spectrum);
+    return { communities, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
 
+async function handleSpectrumForumGroups(communityId: number, force: boolean) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      groups: [],
+      communityId,
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  const key = `spectrum:forumGroups:${communityId}`;
+  if (!force) {
+    const cached = await cacheGet<{ groups: Rsi.SpectrumForumGroup[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, communityId, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    let groups: Rsi.SpectrumForumGroup[];
+    if (communityId === 1) {
+      // SC: identify already carries the structure; no extra HTTP.
+      groups = await Rsi.fetchSpectrumForumGroups();
+    } else {
+      // Org community: needs a v2/forum/channel/group/list call. Look
+      // up the community slug from the cached list first (used as
+      // SpectrumChannel.communitySlug for thread URL construction).
+      const list = await getCachedSpectrumCommunities(token);
+      const community = list.find((c) => c.id === communityId);
+      if (!community) {
+        throw new Error(
+          `community ${communityId} not in joined list — refresh communities or rejoin the org on Spectrum`,
+        );
+      }
+      groups = await Rsi.fetchSpectrumOrgForumGroups(token, {
+        id: community.id,
+        slug: community.slug,
+      });
+    }
+    const fetchedAt = Date.now();
+    await cacheSet(key, { groups, fetchedAt }, TTL.spectrum);
+    return { groups, communityId, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
+/** Pull the list of joined communities, refreshing if it isn't already
+ *  cached. Used by the forumGroups handler to resolve org community
+ *  slugs without forcing the UI to pre-load the list. */
+async function getCachedSpectrumCommunities(token: string): Promise<Rsi.SpectrumCommunity[]> {
+  const cached = await cacheGet<{ communities: Rsi.SpectrumCommunity[]; fetchedAt: number }>(
+    'spectrum:communities',
+  );
+  if (cached) return cached.communities;
+  const fresh = await Rsi.fetchSpectrumCommunities(token);
+  await cacheSet(
+    'spectrum:communities',
+    { communities: fresh, fetchedAt: Date.now() },
+    TTL.spectrum,
+  );
+  return fresh;
+}
+
 async function handleSpectrumForumThreads(message: {
+  communityId: number;
   channelId: number;
   sort?: Rsi.SpectrumSort;
   force?: boolean;
@@ -2028,13 +2092,43 @@ async function handleSpectrumForumThreads(message: {
     };
   }
   const sort = message.sort ?? 'hot';
-  const key = `spectrum:forumThreads:${message.channelId}:${sort}`;
+  const key = `spectrum:forumThreads:${message.communityId}:${message.channelId}:${sort}`;
   if (!message.force) {
     const cached = await cacheGet<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
     if (cached) return { ...cached, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
-    const threads = await Rsi.fetchSpectrumForumChannelThreads(token, message.channelId, { sort });
+    // Look up the channel by id from the cached forumGroups for this
+    // community (warming the cache first if it's missing). The
+    // SpectrumChannel ↦ thread-URL mapping needs both the channel
+    // slug and the community slug, neither of which is in the threads
+    // response itself.
+    const groupsCache = await cacheGet<{ groups: Rsi.SpectrumForumGroup[]; fetchedAt: number }>(
+      `spectrum:forumGroups:${message.communityId}`,
+    );
+    const groups: Rsi.SpectrumForumGroup[] = groupsCache
+      ? groupsCache.groups
+      : (await handleSpectrumForumGroups(message.communityId, false)).groups;
+    let channel: Rsi.SpectrumChannel | undefined;
+    for (const g of groups) {
+      const found = g.channels.find((c) => c.id === message.channelId);
+      if (found) {
+        channel = {
+          id: found.id,
+          name: found.name,
+          slug: found.slug,
+          color: found.color,
+          communitySlug: found.communitySlug,
+        };
+        break;
+      }
+    }
+    if (!channel) {
+      throw new Error(
+        `channel ${message.channelId} not found in community ${message.communityId}`,
+      );
+    }
+    const threads = await Rsi.fetchSpectrumForumChannelThreads(token, channel, { sort });
     const fetchedAt = Date.now();
     await cacheSet(key, { threads, fetchedAt }, TTL.spectrum);
     return { threads, signedIn: true as const, fetchedAt, fromCache: false };
@@ -2520,12 +2614,21 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumMarkRead() };
       case 'spectrum.lobbies':
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };
+      case 'spectrum.communities':
+        return { ok: true, data: await handleSpectrumCommunities(message.force ?? false) };
       case 'spectrum.forumGroups':
-        return { ok: true, data: await handleSpectrumForumGroups(message.force ?? false) };
+        return {
+          ok: true,
+          data: await handleSpectrumForumGroups(
+            message.communityId ?? 1,
+            message.force ?? false,
+          ),
+        };
       case 'spectrum.forumThreads':
         return {
           ok: true,
           data: await handleSpectrumForumThreads({
+            communityId: message.communityId ?? 1,
             channelId: message.channelId,
             sort: message.sort,
             force: message.force ?? false,

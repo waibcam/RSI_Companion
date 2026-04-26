@@ -31,6 +31,7 @@
   type ForumGroup = Rsi.SpectrumForumGroup;
   type ForumChannelInfo = Rsi.SpectrumForumChannelInfo;
   type ForumSort = Rsi.SpectrumSort;
+  type Community = Rsi.SpectrumCommunity;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
@@ -42,11 +43,17 @@
     typeof v === 'string' && (TABS as readonly string[]).includes(v);
   const tabP = persistedState<Tab>('spectrum:tab', 'devtracker', isTab);
 
-  // Forums-tab drill state — persisted so closing the popup mid-browse
-  // doesn't drop the user back at the channel list. `null` means "showing
-  // the channel list", a number is the active channel id (showing its
-  // threads). Numeric channel id is what RSI uses, so storing it directly
-  // saves a lookup.
+  // Forums-tab navigation state. Three persisted keys:
+  //   communityId — which community's forums we're browsing (1 = SC).
+  //   channelId   — active channel within that community (null = list).
+  //   sort        — thread sort within the active channel.
+  // Switching community resets channelId so the user lands on the org's
+  // channel list, not on a phantom channel from a different community.
+  const forumCommunityP = persistedState<number>(
+    'spectrum:forums:communityId',
+    1,
+    (v): v is number => typeof v === 'number',
+  );
   const forumChannelP = persistedState<number | null>(
     'spectrum:forums:channelId',
     null,
@@ -179,20 +186,30 @@
 
   // Forums tab state — `forumGroups` is the channel-list view; once
   // `forumChannelP.value` is set, `forumThreads` carries the threads in
-  // that channel. The two never display at the same time.
+  // that channel. The two never display at the same time. The
+  // `groupsForCommunity` field tracks which community the current
+  // groups array belongs to so a stale community-switch fetch can't
+  // paint the wrong tree.
   let forumGroups = $state<ForumGroup[]>([]);
   let forumGroupsLoading = $state(false);
   let forumGroupsError = $state<string | null>(null);
   let forumGroupsLoaded = $state(false);
   let forumGroupsFromCache = $state(false);
+  let forumGroupsForCommunity = $state<number | null>(null);
 
   let forumThreads = $state<Thread[]>([]);
   let forumThreadsLoading = $state(false);
   let forumThreadsError = $state<string | null>(null);
   let forumThreadsFromCache = $state(false);
-  // Track which channel id the threads array belongs to so a stale fetch
-  // for a previously-selected channel can't paint the current view.
   let forumThreadsForChannel = $state<number | null>(null);
+
+  // Community switcher (joined SC + orgs). Loaded lazily on first
+  // Forums-tab visit so users who never open Forums don't pay for
+  // the v2/community/list call.
+  let communities = $state<Community[]>([]);
+  let communitiesLoading = $state(false);
+  let communitiesError = $state<string | null>(null);
+  let communitiesLoaded = $state(false);
 
   let query = $state('');
 
@@ -262,46 +279,89 @@
     }
   }
 
+  async function loadCommunities(force = false) {
+    communitiesLoading = true;
+    communitiesError = null;
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.communities', force });
+      communities = res.communities;
+      signedIn = res.signedIn;
+      communitiesLoaded = true;
+    } catch (e) {
+      communitiesError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      communitiesLoading = false;
+    }
+  }
+
   async function loadForumGroups(force = false) {
+    const communityId = forumCommunityP.value;
     forumGroupsLoading = true;
     forumGroupsError = null;
     try {
-      const res = await sendRsiMessage({ type: 'spectrum.forumGroups', force });
+      const res = await sendRsiMessage({ type: 'spectrum.forumGroups', communityId, force });
+      // Stale-response guard: if the user switched communities while
+      // this fetch was in flight, don't overwrite their view.
+      if (forumCommunityP.value !== communityId) return;
       forumGroups = res.groups;
+      forumGroupsForCommunity = communityId;
       signedIn = res.signedIn;
       forumGroupsFromCache = res.fromCache;
       forumGroupsLoaded = true;
     } catch (e) {
+      if (forumCommunityP.value !== communityId) return;
       forumGroupsError = errorMessage(e);
       if (extractSignedIn(e) === false) signedIn = false;
     } finally {
-      forumGroupsLoading = false;
+      if (forumCommunityP.value === communityId) forumGroupsLoading = false;
     }
   }
 
   async function loadForumThreads(channelId: number, force = false) {
+    const communityId = forumCommunityP.value;
     forumThreadsLoading = true;
     forumThreadsError = null;
     try {
       const res = await sendRsiMessage({
         type: 'spectrum.forumThreads',
+        communityId,
         channelId,
         sort: forumSortP.value,
         force,
       });
       // Stale-response guard: if the user clicked into another channel
-      // while this fetch was in flight, don't overwrite their view.
-      if (forumChannelP.value !== channelId) return;
+      // OR community while this fetch was in flight, don't overwrite
+      // their view.
+      if (forumChannelP.value !== channelId || forumCommunityP.value !== communityId) return;
       forumThreads = res.threads;
       forumThreadsForChannel = channelId;
       signedIn = res.signedIn;
       forumThreadsFromCache = res.fromCache;
     } catch (e) {
+      if (forumChannelP.value !== channelId || forumCommunityP.value !== communityId) return;
       forumThreadsError = errorMessage(e);
       if (extractSignedIn(e) === false) signedIn = false;
     } finally {
-      forumThreadsLoading = false;
+      if (forumChannelP.value === channelId && forumCommunityP.value === communityId) {
+        forumThreadsLoading = false;
+      }
     }
+  }
+
+  function selectCommunity(communityId: number) {
+    if (forumCommunityP.value === communityId) return;
+    forumCommunityP.value = communityId;
+    // Reset drill state — channels are per-community, so the previous
+    // channel id is meaningless now.
+    forumChannelP.value = null;
+    forumGroups = [];
+    forumGroupsForCommunity = null;
+    forumGroupsError = null;
+    forumThreads = [];
+    forumThreadsForChannel = null;
+    forumThreadsError = null;
+    loadForumGroups();
   }
 
   /** Find a single channel by id across all groups. Used by the threads
@@ -363,7 +423,10 @@
     } else if (next === 'dms' && !lobbiesLoaded) {
       loadLobbies();
     } else if (next === 'forums') {
-      if (!forumGroupsLoaded) loadForumGroups();
+      if (!communitiesLoaded) loadCommunities();
+      if (!forumGroupsLoaded || forumGroupsForCommunity !== forumCommunityP.value) {
+        loadForumGroups();
+      }
       // If the user was mid-drill last session, re-fetch the channel's
       // threads to populate the threads view from a clean state.
       const ch = forumChannelP.value;
@@ -480,6 +543,7 @@
       if (tabP.value === 'trending') void loadTrending();
       else if (tabP.value === 'dms') void loadLobbies();
       else if (tabP.value === 'forums') {
+        void loadCommunities();
         void loadForumGroups();
         if (forumChannelP.value != null) void loadForumThreads(forumChannelP.value);
       }
@@ -508,7 +572,9 @@
       {:else if signedIn && tab === 'dms' && lobbiesLoaded}
         <span class="text-[10px] text-slate-500">{lobbies.length} lobbies</span>
       {:else if signedIn && tab === 'forums' && forumGroupsLoaded}
+        {@const activeCommunity = communities.find((c) => c.id === forumCommunityP.value)}
         <span class="text-[10px] text-slate-500">
+          {#if activeCommunity}{activeCommunity.name} ·{' '}{/if}
           {#if forumChannelP.value != null}
             {forumThreads.length} threads
           {:else}
@@ -744,6 +810,47 @@
     </li>
   {/snippet}
 
+  {#snippet communitySwitcher()}
+    <div
+      class="mx-auto mb-3 flex max-w-3xl gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {#each communities as c (c.id)}
+        {@const active = forumCommunityP.value === c.id}
+        <button
+          type="button"
+          onclick={() => selectCommunity(c.id)}
+          class="group flex shrink-0 flex-col items-center gap-1 rounded-md p-1.5 ring-1 transition {active
+            ? 'bg-teal-950/40 ring-teal-500'
+            : 'bg-slate-900/50 ring-slate-800 hover:ring-teal-700'}"
+          title={c.name}
+        >
+          {#if c.avatar}
+            <img
+              src={c.avatar}
+              alt=""
+              loading="lazy"
+              class="size-8 rounded-full object-cover ring-1 ring-slate-800"
+            />
+          {:else}
+            {@const av = avatarFallback(c.name, c.slug)}
+            <div
+              class="flex size-8 items-center justify-center rounded-full bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-[10px] font-semibold text-white/90 ring-1 ring-slate-800"
+            >
+              {av.initials}
+            </div>
+          {/if}
+          <span
+            class="line-clamp-1 max-w-[80px] text-[9px] {active
+              ? 'text-teal-200'
+              : 'text-slate-400 group-hover:text-slate-200'}"
+          >
+            {c.name}
+          </span>
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+
   {#snippet forumChannelCard(ch: ForumChannelInfo)}
     {@const stripe = ch.color || '#475569'}
     <li class="virt-item">
@@ -802,9 +909,18 @@
         {/if}
       {/if}
     {:else if tab === 'forums'}
+      <!-- Community switcher — shows up only when the user has at least
+           one joined org community in addition to SC. The strip lives at
+           the top of both the channel-list view and the threads view so
+           switching is one click from anywhere. -->
+      {#if communities.length > 1}
+        {@render communitySwitcher()}
+      {/if}
+
       {#if forumChannelP.value == null}
         <!-- Channel list — grouped by forum_channel_groups in identify
-             order, search filters across all groups. -->
+             order (or v2/forum/channel/group/list for org communities),
+             search filters across all groups. -->
         {#if forumGroupsError}
           {@render errorBlock('Failed to load forum channels', forumGroupsError)}
         {:else if forumGroupsLoading && forumGroups.length === 0}

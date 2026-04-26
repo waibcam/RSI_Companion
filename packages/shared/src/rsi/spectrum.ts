@@ -111,7 +111,11 @@ export interface SpectrumForumGroup {
  *  channels expanded inline. The shape is read straight from
  *  `auth/identify.communities[0].forum_channel_groups` — no extra HTTP
  *  call, since identify is called for every other Spectrum tab anyway
- *  and its response is cached at the chrome.cookies layer. */
+ *  and its response is cached at the chrome.cookies layer.
+ *
+ *  For org communities (Phase 3), use `fetchSpectrumOrgForumGroups`
+ *  with the org's community id — those don't ride along on identify
+ *  and need a dedicated `v2/forum/channel/group/list` call. */
 export async function fetchSpectrumForumGroups(): Promise<SpectrumForumGroup[]> {
   const data = await identifyFull();
   if (!data) throw new RsiNotAuthenticatedError();
@@ -134,41 +138,176 @@ export async function fetchSpectrumForumGroups(): Promise<SpectrumForumGroup[]> 
   }));
 }
 
+// --- Org communities + their forums (Phase 3) -----------------------------
+//
+// auth/identify only returns the SC community's forum structure. For the
+// user's joined orgs (e.g. COLTRANS, THUNDERBSC), Spectrum exposes:
+//   POST /api/spectrum/v2/community/list           — list of joined orgs
+//   POST /api/spectrum/v2/forum/channel/group/list — per-community structure
+// Both confirmed live via the Spectrum bundle source map. The first one
+// was probed live and works; the second was console-probed unauthenticated
+// and returned ErrPermissionDenied, but should work fine from the
+// extension's authenticated background context.
+
+export interface SpectrumCommunity {
+  id: number;
+  slug: string;
+  name: string;
+  avatar: string;
+  banner: string;
+  type: string;
+}
+
+const RawCommunityListEntry = z
+  .object({
+    id: z.coerce.number().int(),
+    slug: z.string(),
+    name: z.string().default(''),
+    type: z.string().default(''),
+    avatar: z
+      .string()
+      .nullable()
+      .default('')
+      .transform((v) => v ?? ''),
+    banner: z
+      .string()
+      .nullable()
+      .default('')
+      .transform((v) => v ?? ''),
+  })
+  .passthrough();
+
+const CommunityListResponse = z.object({
+  success: z.number().int(),
+  data: z.array(RawCommunityListEntry).nullable().optional(),
+});
+
+/** List the user's joined Spectrum communities (SC + every org they
+ *  belong to). Drives the community switcher on the Forums tab. */
+export async function fetchSpectrumCommunities(token: string): Promise<SpectrumCommunity[]> {
+  const response = await fetchWithTimeout(`${RSI_BASE_URL}/api/spectrum/v2/community/list`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-rsi-token': token,
+      'x-tavern-id': token,
+    },
+    body: '{}',
+  });
+  assertRsiOk(response, 'v2/community/list');
+  const raw = (await response.json()) as unknown;
+  const parsed = CommunityListResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) return [];
+  return (parsed.data.data ?? []).map((c) => ({
+    id: c.id,
+    slug: c.slug,
+    name: c.name,
+    type: c.type,
+    avatar: c.avatar,
+    banner: c.banner,
+  }));
+}
+
+// v2 channel-group response — same shape as the identify embed but each
+// channel object is parsed independently. We accept the same fields with
+// the same defaults so the conversion to SpectrumForumChannelInfo can be
+// shared.
+const RawV2Channel = z
+  .object({
+    id: z.coerce.number().int(),
+    name: z.string().default(''),
+    slug: z.string().default(''),
+    color: z
+      .string()
+      .nullable()
+      .default('')
+      .transform((v) => v ?? ''),
+    description: z
+      .string()
+      .nullable()
+      .default('')
+      .transform((v) => v ?? ''),
+    threads_count: z.coerce.number().int().default(0),
+  })
+  .passthrough();
+
+const RawV2ChannelGroup = z
+  .object({
+    id: z.coerce.number().int(),
+    name: z.string().default(''),
+    channels: z.array(RawV2Channel).default([]),
+  })
+  .passthrough();
+
+const V2ForumChannelGroupListResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  data: z.array(RawV2ChannelGroup).nullable().optional(),
+});
+
+/** Forum channel groups for an arbitrary community (orgs or SC). For
+ *  the SC community (id=1) the caller should prefer
+ *  `fetchSpectrumForumGroups` since identify already carries the data
+ *  and we save a round trip. */
+export async function fetchSpectrumOrgForumGroups(
+  token: string,
+  community: { id: number; slug: string },
+): Promise<SpectrumForumGroup[]> {
+  const response = await fetchWithTimeout(
+    `${RSI_BASE_URL}/api/spectrum/v2/forum/channel/group/list`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-rsi-token': token,
+        'x-tavern-id': token,
+      },
+      body: JSON.stringify({ community_id: String(community.id) }),
+    },
+  );
+  assertRsiOk(response, 'v2/forum/channel/group/list');
+  const raw = (await response.json()) as unknown;
+  const parsed = V2ForumChannelGroupListResponse.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`v2/forum/channel/group/list: unexpected shape (${parsed.error.message})`);
+  }
+  if (parsed.data.success !== 1) {
+    // Org communities sometimes restrict forum access to members with a
+    // specific role; surface that explicitly so the UI can render an
+    // appropriate empty state instead of a generic error.
+    const code = parsed.data.code ?? 'unknown';
+    throw new Error(`v2/forum/channel/group/list returned ${code}`);
+  }
+  return (parsed.data.data ?? []).map((g) => ({
+    id: g.id,
+    name: g.name,
+    channels: g.channels.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      slug: ch.slug,
+      color: ch.color,
+      communitySlug: community.slug,
+      description: ch.description,
+      threadsCount: ch.threads_count,
+      groupId: g.id,
+      groupName: g.name,
+    })),
+  }));
+}
+
 /** Threads in a single forum channel — same `forum/channel/threads`
  *  endpoint we use for DevTracker, but with `highlightedOnly: false`
- *  so community-driven threads come through. The channel object is
- *  resolved from the cached identify response so callers only have to
- *  know the channel id. */
+ *  so community-driven threads come through. The caller passes the
+ *  resolved channel (id + slug + colour + community slug) so this
+ *  function works the same for SC channels and org-community
+ *  channels alike. */
 export async function fetchSpectrumForumChannelThreads(
   token: string,
-  channelId: number,
+  channel: SpectrumChannel,
   options: FetchChannelThreadsOptions = {},
 ): Promise<SpectrumThread[]> {
-  const data = await identifyFull();
-  if (!data) throw new RsiNotAuthenticatedError();
-  const community = (data.communities ?? []).find((c) => c.id === 1);
-  if (!community) throw new Error('SC community missing from identify response');
-  let channel: SpectrumChannel | undefined;
-  for (const g of community.forum_channel_groups) {
-    for (const ch of g.channels) {
-      if (ch.id === channelId) {
-        channel = {
-          id: ch.id,
-          name: ch.name,
-          slug: ch.slug,
-          color: ch.color,
-          communitySlug: community.slug,
-        };
-        break;
-      }
-    }
-    if (channel) break;
-  }
-  if (!channel) {
-    throw new Error(
-      `forum channel ${channelId} not found in identify (try refreshing — it may have been added by CIG since last cache hit)`,
-    );
-  }
   return fetchChannelThreads(token, channel, { highlightedOnly: false, ...options });
 }
 
