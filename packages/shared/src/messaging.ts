@@ -346,6 +346,19 @@ export interface SpectrumBookmarksResponsePayload {
   fromCache: boolean;
 }
 
+export interface SpectrumBookmarkAddRequest {
+  type: 'spectrum.bookmarkAdd';
+  entityId: number;
+  entityType: string;
+  /** Optional user-supplied label; the server falls back to the
+   *  entity's canonical name when omitted. */
+  name?: string;
+}
+export interface SpectrumBookmarkAddResponsePayload {
+  /** Refreshed list — saves the popup a follow-up fetch. */
+  bookmarks: SpectrumBookmark[];
+}
+
 export interface SpectrumBookmarkRemoveRequest {
   type: 'spectrum.bookmarkRemove';
   entityId: number;
@@ -1006,6 +1019,7 @@ export type RsiMessage =
   | SpectrumLobbiesRequest
   | SpectrumCommunitiesRequest
   | SpectrumBookmarksRequest
+  | SpectrumBookmarkAddRequest
   | SpectrumBookmarkRemoveRequest
   | SpectrumForumGroupsRequest
   | SpectrumForumThreadsRequest
@@ -1076,6 +1090,7 @@ interface ResponseMap {
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.communities': SpectrumCommunitiesResponsePayload;
   'spectrum.bookmarks': SpectrumBookmarksResponsePayload;
+  'spectrum.bookmarkAdd': SpectrumBookmarkAddResponsePayload;
   'spectrum.bookmarkRemove': SpectrumBookmarkRemoveResponsePayload;
   'spectrum.forumGroups': SpectrumForumGroupsResponsePayload;
   'spectrum.forumThreads': SpectrumForumThreadsResponsePayload;

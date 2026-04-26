@@ -2057,6 +2057,25 @@ async function handleSpectrumBookmarks(force: boolean) {
   });
 }
 
+async function handleSpectrumBookmarkAdd(message: {
+  entityId: number;
+  entityType: string;
+  name?: string;
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  await Rsi.addSpectrumBookmark(token, {
+    entityId: message.entityId,
+    entityType: message.entityType,
+    name: message.name,
+  });
+  // Refresh + reprime cache so the popup paints the new state without
+  // a separate roundtrip — same pattern as bookmarkRemove.
+  const bookmarks = await Rsi.fetchSpectrumBookmarks(token);
+  await cacheSet('spectrum:bookmarks', { bookmarks, fetchedAt: Date.now() }, TTL.spectrum);
+  return { bookmarks };
+}
+
 async function handleSpectrumBookmarkRemove(message: {
   entityId: number;
   entityType: string;
@@ -2708,6 +2727,15 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
             slug: message.slug,
             sort: message.sort,
             force: message.force ?? false,
+          }),
+        };
+      case 'spectrum.bookmarkAdd':
+        return {
+          ok: true,
+          data: await handleSpectrumBookmarkAdd({
+            entityId: message.entityId,
+            entityType: message.entityType,
+            name: message.name,
           }),
         };
       case 'spectrum.bookmarkRemove':

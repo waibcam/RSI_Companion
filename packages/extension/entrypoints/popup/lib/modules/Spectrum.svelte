@@ -6,6 +6,7 @@
     AtSign,
     Bell,
     Bookmark,
+    BookmarkPlus,
     BookmarkX,
     CheckCheck,
     ChevronRight,
@@ -465,6 +466,48 @@
     threadDetailForSlug = null;
     threadDetailError = null;
     loadThreadDetail(t.slug);
+    // Lazy-load bookmarks if we don't have them yet — drives the
+    // toggle button's "is this bookmarked" state in the thread header.
+    if (!bookmarksLoaded) loadBookmarks();
+  }
+
+  /** True when the currently-displayed thread is in the user's
+   *  bookmarks list. Drives the bookmark toggle button in the thread
+   *  detail header. Falls back to false if bookmarks haven't loaded —
+   *  worst case the user clicks "add" on something they already have
+   *  saved, which the server treats as a noop. */
+  const threadIsBookmarked = $derived.by<boolean>(() => {
+    const id = threadDetail?.id;
+    if (id == null) return false;
+    return bookmarks.some((b) => b.entityType === 'forum_thread' && b.entityId === id);
+  });
+
+  async function toggleThreadBookmark() {
+    const t = threadDetail;
+    if (!t) return;
+    const key = `forum_thread:${t.id}`;
+    if (bookmarkRemoving.has(key)) return;
+    bookmarkRemoving = new Set([...bookmarkRemoving, key]);
+    try {
+      const res = threadIsBookmarked
+        ? await sendRsiMessage({
+            type: 'spectrum.bookmarkRemove',
+            entityId: t.id,
+            entityType: 'forum_thread',
+          })
+        : await sendRsiMessage({
+            type: 'spectrum.bookmarkAdd',
+            entityId: t.id,
+            entityType: 'forum_thread',
+          });
+      bookmarks = res.bookmarks;
+    } catch (e) {
+      bookmarksError = errorMessage(e);
+    } finally {
+      const next = new Set(bookmarkRemoving);
+      next.delete(key);
+      bookmarkRemoving = next;
+    }
   }
   function backToThreadList() {
     forumThreadP.value = null;
@@ -1197,13 +1240,36 @@
         >
           {ch?.name ?? 'Thread'}
         </span>
+        {#if detail}
+          {@const bmKey = `forum_thread:${detail.id}`}
+          {@const bmPending = bookmarkRemoving.has(bmKey)}
+          <button
+            type="button"
+            onclick={toggleThreadBookmark}
+            disabled={bmPending}
+            class="ml-auto shrink-0 rounded-md p-1 transition disabled:cursor-not-allowed disabled:opacity-40
+              {threadIsBookmarked
+              ? 'bg-pink-950/40 text-pink-300 hover:bg-pink-900/40'
+              : 'text-slate-500 hover:bg-slate-800 hover:text-pink-300'}"
+            title={threadIsBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+            aria-label={threadIsBookmarked ? 'Remove bookmark' : 'Add bookmark'}
+          >
+            {#if bmPending}
+              <Loader2 class="size-3.5 animate-spin" />
+            {:else if threadIsBookmarked}
+              <BookmarkX class="size-3.5" />
+            {:else}
+              <BookmarkPlus class="size-3.5" />
+            {/if}
+          </button>
+        {/if}
         <a
           href={externalUrl}
           target="_blank"
           rel="noopener noreferrer"
-          class="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
         >
-          Open in Spectrum
+          Open
           <ChevronRight class="size-3" />
         </a>
       </div>
