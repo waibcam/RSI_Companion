@@ -559,6 +559,14 @@ const RawContentWrapper = z
   })
   .passthrough();
 
+const RawMemberBadge = z
+  .object({
+    name: z.string().default(''),
+    icon: z.string().nullable().default('').transform((v) => v ?? ''),
+    url: z.string().nullable().optional(),
+  })
+  .passthrough();
+
 const RawThreadMember = z
   .object({
     id: z.coerce.number().int().default(0),
@@ -569,6 +577,13 @@ const RawThreadMember = z
      *  server tints messages from these members with a gold accent
      *  on the official site; we mirror that. */
     isGM: z.boolean().default(false),
+    meta: z
+      .object({
+        badges: z.array(RawMemberBadge).default([]),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 
@@ -703,6 +718,7 @@ export interface SpectrumThreadReply {
   /** True for CIG staff posts (member.isGM). Drives the gold tint
    *  Spectrum's site uses to make staff replies visually distinct. */
   authorIsStaff: boolean;
+  authorBadges: SpectrumMemberBadge[];
   contentBlocks: SpectrumContentBlock[];
   votesCount: number;
   reactions: SpectrumReaction[];
@@ -737,6 +753,7 @@ export interface SpectrumThreadDetail {
   authorDisplayName: string;
   authorAvatar: string | null;
   authorIsStaff: boolean;
+  authorBadges: SpectrumMemberBadge[];
   votesCount: number;
   reactions: SpectrumReaction[];
   contentBlocks: SpectrumContentBlock[];
@@ -871,6 +888,9 @@ function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undef
     /** True for CIG staff (member.isGM === true) — mirrors the
      *  gold tint Spectrum's website uses on staff posts. */
     isStaff: !!m?.isGM,
+    badges: (m?.meta?.badges ?? [])
+      .filter((b) => b.icon)
+      .map((b) => ({ name: b.name, icon: b.icon, url: b.url ?? undefined })),
   };
 }
 
@@ -912,6 +932,7 @@ export async function fetchSpectrumThreadDetail(
     authorDisplayName: author.displayName,
     authorAvatar: author.avatar,
     authorIsStaff: author.isStaff,
+    authorBadges: author.badges,
     contentBlocks: normalizeContentBlocks(t.content_blocks),
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
@@ -932,6 +953,7 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
     authorDisplayName: ra.displayName,
     authorAvatar: ra.avatar,
     authorIsStaff: ra.isStaff,
+    authorBadges: ra.badges,
     contentBlocks: normalizeContentBlocks(r.content_blocks),
     repliesCount: r.replies_count,
     isErased: r.is_erased,
@@ -1081,6 +1103,13 @@ const RawMessageMember = z
     displayname: z.string().nullable().optional(),
     avatar: z.string().nullable().optional(),
     isGM: z.boolean().default(false),
+    meta: z
+      .object({
+        badges: z.array(RawMemberBadge).default([]),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
   })
   .passthrough();
 
@@ -1115,6 +1144,13 @@ const MessageHistoryResponse = z.object({
     .optional(),
 });
 
+export interface SpectrumMemberBadge {
+  name: string;
+  icon: string;
+  /** Set when the badge links to an org page. */
+  url?: string;
+}
+
 export interface SpectrumMessage {
   id: number;
   lobbyId: number;
@@ -1127,6 +1163,9 @@ export interface SpectrumMessage {
   /** True for CIG staff posts (member.isGM). Drives the gold tint
    *  Spectrum's site uses to make staff messages visually distinct. */
   authorIsStaff: boolean;
+  /** Member's role / org badges from member.meta.badges — surfaces
+   *  the user's pledge tier + joined orgs next to the message. */
+  authorBadges: SpectrumMemberBadge[];
   contentBlocks: SpectrumContentBlock[];
   /** Empty when no attachment. The current MVP renders a placeholder
    *  for non-empty values; resolving the actual upload URL needs an
@@ -1185,6 +1224,9 @@ export async function fetchSpectrumLobbyMessages(
       authorDisplayName: author.displayName,
       authorAvatar: author.avatar,
       authorIsStaff: author.isStaff,
+      authorBadges: (m.member?.meta?.badges ?? [])
+        .filter((b) => b.icon)
+        .map((b) => ({ name: b.name, icon: b.icon, url: b.url ?? undefined })),
       contentBlocks,
       mediaId: m.media_id,
       isHighlighted: Number(m.highlight_role_id ?? 0) > 0,

@@ -1281,6 +1281,7 @@
               </span>
             {/if}
           </p>
+          {@render badgeRow(m.authorBadges)}
           <p class="text-[9px] text-slate-500">{timeAgo(m.timeCreated)}</p>
         </div>
       </div>
@@ -1509,6 +1510,37 @@
     </div>
   {/snippet}
 
+  {#snippet badgeRow(badges: Rsi.SpectrumMemberBadge[])}
+    {#if badges.length > 0}
+      <div class="mt-0.5 flex items-center gap-1">
+        {#each badges.slice(0, 3) as badge (badge.name)}
+          {#if badge.url}
+            <a
+              href={badge.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={badge.name}
+              class="shrink-0 rounded ring-1 ring-slate-800 transition hover:ring-slate-600"
+            >
+              <img src={badge.icon} alt={badge.name} loading="lazy" class="size-3.5 rounded" />
+            </a>
+          {:else}
+            <img
+              src={badge.icon}
+              alt={badge.name}
+              loading="lazy"
+              title={badge.name}
+              class="size-3.5 shrink-0 rounded ring-1 ring-slate-800"
+            />
+          {/if}
+        {/each}
+        {#if badges.length > 3}
+          <span class="text-[8px] text-slate-500">+{badges.length - 3}</span>
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
+
   {#snippet reactionsList(reactions: Rsi.SpectrumReaction[], voteCount: number = 0)}
     {#if voteCount > 0 || reactions.length > 0}
       <div class="mt-1.5 flex flex-wrap items-center gap-1">
@@ -1658,6 +1690,7 @@
               </span>
             {/if}
           </p>
+          {@render badgeRow(r.authorBadges)}
           <p class="text-[9px] text-slate-500">{timeAgo(r.timeCreated)}</p>
         </div>
         {#if r.repliesCount > 0}
@@ -1825,6 +1858,7 @@
               <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
                 {detail.authorDisplayName || detail.authorNickname}
               </p>
+              {@render badgeRow(detail.authorBadges)}
               <p class="text-[9px] text-slate-500">
                 {timeAgo(detail.timeCreated)}
                 {#if detail.viewsCount > 0} · {detail.viewsCount.toLocaleString()} views{/if}
