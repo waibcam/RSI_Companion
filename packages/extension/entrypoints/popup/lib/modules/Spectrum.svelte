@@ -40,6 +40,7 @@
   type ThreadDetail = Rsi.SpectrumThreadDetail;
   type ThreadReply = Rsi.SpectrumThreadReply;
   type ContentBlock = Rsi.SpectrumContentBlock;
+  type Message = Rsi.SpectrumMessage;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
@@ -81,6 +82,12 @@
     'spectrum:forums:threadSlug',
     null,
     (v): v is string | null => v === null || typeof v === 'string',
+  );
+  // DMs tab drill — selected lobby id (null = lobby list view, set = messages).
+  const dmLobbyP = persistedState<number | null>(
+    'spectrum:dms:lobbyId',
+    null,
+    (v): v is number | null => v === null || typeof v === 'number',
   );
   const FORUM_SORTS: ReadonlyArray<{ value: ForumSort; label: string }> = [
     { value: 'hot', label: 'Hot' },
@@ -242,6 +249,15 @@
   let threadDetailError = $state<string | null>(null);
   let threadDetailFromCache = $state(false);
   let threadDetailForSlug = $state<string | null>(null);
+
+  // Lobby messages state (Phase 5). Loaded when dmLobbyP.value is
+  // set; we always render newest-at-bottom (chat-app orientation),
+  // which means reversing the API's newest-first order.
+  let lobbyMessages = $state<Message[]>([]);
+  let lobbyMessagesLoading = $state(false);
+  let lobbyMessagesError = $state<string | null>(null);
+  let lobbyMessagesFromCache = $state(false);
+  let lobbyMessagesForLobby = $state<number | null>(null);
 
   // Community switcher (joined SC + orgs). Loaded lazily on first
   // Forums-tab visit so users who never open Forums don't pay for
@@ -439,6 +455,49 @@
     }
   }
 
+  async function loadLobbyMessages(lobbyId: number, force = false) {
+    lobbyMessagesLoading = true;
+    lobbyMessagesError = null;
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.lobbyMessages', lobbyId, force });
+      // Stale-response guard.
+      if (dmLobbyP.value !== lobbyId) return;
+      lobbyMessages = res.messages;
+      lobbyMessagesForLobby = lobbyId;
+      signedIn = res.signedIn;
+      lobbyMessagesFromCache = res.fromCache;
+    } catch (e) {
+      if (dmLobbyP.value !== lobbyId) return;
+      lobbyMessagesError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      if (dmLobbyP.value === lobbyId) lobbyMessagesLoading = false;
+    }
+  }
+
+  function selectLobby(l: Lobby) {
+    dmLobbyP.value = l.id;
+    lobbyMessages = [];
+    lobbyMessagesForLobby = null;
+    lobbyMessagesError = null;
+    loadLobbyMessages(l.id);
+  }
+  function backToLobbyList() {
+    dmLobbyP.value = null;
+    lobbyMessages = [];
+    lobbyMessagesForLobby = null;
+    lobbyMessagesError = null;
+  }
+
+  /** Find the currently-drilled lobby's metadata from the cached
+   *  lobbies list. Used to render the messages-view header (lobby
+   *  name, member count, etc.). */
+  const currentLobby = $derived.by<Lobby | null>(() => {
+    const id = dmLobbyP.value;
+    if (id == null) return null;
+    return lobbies.find((l) => l.id === id) ?? null;
+  });
+
   async function loadThreadDetail(slug: string, force = false) {
     threadDetailLoading = true;
     threadDetailError = null;
@@ -595,8 +654,10 @@
       loadNotifications();
     } else if (next === 'trending' && !trendingLoaded) {
       loadTrending();
-    } else if (next === 'dms' && !lobbiesLoaded) {
-      loadLobbies();
+    } else if (next === 'dms') {
+      if (!lobbiesLoaded) loadLobbies();
+      const drilled = dmLobbyP.value;
+      if (drilled != null && lobbyMessagesForLobby !== drilled) loadLobbyMessages(drilled);
     } else if (next === 'bookmarks' && !bookmarksLoaded) {
       loadBookmarks();
     } else if (next === 'forums') {
@@ -617,8 +678,10 @@
     if (tab === 'devtracker') loadThreads(true);
     else if (tab === 'trending') loadTrending(true);
     else if (tab === 'notifications') loadNotifications(true);
-    else if (tab === 'dms') loadLobbies(true);
-    else if (tab === 'bookmarks') loadBookmarks(true);
+    else if (tab === 'dms') {
+      if (dmLobbyP.value != null) loadLobbyMessages(dmLobbyP.value, true);
+      else loadLobbies(true);
+    } else if (tab === 'bookmarks') loadBookmarks(true);
     else if (tab === 'forums') {
       if (forumThreadP.value != null) loadThreadDetail(forumThreadP.value, true);
       else if (forumChannelP.value != null) loadForumThreads(forumChannelP.value, true);
@@ -655,7 +718,9 @@
         : tab === 'notifications'
           ? notifsLoading
           : tab === 'dms'
-            ? lobbiesLoading
+            ? dmLobbyP.value != null
+              ? lobbyMessagesLoading
+              : lobbiesLoading
             : tab === 'bookmarks'
               ? bookmarksLoading
               : tab === 'forums'
@@ -669,7 +734,7 @@
   const showSearch = $derived(
     tab === 'devtracker' ||
       tab === 'trending' ||
-      tab === 'dms' ||
+      (tab === 'dms' && dmLobbyP.value == null) ||
       tab === 'bookmarks' ||
       (tab === 'forums' && forumChannelP.value == null && forumThreadP.value == null),
   );
@@ -684,7 +749,8 @@
   const fromCache = $derived(
     (tab === 'devtracker' && threadsFromCache) ||
       (tab === 'trending' && trendingFromCache) ||
-      (tab === 'dms' && lobbiesFromCache) ||
+      (tab === 'dms' &&
+        (dmLobbyP.value != null ? lobbyMessagesFromCache : lobbiesFromCache)) ||
       (tab === 'bookmarks' && bookmarksFromCache) ||
       (tab === 'forums' &&
         (forumThreadP.value != null
@@ -742,8 +808,10 @@
       // immediately instead of an empty list that only populates after
       // a manual tab toggle.
       if (tabP.value === 'trending') void loadTrending();
-      else if (tabP.value === 'dms') void loadLobbies();
-      else if (tabP.value === 'bookmarks') void loadBookmarks();
+      else if (tabP.value === 'dms') {
+        void loadLobbies();
+        if (dmLobbyP.value != null) void loadLobbyMessages(dmLobbyP.value);
+      } else if (tabP.value === 'bookmarks') void loadBookmarks();
       else if (tabP.value === 'forums') {
         void loadCommunities();
         void loadForumGroups();
@@ -773,7 +841,13 @@
       {:else if signedIn && tab === 'notifications' && notifsLoaded}
         <span class="text-[10px] text-slate-500">{notifs.length} total</span>
       {:else if signedIn && tab === 'dms' && lobbiesLoaded}
-        <span class="text-[10px] text-slate-500">{lobbies.length} lobbies</span>
+        <span class="text-[10px] text-slate-500">
+          {#if dmLobbyP.value != null && currentLobby}
+            {currentLobby.name} · {lobbyMessages.length} msgs
+          {:else}
+            {lobbies.length} lobbies
+          {/if}
+        </span>
       {:else if signedIn && tab === 'bookmarks' && bookmarksLoaded}
         <span class="text-[10px] text-slate-500">{bookmarks.length} saved</span>
       {:else if signedIn && tab === 'forums' && forumGroupsLoaded}
@@ -963,39 +1037,132 @@
     </li>
   {/snippet}
 
-  {#snippet lobbyCard(l: Lobby)}
+  {#snippet lobbyCardBody(l: Lobby)}
+    {@render avatar(avatarUrl(l.lastAuthorAvatar), l.lastAuthorDisplayName || l.name, '', 'size-9')}
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5">
+        <p class="line-clamp-1 text-xs font-medium text-slate-100">{l.name}</p>
+        {#if l.newMessages > 0}
+          <span
+            class="shrink-0 rounded-full bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200"
+          >
+            {l.newMessages > 99 ? '99+' : l.newMessages}
+          </span>
+        {/if}
+      </div>
+      {#if l.lastMessageText}
+        <p class="line-clamp-1 text-[11px] text-slate-400">
+          {#if l.lastAuthorDisplayName}<span class="text-slate-500">{l.lastAuthorDisplayName}:</span>{' '}{/if}{l.lastMessageText}
+        </p>
+      {/if}
+      <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(l.lastMessageAt)}</p>
+    </div>
+  {/snippet}
+
+  {#snippet lobbyCard(l: Lobby, onLocalClick?: (l: Lobby) => void)}
     {@const unread = l.newMessages > 0}
+    {@const cls = `group flex w-full gap-2.5 rounded-md p-2 text-left ring-1 transition ${unread
+      ? 'bg-emerald-950/30 ring-emerald-900/60 hover:ring-emerald-500'
+      : 'bg-slate-900/40 ring-slate-800 hover:ring-emerald-700'}`}
     <li class="virt-item">
-      <a
-        href={l.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group flex gap-2.5 rounded-md p-2 ring-1 transition {unread
-          ? 'bg-emerald-950/30 ring-emerald-900/60 hover:ring-emerald-500'
-          : 'bg-slate-900/40 ring-slate-800 hover:ring-emerald-700'}"
-        style:border-left="3px solid {unread ? TAB_META.dms.stripeHex : 'transparent'}"
-      >
-        {@render avatar(avatarUrl(l.lastAuthorAvatar), l.lastAuthorDisplayName || l.name, '', 'size-9')}
+      {#if onLocalClick}
+        <button
+          type="button"
+          onclick={() => onLocalClick(l)}
+          class={cls}
+          style:border-left="3px solid {unread ? TAB_META.dms.stripeHex : 'transparent'}"
+        >
+          {@render lobbyCardBody(l)}
+        </button>
+      {:else}
+        <a
+          href={l.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={cls}
+          style:border-left="3px solid {unread ? TAB_META.dms.stripeHex : 'transparent'}"
+        >
+          {@render lobbyCardBody(l)}
+        </a>
+      {/if}
+    </li>
+  {/snippet}
+
+  {#snippet messageCard(m: Message)}
+    <li class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800">
+      <div class="mb-1 flex items-center gap-2">
+        {@render avatar(avatarUrl(m.authorAvatar), m.authorDisplayName, m.authorNickname, 'size-7')}
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-1.5">
-            <p class="line-clamp-1 text-xs font-medium text-slate-100">{l.name}</p>
-            {#if unread}
-              <span
-                class="shrink-0 rounded-full bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200"
-              >
-                {l.newMessages > 99 ? '99+' : l.newMessages}
+          <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
+            {m.authorDisplayName || m.authorNickname || 'Unknown'}
+            {#if m.isHighlighted}
+              <span class="ml-1 rounded bg-sky-500/25 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-sky-200">
+                staff
               </span>
             {/if}
-          </div>
-          {#if l.lastMessageText}
-            <p class="line-clamp-1 text-[11px] text-slate-400">
-              {#if l.lastAuthorDisplayName}<span class="text-slate-500">{l.lastAuthorDisplayName}:</span>{' '}{/if}{l.lastMessageText}
-            </p>
-          {/if}
-          <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(l.lastMessageAt)}</p>
+          </p>
+          <p class="text-[9px] text-slate-500">{timeAgo(m.timeCreated)}</p>
         </div>
-      </a>
+      </div>
+      <div class="flex flex-col gap-1">
+        {@render contentBlocks(m.contentBlocks)}
+      </div>
     </li>
+  {/snippet}
+
+  {#snippet lobbyMessagesView()}
+    {@const lobby = currentLobby}
+    <div class="mx-auto flex max-w-3xl flex-col gap-2">
+      <!-- Header — back arrow + lobby name + Open in Spectrum link. -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          onclick={backToLobbyList}
+          class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+          title="Back to lobbies"
+          aria-label="Back to lobbies"
+        >
+          <ArrowLeft class="size-4" />
+        </button>
+        <p class="line-clamp-1 flex-1 text-xs font-semibold text-slate-100">
+          {lobby?.name ?? 'Lobby'}
+        </p>
+        {#if lobby?.url}
+          <a
+            href={lobby.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+          >
+            Open
+            <ChevronRight class="size-3" />
+          </a>
+        {/if}
+      </div>
+
+      {#if lobbyMessagesError}
+        {@render errorBlock('Failed to load messages', lobbyMessagesError)}
+      {:else if lobbyMessagesLoading && lobbyMessages.length === 0}
+        {@render centerSpinner()}
+      {:else if lobbyMessages.length === 0}
+        {@render emptyState(Mail, 'No messages in this lobby yet.')}
+      {:else}
+        <!-- Newest-at-bottom layout (chat-app orientation): API gives
+             us newest-first, so we reverse on render. Stops short of
+             auto-scroll-to-bottom for now — Phase 5b can add that
+             once we know users want it. -->
+        <ul class="flex flex-col gap-1">
+          {#each [...lobbyMessages].reverse() as m (m.id)}
+            {@render messageCard(m)}
+          {/each}
+        </ul>
+        {#if lobbyMessages.length >= 50}
+          <p class="mt-1 text-center text-[10px] italic text-slate-500">
+            Showing the most recent 50 messages — open in Spectrum for older history.
+          </p>
+        {/if}
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet notifCard(n: Notification)}
@@ -1552,7 +1719,9 @@
         </div>
       {/if}
     {:else if tab === 'dms'}
-      {#if lobbiesError}
+      {#if dmLobbyP.value != null}
+        {@render lobbyMessagesView()}
+      {:else if lobbiesError}
         {@render errorBlock('Failed to load DMs', lobbiesError)}
       {:else if lobbiesLoading && lobbies.length === 0}
         {@render centerSpinner()}
@@ -1561,7 +1730,7 @@
       {:else}
         <ul class="mx-auto flex max-w-3xl flex-col gap-1">
           {#each filteredLobbies as l (l.id)}
-            {@render lobbyCard(l)}
+            {@render lobbyCard(l, selectLobby)}
           {/each}
         </ul>
 

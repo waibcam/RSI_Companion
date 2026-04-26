@@ -45,6 +45,7 @@ import type {
   SpectrumCommunity,
   SpectrumForumGroup,
   SpectrumLobby,
+  SpectrumMessage,
   SpectrumNotification,
   SpectrumSort,
   SpectrumThread,
@@ -330,6 +331,24 @@ export interface SpectrumForumGroupsRequest {
 export interface SpectrumForumGroupsResponsePayload {
   groups: SpectrumForumGroup[];
   communityId: number;
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+export interface SpectrumLobbyMessagesRequest {
+  type: 'spectrum.lobbyMessages';
+  lobbyId: number;
+  /** Optional cursor — fetch messages older than this id (for paging
+   *  upward) or newer than this id (for fresh-poll). MVP UI doesn't
+   *  page, so callers usually omit both. */
+  before?: number;
+  after?: number;
+  size?: number;
+  force?: boolean;
+}
+export interface SpectrumLobbyMessagesResponsePayload {
+  messages: SpectrumMessage[];
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
@@ -1017,6 +1036,7 @@ export type RsiMessage =
   | SpectrumNotificationsRequest
   | SpectrumMarkReadRequest
   | SpectrumLobbiesRequest
+  | SpectrumLobbyMessagesRequest
   | SpectrumCommunitiesRequest
   | SpectrumBookmarksRequest
   | SpectrumBookmarkAddRequest
@@ -1088,6 +1108,7 @@ interface ResponseMap {
   'spectrum.notifications': SpectrumNotificationsResponsePayload;
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
+  'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
   'spectrum.communities': SpectrumCommunitiesResponsePayload;
   'spectrum.bookmarks': SpectrumBookmarksResponsePayload;
   'spectrum.bookmarkAdd': SpectrumBookmarkAddResponsePayload;

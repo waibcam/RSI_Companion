@@ -699,6 +699,129 @@ export async function fetchSpectrumThreadDetail(
   };
 }
 
+// --- Lobby messages (Phase 5) -------------------------------------------
+//
+// `message/history` returns paginated chat for any lobby (DM, private
+// group, or public chat) — the data shape doesn't change per type.
+// Body: { lobby_id, timeframe: 'before' | 'after', message_id, size }.
+// Each message carries `content_state: { blocks: [DraftJS], entityMap }` —
+// note the SHAPE DIFFERS from forum-thread content_blocks: messages
+// inline DraftJS directly, no wrapper layer. Attachments come via
+// `media_id` instead, which we surface as a placeholder for now.
+
+const RawMessageMember = z
+  .object({
+    id: z.coerce.number().int().default(0),
+    nickname: z.string().default(''),
+    displayname: z.string().nullable().optional(),
+    avatar: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const RawMessageContentState = z
+  .object({
+    blocks: z.array(RawDraftBlock).default([]),
+  })
+  .passthrough();
+
+const RawMessage = z
+  .object({
+    id: z.coerce.number().int(),
+    lobby_id: z.coerce.number().int().default(0),
+    member_id: z.coerce.number().int().default(0),
+    time_created: z.coerce.number().int().default(0),
+    time_modified: z.coerce.number().int().default(0),
+    content_state: RawMessageContentState.nullable().optional(),
+    media_id: z.string().default(''),
+    highlight_role_id: z.coerce.number().int().nullable().optional(),
+    member: RawMessageMember.nullable().optional(),
+  })
+  .passthrough();
+
+const MessageHistoryResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  data: z
+    .object({
+      messages: z.array(RawMessage).default([]),
+    })
+    .nullable()
+    .optional(),
+});
+
+export interface SpectrumMessage {
+  id: number;
+  lobbyId: number;
+  timeCreated: number;
+  timeModified: number;
+  authorId: number;
+  authorNickname: string;
+  authorDisplayName: string;
+  authorAvatar: string | null;
+  contentBlocks: SpectrumContentBlock[];
+  /** Empty when no attachment. The current MVP renders a placeholder
+   *  for non-empty values; resolving the actual upload URL needs an
+   *  extra call we haven't wired yet. */
+  mediaId: string;
+  /** Server-side staff highlight (admins, mods); the desktop UI tints
+   *  these messages. */
+  isHighlighted: boolean;
+}
+
+/** Page of messages in a lobby. The API returns messages
+ *  newest-first; we keep that order so the renderer can flip to the
+ *  desired chat-app orientation (oldest-at-top, scroll-to-bottom)
+ *  once we add it. */
+export async function fetchSpectrumLobbyMessages(
+  token: string,
+  lobbyId: number,
+  options: { before?: number; after?: number; size?: number } = {},
+): Promise<SpectrumMessage[]> {
+  const size = options.size ?? 50;
+  const timeframe = options.after ? ('after' as const) : ('before' as const);
+  const message_id = options.after ?? options.before ?? null;
+  const response = await spectrumPost(token, '/api/spectrum/message/history', {
+    lobby_id: String(lobbyId),
+    timeframe,
+    message_id: message_id == null ? null : String(message_id),
+    size,
+  });
+  assertRsiOk(response, 'message/history');
+  const raw = (await response.json()) as unknown;
+  const parsed = MessageHistoryResponse.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`message/history: unexpected shape (${parsed.error.message})`);
+  }
+  if (parsed.data.success !== 1) {
+    throw new Error(`message/history returned ${parsed.data.code ?? 'unknown'}`);
+  }
+  return (parsed.data.data?.messages ?? []).map((m) => {
+    const author = normalizeThreadMember(m.member);
+    // content_state.blocks is a flat DraftJS array — pass it through
+    // as a synthetic single-text wrapper so we reuse the same
+    // normalizer thread content goes through.
+    const contentBlocks = m.content_state
+      ? normalizeContentBlocks([{ type: 'text', data: m.content_state }])
+      : [];
+    if (m.media_id) {
+      contentBlocks.push({ type: 'unknown', text: 'attachment', depth: 0 });
+    }
+    return {
+      id: m.id,
+      lobbyId: m.lobby_id,
+      timeCreated: m.time_created,
+      timeModified: m.time_modified,
+      authorId: m.member_id,
+      authorNickname: author.nickname,
+      authorDisplayName: author.displayName,
+      authorAvatar: author.avatar,
+      contentBlocks,
+      mediaId: m.media_id,
+      isHighlighted: Number(m.highlight_role_id ?? 0) > 0,
+    };
+  });
+}
+
 // --- Bookmarks (Phase 4) ------------------------------------------------
 //
 // Spectrum lets users bookmark any entity (forum thread, chat lobby,

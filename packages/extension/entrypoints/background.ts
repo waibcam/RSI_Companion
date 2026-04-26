@@ -102,6 +102,7 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:trending': 1,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
+  'spectrum:lobbyMessages': 1,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
   // v2: content_blocks normalizer was unwrapping wrong (ignored the
@@ -1999,6 +2000,47 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
+async function handleSpectrumLobbyMessages(message: {
+  lobbyId: number;
+  before?: number;
+  after?: number;
+  size?: number;
+  force?: boolean;
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      messages: [],
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  // Cursor-less calls are the common case — only those hit the cache.
+  // Cursored calls (paginating upward) always go to the network so we
+  // don't return stale pages.
+  const cacheable = message.before == null && message.after == null;
+  const key = `spectrum:lobbyMessages:${message.lobbyId}`;
+  if (cacheable && !message.force) {
+    const cached = await cacheGet<{ messages: Rsi.SpectrumMessage[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    const messages = await Rsi.fetchSpectrumLobbyMessages(token, message.lobbyId, {
+      before: message.before,
+      after: message.after,
+      size: message.size,
+    });
+    const fetchedAt = Date.now();
+    if (cacheable) {
+      // 2-min LIVE TTL — chat changes minute-to-minute. Manual refresh
+      // forces a re-fetch via {force:true}.
+      await cacheSet(key, { messages, fetchedAt }, TTL.spectrumNotifs);
+    }
+    return { messages, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
 async function handleSpectrumThreadDetail(message: {
   slug: string;
   sort?: 'votes' | 'time_created';
@@ -2719,6 +2761,17 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumMarkRead() };
       case 'spectrum.lobbies':
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };
+      case 'spectrum.lobbyMessages':
+        return {
+          ok: true,
+          data: await handleSpectrumLobbyMessages({
+            lobbyId: message.lobbyId,
+            before: message.before,
+            after: message.after,
+            size: message.size,
+            force: message.force ?? false,
+          }),
+        };
       case 'spectrum.communities':
         return { ok: true, data: await handleSpectrumCommunities(message.force ?? false) };
       case 'spectrum.bookmarks':
