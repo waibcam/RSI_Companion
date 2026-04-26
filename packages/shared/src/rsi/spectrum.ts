@@ -450,18 +450,49 @@ export async function fetchTrendingThreads(token: string): Promise<SpectrumThrea
 // further nesting is paginated via `forum/thread/reply/childrens`
 // (TBD when we want full nested rendering).
 //
-// Content blocks are DraftJS-shaped:
-//   { type, text, depth, inlineStyleRanges, entityRanges, data }
-// We only render text right now — inline styles + entities (links,
-// mentions, embeds) ship in a follow-up. Plain text covers ~90% of
-// what people actually post on Spectrum.
+// Content blocks are TWO-level: an outer wrapper array carries
+// {id, type: 'text' | 'image' | 'embed' | ..., data} and the data
+// payload depends on the wrapper type:
+//   text  → { blocks: [DraftJS] }     ← the actual paragraphs
+//   image → [{ id, type: 'upload', data: { url, image_width, ... } }]
+//   embed → ... (TBD; we surface as a placeholder until we look)
+// Our normalizer flattens the wrapper layer so the UI only deals
+// with one block shape. Inline styles + entities (links, mentions,
+// embeds inside DraftJS) are still ignored — plain text covers
+// ~90% of what people actually post.
 
-const RawContentBlock = z
+const RawDraftBlock = z
   .object({
     key: z.string().default(''),
     text: z.string().default(''),
     type: z.string().default('unstyled'),
     depth: z.coerce.number().int().default(0),
+  })
+  .passthrough();
+
+const RawImageData = z
+  .object({
+    id: z.string().default(''),
+    type: z.string().default(''),
+    data: z
+      .object({
+        url: z.string().default(''),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+const RawContentWrapper = z
+  .object({
+    id: z.union([z.string(), z.coerce.number()]).optional(),
+    type: z.string().default('unknown'),
+    // The data field is polymorphic — text wrappers carry an object
+    // with `blocks`, image wrappers carry an array of image entries,
+    // unknown future types may carry anything else. Pass it through
+    // raw and let the normalizer dispatch.
+    data: z.unknown().nullable().optional(),
   })
   .passthrough();
 
@@ -481,7 +512,7 @@ const RawThreadReply = z
     time_created: z.coerce.number().int().default(0),
     time_modified: z.coerce.number().int().default(0),
     member: RawThreadMember.nullable().optional(),
-    content_blocks: z.array(RawContentBlock).default([]),
+    content_blocks: z.array(RawContentWrapper).default([]),
     replies_count: z.coerce.number().int().default(0),
     is_erased: z.boolean().default(false),
   })
@@ -500,7 +531,7 @@ const RawThreadDetail = z
     is_erased: z.boolean().default(false),
     highlight_role_id: z.coerce.number().int().nullable().optional(),
     member: RawThreadMember.nullable().optional(),
-    content_blocks: z.array(RawContentBlock).default([]),
+    content_blocks: z.array(RawContentWrapper).default([]),
     replies_count: z.coerce.number().int().default(0),
     views_count: z.coerce.number().int().default(0),
     replies: z.array(RawThreadReply).default([]),
@@ -514,9 +545,18 @@ const ThreadDetailResponse = z.object({
 });
 
 export interface SpectrumContentBlock {
+  /** Mirrors the DraftJS block type for text content
+   *  ('unstyled' | 'header-one' | 'header-two' | 'unordered-list-item' |
+   *  'ordered-list-item' | 'blockquote' | 'code-block' | 'atomic'),
+   *  plus our synthetic types for media wrappers:
+   *    'image'   — `imageUrl` is set
+   *    'unknown' — wrapper type we don't render yet, `text` carries
+   *                a `[type]` placeholder so users see something. */
   type: string;
   text: string;
   depth: number;
+  /** Set when type === 'image'. */
+  imageUrl?: string;
 }
 
 export interface SpectrumThreadReply {
@@ -555,9 +595,42 @@ export interface SpectrumThreadDetail {
 }
 
 function normalizeContentBlocks(
-  blocks: ReadonlyArray<z.infer<typeof RawContentBlock>>,
+  wrappers: ReadonlyArray<z.infer<typeof RawContentWrapper>>,
 ): SpectrumContentBlock[] {
-  return blocks.map((b) => ({ type: b.type, text: b.text, depth: b.depth }));
+  const out: SpectrumContentBlock[] = [];
+  for (const w of wrappers) {
+    if (w.type === 'text') {
+      // text wrapper: data is { blocks: DraftJS[] }. Validate then
+      // flatten one level — each DraftJS block becomes a top-level
+      // SpectrumContentBlock the renderer can dispatch by type.
+      const parsed = z
+        .object({ blocks: z.array(RawDraftBlock).default([]) })
+        .passthrough()
+        .safeParse(w.data);
+      if (parsed.success) {
+        for (const b of parsed.data.blocks) {
+          out.push({ type: b.type, text: b.text, depth: b.depth });
+        }
+      }
+    } else if (w.type === 'image') {
+      // image wrapper: data is an array of image entries with a
+      // nested `data.url`. Push one synthetic 'image' block per URL
+      // so the renderer can <img> them inline.
+      const parsed = z.array(RawImageData).safeParse(w.data ?? []);
+      if (parsed.success) {
+        for (const img of parsed.data) {
+          const url = img.data?.url;
+          if (url) out.push({ type: 'image', text: '', depth: 0, imageUrl: url });
+        }
+      }
+    } else {
+      // Unknown wrapper type — surface a labelled placeholder so the
+      // user knows there's content we can't render yet (and they can
+      // click "Open in Spectrum" to see it).
+      out.push({ type: 'unknown', text: `[${w.type}]`, depth: 0 });
+    }
+  }
+  return out;
 }
 
 function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undefined) {

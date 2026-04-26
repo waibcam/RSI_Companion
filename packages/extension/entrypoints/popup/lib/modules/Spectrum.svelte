@@ -1156,13 +1156,26 @@
   {/snippet}
 
   {#snippet contentBlocks(blocks: ContentBlock[])}
-    <!-- DraftJS-shaped block list. We render each block as the right
-         HTML primitive based on its type. Inline styles + entities
-         (links, mentions, embeds) ship in a follow-up — plain text
-         covers ~90% of what people actually post on Spectrum. -->
+    <!-- Block list with two layers folded into one. The shared
+         normalizer in spectrum.ts unwraps the {type:'text', data:{blocks}}
+         wrappers and emits flat blocks here, plus synthetic
+         'image' / 'unknown' types for media wrappers. Inline styles +
+         entities inside DraftJS (links, mentions, embeds) are still
+         dropped — covers ~90% of what people actually post. -->
     {#each blocks as b, i (i)}
-      {#if !b.text.trim() && b.type !== 'atomic'}
-        <!-- Skip blank lines that DraftJS uses as paragraph breaks. -->
+      {#if b.type === 'image' && b.imageUrl}
+        <img
+          src={b.imageUrl}
+          alt=""
+          loading="lazy"
+          class="my-1 max-h-72 w-full rounded object-contain ring-1 ring-slate-800"
+        />
+      {:else if b.type === 'unknown'}
+        <p class="text-[10px] italic text-slate-500">📎 {b.text} — open in Spectrum to view</p>
+      {:else if !b.text.trim()}
+        <!-- DraftJS uses empty `unstyled` blocks as paragraph spacers;
+             render a small gap rather than a stray empty <p>. -->
+        <div class="h-1"></div>
       {:else if b.type === 'header-one' || b.type === 'header-two'}
         <p class="mt-1.5 text-xs font-semibold text-slate-100">{b.text}</p>
       {:else if b.type === 'unordered-list-item'}
@@ -1182,7 +1195,7 @@
       {:else if b.type === 'atomic'}
         <p class="text-[10px] italic text-slate-500">📎 [media — open on Spectrum to view]</p>
       {:else}
-        <p class="text-[11px] leading-relaxed text-slate-200">{b.text}</p>
+        <p class="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-200">{b.text}</p>
       {/if}
     {/each}
   {/snippet}
