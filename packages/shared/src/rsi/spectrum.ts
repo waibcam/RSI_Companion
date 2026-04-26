@@ -14,6 +14,19 @@ const RawVotes = z
   })
   .passthrough();
 
+const RawMediaPreview = z
+  .object({
+    type: z.string().default(''),
+    thumbnail: z
+      .object({
+        url: z.string().default(''),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
 const RawThread = z.object({
   id: z.coerce.number().int(),
   slug: z.string(),
@@ -26,6 +39,7 @@ const RawThread = z.object({
   votes: RawVotes.nullable().optional(),
   replies_count: z.coerce.number().int().default(0),
   views_count: z.coerce.number().int().default(0),
+  media_preview: RawMediaPreview.nullable().optional(),
   member: z
     .object({
       nickname: z.string().default(''),
@@ -72,6 +86,9 @@ export interface SpectrumThread {
   votesCount: number;
   repliesCount: number;
   viewsCount: number;
+  /** Server-extracted preview thumbnail (typically the first image
+   *  in the OP). Null when the thread has no media. */
+  mediaPreviewUrl: string | null;
   url: string;
 }
 
@@ -477,6 +494,7 @@ export async function fetchChannelThreads(
       votesCount: t.votes?.count ?? 0,
       repliesCount: t.replies_count,
       viewsCount: t.views_count,
+      mediaPreviewUrl: t.media_preview?.thumbnail?.url ?? null,
       url: `${RSI_BASE_URL}/spectrum/community/${channel.communitySlug}/forum/${channel.id}/thread/${t.slug}`,
     });
   }

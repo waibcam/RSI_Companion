@@ -102,8 +102,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // pin badge + CIG gold tint in the threadCard renderer.
   // v3: SpectrumThread gained votesCount + repliesCount + viewsCount
   // so the threadCard footer can show post engagement at a glance.
-  'spectrum:threads': 3,
-  'spectrum:trending': 3,
+  // v4: SpectrumThread gained mediaPreviewUrl for inline thumbnails.
+  'spectrum:threads': 4,
+  'spectrum:trending': 4,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
   // v2: every message gained `authorIsStaff` for the CIG gold tint.
@@ -139,7 +140,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:forumGroups': 4,
   // v3: forum threads list got the same isPinned + authorIsStaff bump.
   // v4: forum threads list gained votesCount/repliesCount/viewsCount.
-  'spectrum:forumThreads': 4,
+  // v5: forum threads list gained mediaPreviewUrl for inline thumbnails.
+  'spectrum:forumThreads': 5,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';

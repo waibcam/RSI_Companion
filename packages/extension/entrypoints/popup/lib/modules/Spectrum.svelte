@@ -1181,6 +1181,14 @@
 
   {#snippet threadCardBody(t: Thread, stripe: string)}
     {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
+    {#if t.mediaPreviewUrl}
+      <img
+        src={t.mediaPreviewUrl}
+        alt=""
+        loading="lazy"
+        class="size-9 shrink-0 rounded object-cover ring-1 ring-slate-800"
+      />
+    {/if}
     <div class="min-w-0 flex-1">
       <div class="mb-0.5 flex flex-wrap items-center gap-1.5">
         {#if t.isPinned}
