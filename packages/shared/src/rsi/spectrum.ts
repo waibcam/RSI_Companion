@@ -14,12 +14,14 @@ const RawThread = z.object({
   time_created: z.coerce.number().int().default(0),
   channel_id: z.coerce.number().int().default(0),
   is_new: z.boolean().default(false),
+  is_pinned: z.boolean().default(false),
   highlight_role_id: z.coerce.number().int().nullable().optional(),
   member: z
     .object({
       nickname: z.string().default(''),
       displayname: z.string().nullable().optional(),
       avatar: z.string().nullable().optional(),
+      isGM: z.boolean().default(false),
     })
     .nullable()
     .optional(),
@@ -52,7 +54,11 @@ export interface SpectrumThread {
   authorNickname: string;
   authorDisplayName: string;
   authorAvatar: string | null;
+  /** True when the post author is CIG staff (member.isGM). Drives
+   *  the gold tint Spectrum's site uses for staff posts. */
+  authorIsStaff: boolean;
   isNew: boolean;
+  isPinned: boolean;
   url: string;
 }
 
@@ -410,7 +416,9 @@ export async function fetchChannelThreads(
       authorNickname: t.member?.nickname ?? '',
       authorDisplayName: t.member?.displayname ?? t.member?.nickname ?? '',
       authorAvatar: t.member?.avatar ?? null,
+      authorIsStaff: !!t.member?.isGM,
       isNew: t.is_new,
+      isPinned: t.is_pinned,
       url: `${RSI_BASE_URL}/spectrum/community/${channel.communitySlug}/forum/${channel.id}/thread/${t.slug}`,
     });
   }
@@ -945,7 +953,12 @@ const BookmarkMutationResponse = z.object({
   msg: z.string().nullable().optional(),
 });
 
-function spectrumPost(token: string, path: string, body: unknown) {
+function spectrumPost(
+  token: string,
+  path: string,
+  body: unknown,
+  extraHeaders: Record<string, string> = {},
+) {
   return fetchWithTimeout(`${RSI_BASE_URL}${path}`, {
     method: 'POST',
     credentials: 'include',
@@ -953,6 +966,7 @@ function spectrumPost(token: string, path: string, body: unknown) {
       'Content-Type': 'application/json',
       'x-rsi-token': token,
       'x-tavern-id': token,
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
   });
@@ -979,13 +993,22 @@ export async function fetchSpectrumBookmarks(token: string): Promise<SpectrumBoo
 
 export async function addSpectrumBookmark(
   token: string,
-  args: { entityId: number; entityType: string; name?: string },
+  args: { entityId: number; entityType: string; name?: string; csrfToken?: string },
 ): Promise<void> {
-  const response = await spectrumPost(token, '/api/spectrum/v2/bookmark/add', {
-    entityId: String(args.entityId),
-    entityType: args.entityType,
-    ...(args.name ? { name: args.name } : {}),
-  });
+  // Body uses snake_case keys (entity_id / entity_type) — confirmed by
+  // grepping the SPA bundle for the actual addBookmark wire format.
+  // Earlier camelCase attempts (entityId/entityType) silently authenticated
+  // but failed validation, returning ErrNotAuthenticated.
+  const response = await spectrumPost(
+    token,
+    '/api/spectrum/v2/bookmark/add',
+    {
+      entity_id: String(args.entityId),
+      entity_type: args.entityType,
+      ...(args.name ? { name: args.name } : {}),
+    },
+    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
+  );
   assertRsiOk(response, 'v2/bookmark/add');
   const raw = (await response.json()) as unknown;
   const parsed = BookmarkMutationResponse.safeParse(raw);
@@ -997,12 +1020,17 @@ export async function addSpectrumBookmark(
 
 export async function removeSpectrumBookmark(
   token: string,
-  args: { entityId: number; entityType: string },
+  args: { entityId: number; entityType: string; csrfToken?: string },
 ): Promise<void> {
-  const response = await spectrumPost(token, '/api/spectrum/v2/bookmark/remove', {
-    entityId: String(args.entityId),
-    entityType: args.entityType,
-  });
+  const response = await spectrumPost(
+    token,
+    '/api/spectrum/v2/bookmark/remove',
+    {
+      entity_id: String(args.entityId),
+      entity_type: args.entityType,
+    },
+    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
+  );
   assertRsiOk(response, 'v2/bookmark/remove');
   const raw = (await response.json()) as unknown;
   const parsed = BookmarkMutationResponse.safeParse(raw);

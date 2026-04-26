@@ -98,8 +98,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'galactapedia:home': 1,
   'progress-tracker:v2': 1,
   'roadmap:data': 1,
-  'spectrum:threads': 1,
-  'spectrum:trending': 1,
+  // v2: SpectrumThread gained isPinned + authorIsStaff for the new
+  // pin badge + CIG gold tint in the threadCard renderer.
+  'spectrum:threads': 2,
+  'spectrum:trending': 2,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
   // v2: every message gained `authorIsStaff` for the CIG gold tint.
@@ -126,7 +128,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // returned empty in the extension's auth context. Bumped to
   // invalidate the still-empty entries from v3.
   'spectrum:forumGroups': 4,
-  'spectrum:forumThreads': 2,
+  // v3: forum threads list got the same isPinned + authorIsStaff bump.
+  'spectrum:forumThreads': 3,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';
@@ -2111,6 +2114,23 @@ async function handleSpectrumBookmarks(force: boolean) {
   });
 }
 
+/** Spectrum's v2 mutations require an X-CSRF-TOKEN header — without
+ *  it the server returns ErrNotAuthenticated even when the session
+ *  cookie + x-rsi-token header are valid (reads tolerate the missing
+ *  CSRF, writes don't). The shared CCU code path already had a
+ *  primer that scrapes the meta tag from any open RSI tab; we reuse
+ *  it here. If no RSI tab is open (or scripting is denied), the
+ *  shared HTML scrape fallback runs as a second chance. */
+async function getSpectrumCsrfToken(): Promise<string | undefined> {
+  await primeCsrfFromOpenTabs();
+  const cached = Rsi.getCachedCsrfToken();
+  if (cached) return cached;
+  // Last resort — the shared layer's HTML scrape against a handful of
+  // known pages.
+  const scraped = await Rsi.fetchRsiCsrfToken();
+  return scraped ?? undefined;
+}
+
 async function handleSpectrumBookmarkAdd(message: {
   entityId: number;
   entityType: string;
@@ -2118,10 +2138,12 @@ async function handleSpectrumBookmarkAdd(message: {
 }) {
   const token = await Rsi.readRsiToken();
   if (!token) throw new Error('not signed in');
+  const csrfToken = await getSpectrumCsrfToken();
   await Rsi.addSpectrumBookmark(token, {
     entityId: message.entityId,
     entityType: message.entityType,
     name: message.name,
+    csrfToken,
   });
   // Refresh + reprime cache so the popup paints the new state without
   // a separate roundtrip — same pattern as bookmarkRemove.
@@ -2136,9 +2158,11 @@ async function handleSpectrumBookmarkRemove(message: {
 }) {
   const token = await Rsi.readRsiToken();
   if (!token) throw new Error('not signed in');
+  const csrfToken = await getSpectrumCsrfToken();
   await Rsi.removeSpectrumBookmark(token, {
     entityId: message.entityId,
     entityType: message.entityType,
+    csrfToken,
   });
   // Refetch the list so the popup can paint the new state without a
   // follow-up message round trip. Re-prime the cache while we're at it.

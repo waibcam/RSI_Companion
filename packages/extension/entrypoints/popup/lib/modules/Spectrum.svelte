@@ -19,6 +19,7 @@
     Loader2,
     Mail,
     MessageCircle,
+    Pin,
     Reply,
     UserPlus,
   } from 'lucide-svelte';
@@ -1002,6 +1003,17 @@
     {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
     <div class="min-w-0 flex-1">
       <div class="mb-0.5 flex flex-wrap items-center gap-1.5">
+        {#if t.isPinned}
+          <span
+            class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+            style:background-color="rgba(245, 158, 11, 0.25)"
+            style:color="rgb(252, 211, 77)"
+            title="Pinned thread"
+          >
+            <Pin class="size-2.5" />
+            pinned
+          </span>
+        {/if}
         {#if t.isNew}
           <span class="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
             new
@@ -1014,8 +1026,20 @@
         >
           {t.channel.name}
         </span>
+        {#if t.authorIsStaff}
+          <span
+            class="rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+            style:background-color="rgba(191, 167, 57, 0.25)"
+            style:color="rgb(255, 230, 130)"
+          >
+            cig
+          </span>
+        {/if}
       </div>
-      <p class="line-clamp-2 text-xs font-medium text-slate-100 group-hover:text-sky-200">
+      <p
+        class="line-clamp-2 text-xs font-medium group-hover:text-sky-200"
+        style:color={t.authorIsStaff ? 'rgb(255, 230, 130)' : ''}
+      >
         {t.subject}
       </p>
       <p class="mt-0.5 truncate text-[10px] text-slate-500">
@@ -1026,14 +1050,21 @@
 
   {#snippet threadCard(t: Thread, onLocalClick?: (t: Thread) => void)}
     {@const stripe = t.channel.color || '#475569'}
-    {@const cls = 'group flex w-full gap-2.5 rounded-md bg-slate-900/70 p-2 text-left ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-sky-600'}
+    <!-- Stripe colour: channel hue normally, CIG gold when the post
+         author is staff (matches Spectrum's site treatment). -->
+    {@const leftStripe = t.authorIsStaff ? 'rgb(191, 167, 57)' : stripe}
+    {@const baseCls = 'group flex w-full gap-2.5 rounded-md p-2 text-left ring-1 transition hover:ring-sky-600'}
+    {@const staffCls = 'ring-[rgba(191,167,57,0.4)]'}
+    {@const normalCls = 'bg-slate-900/70 ring-slate-800 hover:bg-slate-900'}
+    {@const cls = `${baseCls} ${t.authorIsStaff ? staffCls : normalCls}`}
+    {@const cardStyle = t.authorIsStaff ? 'background-color: rgba(191, 167, 57, 0.12);' : ''}
     <li class="virt-item">
       {#if onLocalClick}
         <button
           type="button"
           onclick={() => onLocalClick(t)}
           class={cls}
-          style:border-left="3px solid {stripe}"
+          style="border-left: 3px solid {leftStripe}; {cardStyle}"
         >
           {@render threadCardBody(t, stripe)}
         </button>
@@ -1043,7 +1074,7 @@
           target="_blank"
           rel="noopener noreferrer"
           class={cls}
-          style:border-left="3px solid {stripe}"
+          style="border-left: 3px solid {leftStripe}; {cardStyle}"
         >
           {@render threadCardBody(t, stripe)}
         </a>
@@ -1134,7 +1165,7 @@
         </div>
       </div>
       <div class="flex flex-col gap-1">
-        {@render contentBlocks(m.contentBlocks)}
+        {@render contentBlocks(m.contentBlocks, goldAccent)}
       </div>
     </li>
   {/snippet}
@@ -1351,7 +1382,7 @@
     </div>
   {/snippet}
 
-  {#snippet contentBlocks(blocks: ContentBlock[])}
+  {#snippet contentBlocks(blocks: ContentBlock[], tintGold: boolean = false)}
     <!-- Block list with two layers folded into one. The shared
          normalizer in spectrum.ts unwraps the {type:'text', data:{blocks}}
          wrappers and emits flat blocks here, plus synthetic
@@ -1373,13 +1404,24 @@
              render a small gap rather than a stray empty <p>. -->
         <div class="h-1"></div>
       {:else if b.type === 'header-one' || b.type === 'header-two'}
-        <p class="mt-1.5 text-xs font-semibold text-slate-100">{b.text}</p>
+        <p
+          class="mt-1.5 text-xs font-semibold"
+          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
+        >{b.text}</p>
       {:else if b.type === 'unordered-list-item'}
-        <p class="ml-3 text-[11px] text-slate-200" style:padding-left="{b.depth * 0.75}rem">
+        <p
+          class="ml-3 text-[11px]"
+          style:padding-left="{b.depth * 0.75}rem"
+          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
+        >
           • {b.text}
         </p>
       {:else if b.type === 'ordered-list-item'}
-        <p class="ml-3 text-[11px] text-slate-200" style:padding-left="{b.depth * 0.75}rem">
+        <p
+          class="ml-3 text-[11px]"
+          style:padding-left="{b.depth * 0.75}rem"
+          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
+        >
           {i + 1}. {b.text}
         </p>
       {:else if b.type === 'blockquote'}
@@ -1391,7 +1433,10 @@
       {:else if b.type === 'atomic'}
         <p class="text-[10px] italic text-slate-500">📎 [media — open on Spectrum to view]</p>
       {:else}
-        <p class="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-200">{b.text}</p>
+        <p
+          class="whitespace-pre-wrap text-[11px] leading-relaxed"
+          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
+        >{b.text}</p>
       {/if}
     {/each}
   {/snippet}
@@ -1456,7 +1501,7 @@
         <p class="text-[11px] italic text-slate-500">[erased]</p>
       {:else}
         <div class="flex flex-col gap-1">
-          {@render contentBlocks(r.contentBlocks)}
+          {@render contentBlocks(r.contentBlocks, r.authorIsStaff)}
         </div>
       {/if}
       {#if expanded && hasInlineChildren}
@@ -1594,7 +1639,7 @@
             {#if detail.isErased}
               <p class="text-[11px] italic text-slate-500">[erased]</p>
             {:else}
-              {@render contentBlocks(detail.contentBlocks)}
+              {@render contentBlocks(detail.contentBlocks, detail.authorIsStaff)}
             {/if}
           </div>
         </article>
