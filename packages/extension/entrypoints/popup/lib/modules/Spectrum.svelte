@@ -2,19 +2,23 @@
   import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
   import {
     AlertTriangle,
+    AtSign,
     Bell,
     CheckCheck,
     Code2,
     Flame,
+    Heart,
     Loader2,
     Mail,
-    UserRound,
+    MessageCircle,
+    Reply,
+    UserPlus,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import SignInPrompt from '../components/SignInPrompt.svelte';
   import { notifyState } from '../notify.svelte';
   import { authState } from '../state.svelte';
-  import { timeAgo } from '../format';
+  import { avatarFallback, timeAgo } from '../format';
   import { persistedState } from '../persist.svelte';
   import { extractSignedIn, errorMessage } from '../error';
 
@@ -33,6 +37,87 @@
   const tabP = persistedState<Tab>('spectrum:tab', 'devtracker', isTab);
   // Read-only alias so template references stay unchanged.
   const tab = $derived(tabP.value);
+
+  // Per-tab visual identity. Keeping the map keyed by tab id makes it
+  // trivial to extend when Phase 2/3 add Forums / Org channels / Bookmarks.
+  // The 'underlineHex' column is duplicated as a hex string because the
+  // unread-card left-stripe is set via `style:border-left` (an inline
+  // style — Tailwind variant classes can't reach there at runtime).
+  const TAB_META: Record<
+    Tab,
+    {
+      label: string;
+      icon: typeof Bell;
+      textActive: string;
+      underline: string;
+      badgeBg: string;
+      badgeText: string;
+      stripeHex: string;
+    }
+  > = {
+    devtracker: {
+      label: 'DevTracker',
+      icon: Code2,
+      textActive: 'text-sky-300',
+      underline: 'bg-sky-400',
+      badgeBg: 'bg-sky-500/20',
+      badgeText: 'text-sky-300',
+      stripeHex: '#38bdf8',
+    },
+    trending: {
+      label: 'Trending',
+      icon: Flame,
+      textActive: 'text-amber-300',
+      underline: 'bg-amber-400',
+      badgeBg: 'bg-amber-500/20',
+      badgeText: 'text-amber-300',
+      stripeHex: '#fbbf24',
+    },
+    dms: {
+      label: 'DMs',
+      icon: Mail,
+      textActive: 'text-emerald-300',
+      underline: 'bg-emerald-400',
+      badgeBg: 'bg-emerald-500/20',
+      badgeText: 'text-emerald-300',
+      stripeHex: '#10b981',
+    },
+    notifications: {
+      label: 'Notifications',
+      icon: Bell,
+      textActive: 'text-violet-300',
+      underline: 'bg-violet-400',
+      badgeBg: 'bg-violet-500/20',
+      badgeText: 'text-violet-300',
+      stripeHex: '#8b5cf6',
+    },
+  };
+
+  // Notification "kind" rendering — RSI's raw type strings (e.g.
+  // "forum-thread-newReply", "private-new-message") are decent for code
+  // but ugly in the UI. Map them to a friendly label + a glyph that
+  // signals the kind at a glance. Unknown types fall through to a Bell.
+  const NOTIF_KIND: Record<string, { label: string; icon: typeof Bell }> = {
+    'forum-thread-newReply': { label: 'Reply', icon: Reply },
+    'forum-thread-reply': { label: 'Reply', icon: Reply },
+    'forum-thread-mention': { label: 'Mention', icon: AtSign },
+    'forum-mention': { label: 'Mention', icon: AtSign },
+    'forum-thread-vote': { label: 'Vote', icon: Heart },
+    'forum-thread-newVote': { label: 'Vote', icon: Heart },
+    'private-new-message': { label: 'DM', icon: Mail },
+    'lobby-message': { label: 'Chat', icon: MessageCircle },
+    'friend-new-request': { label: 'Friend request', icon: UserPlus },
+    'friend-request': { label: 'Friend request', icon: UserPlus },
+    'friend-accepted': { label: 'Friend accepted', icon: UserPlus },
+  };
+  function notifKind(type: string): { label: string; icon: typeof Bell } {
+    return (
+      NOTIF_KIND[type] ?? {
+        label: type ? type.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : 'Notification',
+        icon: Bell,
+      }
+    );
+  }
 
   let threads = $state<Thread[]>([]);
   let threadsLoading = $state(true);
@@ -208,12 +293,6 @@
     return path.startsWith('http') ? path : `${RSI_BASE_URL}${path}`;
   }
 
-
-  function formatNotifKind(t: string): string {
-    if (!t) return '';
-    return t.replace(/_/g, ' ');
-  }
-
   // Don't kick off auth-required fetches until the global auth check resolves —
   // otherwise the UI flashes tabs, starts loading, then jumps to SignInPrompt
   // when the request rejects. Wait for authState.signedIn and gate on it.
@@ -296,151 +375,220 @@
   </ModuleHeader>
 
   {#if authState.signedIn === true && signedIn !== false}
-    <div class="flex overflow-x-auto border-b border-slate-800 bg-slate-950/20 px-3 text-xs">
-      <button
-        type="button"
-        onclick={() => switchTab('devtracker')}
-        class="relative flex shrink-0 items-center gap-1 px-3 py-1.5 transition {tab === 'devtracker'
-          ? 'text-sky-300'
-          : 'text-slate-400 hover:text-slate-200'}"
-      >
-        <Code2 class="size-3" />
-        DevTracker
-        {#if tab === 'devtracker'}
-          <span class="absolute inset-x-1 bottom-0 h-px bg-sky-400"></span>
-        {/if}
-      </button>
-      <button
-        type="button"
-        onclick={() => switchTab('trending')}
-        class="relative flex shrink-0 items-center gap-1 px-3 py-1.5 transition {tab === 'trending'
-          ? 'text-sky-300'
-          : 'text-slate-400 hover:text-slate-200'}"
-      >
-        <Flame class="size-3" />
-        Trending
-        {#if tab === 'trending'}
-          <span class="absolute inset-x-1 bottom-0 h-px bg-sky-400"></span>
-        {/if}
-      </button>
-      <button
-        type="button"
-        onclick={() => switchTab('dms')}
-        class="relative flex shrink-0 items-center gap-1 px-3 py-1.5 transition {tab === 'dms'
-          ? 'text-sky-300'
-          : 'text-slate-400 hover:text-slate-200'}"
-      >
-        <Mail class="size-3" />
-        DMs
-        {#if unreadLobbies > 0}
-          <span
-            class="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300"
-          >
-            {unreadLobbies > 99 ? '99+' : unreadLobbies}
-          </span>
-        {/if}
-        {#if tab === 'dms'}
-          <span class="absolute inset-x-1 bottom-0 h-px bg-sky-400"></span>
-        {/if}
-      </button>
-      <button
-        type="button"
-        onclick={() => switchTab('notifications')}
-        class="relative flex shrink-0 items-center gap-1 px-3 py-1.5 transition {tab === 'notifications'
-          ? 'text-sky-300'
-          : 'text-slate-400 hover:text-slate-200'}"
-      >
-        <Bell class="size-3" />
-        Notifications
-        {#if unreadNotifs > 0}
-          <span
-            class="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300"
-          >
-            {unreadNotifs > 99 ? '99+' : unreadNotifs}
-          </span>
-        {/if}
-        {#if tab === 'notifications'}
-          <span class="absolute inset-x-1 bottom-0 h-px bg-sky-400"></span>
-        {/if}
-      </button>
+    <div class="flex overflow-x-auto border-b border-slate-800 bg-slate-950/20 px-3 text-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {#each Object.entries(TAB_META) as [key, meta] (key)}
+        {@const tabKey = key as Tab}
+        {@const active = tab === tabKey}
+        {@const Icon = meta.icon}
+        {@const unread = tabKey === 'dms' ? unreadLobbies : tabKey === 'notifications' ? unreadNotifs : 0}
+        <button
+          type="button"
+          onclick={() => switchTab(tabKey)}
+          class="relative flex shrink-0 items-center gap-1 px-3 py-1.5 transition {active
+            ? meta.textActive
+            : 'text-slate-400 hover:text-slate-200'}"
+        >
+          <Icon class="size-3" />
+          {meta.label}
+          {#if unread > 0}
+            <span
+              class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold {meta.badgeBg} {meta.badgeText}"
+            >
+              {unread > 99 ? '99+' : unread}
+            </span>
+          {/if}
+          {#if active}
+            <span class="absolute inset-x-1 bottom-0 h-px {meta.underline}"></span>
+          {/if}
+        </button>
+      {/each}
     </div>
   {/if}
+
+  <!-- ======================== Snippets =====================================
+       The four tab views were near-identical 60-line blocks of Tailwind +
+       avatar-with-fallback markup. Factored into snippets here so each
+       tab body collapses to a single {@render call(item)}; the variant
+       knobs (accent colour, kind icon, unread state) flow in as args. -->
+
+  {#snippet errorBlock(label: string, message: string)}
+    <div
+      class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
+    >
+      <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+      <div>
+        <p class="font-semibold">{label}</p>
+        <p class="mt-1 break-all text-rose-300/80">{message}</p>
+      </div>
+    </div>
+  {/snippet}
+
+  {#snippet emptyState(IconCmp: typeof Bell, message: string)}
+    <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
+      <IconCmp class="size-8" />
+      <p class="text-xs italic">{message}</p>
+    </div>
+  {/snippet}
+
+  {#snippet centerSpinner()}
+    <div class="flex h-full items-center justify-center text-slate-500">
+      <Loader2 class="size-5 animate-spin" />
+    </div>
+  {/snippet}
+
+  {#snippet avatar(
+    src: string | null,
+    primary: string,
+    secondary: string,
+    sizeClass: string,
+  )}
+    {#if src}
+      <img
+        {src}
+        alt=""
+        loading="lazy"
+        class="{sizeClass} shrink-0 rounded-full object-cover ring-1 ring-slate-800"
+      />
+    {:else}
+      {@const av = avatarFallback(primary, secondary)}
+      <div
+        class="{sizeClass} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-xs font-semibold text-white/90 ring-1 ring-slate-800"
+      >
+        {av.initials}
+      </div>
+    {/if}
+  {/snippet}
+
+  {#snippet threadCard(t: Thread)}
+    {@const ch = t.channel}
+    {@const stripe = ch.color || '#475569'}
+    <li class="virt-item">
+      <a
+        href={t.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group flex gap-2.5 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-sky-600"
+        style:border-left="3px solid {stripe}"
+      >
+        {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
+        <div class="min-w-0 flex-1">
+          <div class="mb-0.5 flex flex-wrap items-center gap-1.5">
+            {#if t.isNew}
+              <span class="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
+                new
+              </span>
+            {/if}
+            <span
+              class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+              style:background-color="{stripe}33"
+              style:color={stripe}
+            >
+              {ch.name}
+            </span>
+          </div>
+          <p class="line-clamp-2 text-xs font-medium text-slate-100 group-hover:text-sky-200">
+            {t.subject}
+          </p>
+          <p class="mt-0.5 truncate text-[10px] text-slate-500">
+            {t.authorDisplayName} · {timeAgo(t.timeCreated)}
+          </p>
+        </div>
+      </a>
+    </li>
+  {/snippet}
+
+  {#snippet lobbyCard(l: Lobby)}
+    {@const unread = l.newMessages > 0}
+    <li class="virt-item">
+      <a
+        href={l.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group flex gap-2.5 rounded-md p-2 ring-1 transition {unread
+          ? 'bg-emerald-950/30 ring-emerald-900/60 hover:ring-emerald-500'
+          : 'bg-slate-900/40 ring-slate-800 hover:ring-emerald-700'}"
+        style:border-left="3px solid {unread ? TAB_META.dms.stripeHex : 'transparent'}"
+      >
+        {@render avatar(avatarUrl(l.lastAuthorAvatar), l.lastAuthorDisplayName || l.name, '', 'size-9')}
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5">
+            <p class="line-clamp-1 text-xs font-medium text-slate-100">{l.name}</p>
+            {#if unread}
+              <span
+                class="shrink-0 rounded-full bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-200"
+              >
+                {l.newMessages > 99 ? '99+' : l.newMessages}
+              </span>
+            {/if}
+          </div>
+          {#if l.lastMessageText}
+            <p class="line-clamp-1 text-[11px] text-slate-400">
+              {#if l.lastAuthorDisplayName}<span class="text-slate-500">{l.lastAuthorDisplayName}:</span>{' '}{/if}{l.lastMessageText}
+            </p>
+          {/if}
+          <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(l.lastMessageAt)}</p>
+        </div>
+      </a>
+    </li>
+  {/snippet}
+
+  {#snippet notifCard(n: Notification)}
+    {@const kind = notifKind(n.type)}
+    {@const KindIcon = kind.icon}
+    {@const href = n.url ?? (n.authorNickname ? `${RSI_BASE_URL}/citizens/${n.authorNickname}` : '#')}
+    <li class="virt-item">
+      <a
+        {href}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group flex gap-2.5 rounded-md p-2 ring-1 transition {!n.read
+          ? 'bg-violet-950/30 ring-violet-900/60 hover:ring-violet-500'
+          : 'bg-slate-900/40 ring-slate-800 hover:ring-violet-700'}"
+        style:border-left="3px solid {!n.read ? TAB_META.notifications.stripeHex : 'transparent'}"
+      >
+        {@render avatar(avatarUrl(n.authorAvatar), n.authorDisplayName, n.authorNickname, 'size-9')}
+        <div class="min-w-0 flex-1">
+          <div class="mb-0.5 flex items-center gap-1.5">
+            <span
+              class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300"
+            >
+              <KindIcon class="size-2.5" />
+              {kind.label}
+            </span>
+            {#if !n.read}
+              <span class="size-1.5 rounded-full bg-violet-400" aria-label="unread"></span>
+            {/if}
+          </div>
+          <p class="line-clamp-2 text-xs text-slate-100 group-hover:text-violet-200">{n.text}</p>
+          <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(n.timeCreated)}</p>
+        </div>
+      </a>
+    </li>
+  {/snippet}
 
   <div class="flex-1 overflow-y-auto p-2">
     {#if authState.signedIn === false || signedIn === false}
       <SignInPrompt label="Spectrum" />
     {:else if authState.signedIn === null}
-      <div class="flex h-full items-center justify-center text-slate-500">
-        <Loader2 class="size-5 animate-spin" />
-      </div>
+      {@render centerSpinner()}
     {:else if tab === 'devtracker' || tab === 'trending'}
       {@const err = tab === 'devtracker' ? threadsError : trendingError}
       {@const isLoading = tab === 'devtracker' ? threadsLoading : trendingLoading}
       {@const list = tab === 'devtracker' ? threads : trending}
       {#if err}
-        <div
-          class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
-        >
-          <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-          <div>
-            <p class="font-semibold">Failed to load Spectrum</p>
-            <p class="mt-1 break-all text-rose-300/80">{err}</p>
-          </div>
-        </div>
+        {@render errorBlock('Failed to load Spectrum', err)}
       {:else if isLoading && list.length === 0}
-        <div class="flex h-full items-center justify-center text-slate-500">
-          <Loader2 class="size-5 animate-spin" />
-        </div>
+        {@render centerSpinner()}
       {:else if list.length === 0}
-        <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
-          {#if tab === 'trending'}
-            <Flame class="size-8" />
-            <p class="text-xs italic">Nothing trending right now.</p>
-          {:else}
-            <Code2 class="size-8" />
-            <p class="text-xs italic">No DevTracker threads right now.</p>
-          {/if}
-        </div>
+        {#if tab === 'trending'}
+          {@render emptyState(Flame, 'Nothing trending right now.')}
+        {:else}
+          {@render emptyState(Code2, 'No DevTracker threads right now.')}
+        {/if}
       {:else}
         <ul class="mx-auto flex max-w-3xl flex-col gap-1">
           {#each filteredThreads as t (t.id)}
-            <li class="virt-item">
-              <a
-                href={t.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-start gap-2 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:ring-sky-600"
-                style:border-left="3px solid {t.channel.color || '#475569'}"
-              >
-                <div
-                  class="size-7 shrink-0 overflow-hidden rounded-full bg-slate-950 ring-1 ring-slate-800"
-                >
-                  {#if avatarUrl(t.authorAvatar)}
-                    <img src={avatarUrl(t.authorAvatar)} alt="" loading="lazy" class="size-full object-cover" />
-                  {:else}
-                    <div class="flex size-full items-center justify-center text-slate-700">
-                      <UserRound class="size-4" />
-                    </div>
-                  {/if}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="line-clamp-2 text-xs font-medium text-slate-100">
-                    {#if t.isNew}
-                      <span
-                        class="mr-1 rounded bg-sky-500/20 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-300"
-                        >new</span
-                      >
-                    {/if}
-                    {t.subject}
-                  </p>
-                  <p class="mt-0.5 truncate text-[10px] text-slate-500">
-                    <span style:color={t.channel.color || undefined}>{t.channel.name}</span>
-                    · {t.authorDisplayName}
-                    · {timeAgo(t.timeCreated)}
-                  </p>
-                </div>
-              </a>
-            </li>
+            {@render threadCard(t)}
           {/each}
         </ul>
 
@@ -450,66 +598,15 @@
       {/if}
     {:else if tab === 'dms'}
       {#if lobbiesError}
-        <div
-          class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
-        >
-          <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-          <div>
-            <p class="font-semibold">Failed to load DMs</p>
-            <p class="mt-1 break-all text-rose-300/80">{lobbiesError}</p>
-          </div>
-        </div>
+        {@render errorBlock('Failed to load DMs', lobbiesError)}
       {:else if lobbiesLoading && lobbies.length === 0}
-        <div class="flex h-full items-center justify-center text-slate-500">
-          <Loader2 class="size-5 animate-spin" />
-        </div>
+        {@render centerSpinner()}
       {:else if lobbies.length === 0}
-        <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
-          <Mail class="size-8" />
-          <p class="text-xs italic">No direct messages.</p>
-        </div>
+        {@render emptyState(Mail, 'No direct messages.')}
       {:else}
         <ul class="mx-auto flex max-w-3xl flex-col gap-1">
           {#each filteredLobbies as l (l.id)}
-            <li class="virt-item">
-              <a
-                href={l.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-start gap-2 rounded-md p-2 ring-1 transition hover:ring-sky-600 {l.newMessages > 0
-                  ? 'bg-slate-900/80 ring-emerald-900/60'
-                  : 'bg-slate-900/40 ring-slate-800'}"
-              >
-                <div class="size-7 shrink-0 overflow-hidden rounded-full bg-slate-950 ring-1 ring-slate-800">
-                  {#if avatarUrl(l.lastAuthorAvatar)}
-                    <img src={avatarUrl(l.lastAuthorAvatar)} alt="" loading="lazy" class="size-full object-cover" />
-                  {:else}
-                    <div class="flex size-full items-center justify-center text-slate-700">
-                      <UserRound class="size-4" />
-                    </div>
-                  {/if}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-1.5">
-                    <p class="line-clamp-1 text-xs font-medium text-slate-100">{l.name}</p>
-                    {#if l.newMessages > 0}
-                      <span class="shrink-0 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-300">
-                        {l.newMessages}
-                      </span>
-                    {/if}
-                  </div>
-                  {#if l.lastMessageText}
-                    <p class="line-clamp-1 text-[11px] text-slate-400">
-                      {#if l.lastAuthorDisplayName}
-                        <span class="text-slate-500">{l.lastAuthorDisplayName}:</span>
-                      {/if}
-                      {l.lastMessageText}
-                    </p>
-                  {/if}
-                  <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(l.lastMessageAt)}</p>
-                </div>
-              </a>
-            </li>
+            {@render lobbyCard(l)}
           {/each}
         </ul>
 
@@ -519,63 +616,15 @@
       {/if}
     {:else if tab === 'notifications'}
       {#if notifsError}
-        <div
-          class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
-        >
-          <AlertTriangle class="mt-0.5 size-4 shrink-0" />
-          <div>
-            <p class="font-semibold">Failed to load notifications</p>
-            <p class="mt-1 break-all text-rose-300/80">{notifsError}</p>
-          </div>
-        </div>
+        {@render errorBlock('Failed to load notifications', notifsError)}
       {:else if notifsLoading && notifs.length === 0}
-        <div class="flex h-full items-center justify-center text-slate-500">
-          <Loader2 class="size-5 animate-spin" />
-        </div>
+        {@render centerSpinner()}
       {:else if notifs.length === 0}
-        <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
-          <Bell class="size-8" />
-          <p class="text-xs italic">No notifications.</p>
-        </div>
+        {@render emptyState(Bell, 'No notifications.')}
       {:else}
         <ul class="mx-auto flex max-w-3xl flex-col gap-1">
           {#each notifs as n (n.id)}
-            {@const href = n.url ?? (n.authorNickname ? `${RSI_BASE_URL}/citizens/${n.authorNickname}` : '#')}
-            <li class="virt-item">
-              <a
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-start gap-2 rounded-md p-2 ring-1 transition hover:ring-sky-600 {n.read
-                  ? 'bg-slate-900/40 ring-slate-800'
-                  : 'bg-slate-900/80 ring-emerald-900/60'}"
-              >
-                <div class="size-7 shrink-0 overflow-hidden rounded-full bg-slate-950 ring-1 ring-slate-800">
-                  {#if avatarUrl(n.authorAvatar)}
-                    <img src={avatarUrl(n.authorAvatar)} alt="" loading="lazy" class="size-full object-cover" />
-                  {:else}
-                    <div class="flex size-full items-center justify-center text-slate-700">
-                      <UserRound class="size-4" />
-                    </div>
-                  {/if}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="line-clamp-2 text-xs text-slate-100">
-                    {#if !n.read}
-                      <span class="mr-1 inline-block size-1.5 rounded-full bg-emerald-400"></span>
-                    {/if}
-                    {n.text}
-                  </p>
-                  <p class="mt-0.5 text-[10px] text-slate-500">
-                    {#if n.type}
-                      <span>{formatNotifKind(n.type)}</span>
-                      <span> · </span>
-                    {/if}
-                    {timeAgo(n.timeCreated)}
-                  </p>
-                </div>
-              </a>
-            </li>
+            {@render notifCard(n)}
           {/each}
         </ul>
       {/if}
