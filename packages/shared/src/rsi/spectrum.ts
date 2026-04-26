@@ -475,14 +475,47 @@ export async function fetchTrendingThreads(token: string): Promise<SpectrumThrea
 // embeds inside DraftJS) are still ignored — plain text covers
 // ~90% of what people actually post.
 
+const RawInlineStyleRange = z.object({
+  offset: z.coerce.number().int().default(0),
+  length: z.coerce.number().int().default(0),
+  style: z.string().default(''),
+});
+
+const RawEntityRange = z.object({
+  offset: z.coerce.number().int().default(0),
+  length: z.coerce.number().int().default(0),
+  key: z.coerce.number().int().default(0),
+});
+
 const RawDraftBlock = z
   .object({
     key: z.string().default(''),
     text: z.string().default(''),
     type: z.string().default('unstyled'),
     depth: z.coerce.number().int().default(0),
+    inlineStyleRanges: z.array(RawInlineStyleRange).default([]),
+    entityRanges: z.array(RawEntityRange).default([]),
   })
   .passthrough();
+
+const RawEntity = z
+  .object({
+    type: z.string().default(''),
+    mutability: z.string().default('').optional(),
+    data: z.unknown().optional(),
+  })
+  .passthrough();
+
+const RawEntityMap = z.preprocess(
+  // entityMap can come back as either {} (object keyed by string id),
+  // [] (empty array), or null. Normalise the empty/array cases to {}.
+  (v) => {
+    if (!v) return {};
+    if (Array.isArray(v)) return {};
+    return v;
+  },
+  z.record(z.string(), RawEntity).default({}),
+);
 
 const RawImageData = z
   .object({
@@ -594,6 +627,20 @@ const ThreadDetailResponse = z.object({
   data: RawThreadDetail.nullable().optional(),
 });
 
+export type SpectrumSegmentKind = 'plain' | 'link' | 'mention';
+
+export interface SpectrumContentSegment {
+  kind: SpectrumSegmentKind;
+  text: string;
+  /** DraftJS inline styles applied to this segment.
+   *  Common values: 'BOLD' | 'ITALIC' | 'CODE' | 'STRIKETHROUGH'. */
+  styles: string[];
+  /** Set when kind === 'link'. */
+  url?: string;
+  /** Set when kind === 'mention'. */
+  mentionNickname?: string;
+}
+
 export interface SpectrumContentBlock {
   /** Mirrors the DraftJS block type for text content
    *  ('unstyled' | 'header-one' | 'header-two' | 'unordered-list-item' |
@@ -607,6 +654,11 @@ export interface SpectrumContentBlock {
   depth: number;
   /** Set when type === 'image'. */
   imageUrl?: string;
+  /** Computed segments for text-type blocks — preserves inline styles
+   *  (BOLD / ITALIC / CODE / STRIKETHROUGH), link URLs, and mention
+   *  nicknames so the UI can render rich text instead of stripping to
+   *  plain. Undefined for non-text blocks (image / unknown). */
+  segments?: SpectrumContentSegment[];
 }
 
 export interface SpectrumThreadReply {
@@ -655,22 +707,99 @@ export interface SpectrumThreadDetail {
   replies: SpectrumThreadReply[];
 }
 
+/** Compute styled/linked/mentioned segments from a single DraftJS
+ *  block. Walk the text once, picking up the active inline styles
+ *  and any entity that covers each character offset. The boundary
+ *  set is built from every range start + end so we slice the string
+ *  in O(n log n) instead of O(n²). */
+function computeBlockSegments(
+  block: z.infer<typeof RawDraftBlock>,
+  entityMap: Record<string, z.infer<typeof RawEntity>>,
+): SpectrumContentSegment[] {
+  const text = block.text;
+  if (!text) return [];
+
+  // Boundary offsets: the start + end of every inline-style and
+  // entity range, plus 0 and text.length.
+  const boundaries = new Set<number>([0, text.length]);
+  for (const r of block.inlineStyleRanges) {
+    boundaries.add(r.offset);
+    boundaries.add(r.offset + r.length);
+  }
+  for (const r of block.entityRanges) {
+    boundaries.add(r.offset);
+    boundaries.add(r.offset + r.length);
+  }
+  const sorted = [...boundaries].sort((a, b) => a - b);
+
+  const out: SpectrumContentSegment[] = [];
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const start = sorted[i]!;
+    const end = sorted[i + 1]!;
+    if (start >= end) continue;
+
+    // Active inline styles at [start, end).
+    const styles = new Set<string>();
+    for (const r of block.inlineStyleRanges) {
+      if (r.style && r.offset <= start && r.offset + r.length >= end) {
+        styles.add(r.style);
+      }
+    }
+    // Active entity (assume entities don't overlap; take the first match).
+    let entity: z.infer<typeof RawEntity> | undefined;
+    for (const r of block.entityRanges) {
+      if (r.offset <= start && r.offset + r.length >= end) {
+        const e = entityMap[String(r.key)];
+        if (e) {
+          entity = e;
+          break;
+        }
+      }
+    }
+
+    const segText = text.slice(start, end);
+    if (entity?.type === 'LINK') {
+      const url = (entity.data as { url?: string } | undefined)?.url ?? '';
+      out.push({ kind: 'link', text: segText, styles: [...styles], url });
+    } else if (entity?.type === 'MENTION') {
+      const nickname =
+        (entity.data as { member?: { nickname?: string }; nickname?: string } | undefined)?.member
+          ?.nickname ??
+        (entity.data as { nickname?: string } | undefined)?.nickname ??
+        '';
+      out.push({ kind: 'mention', text: segText, styles: [...styles], mentionNickname: nickname });
+    } else {
+      out.push({ kind: 'plain', text: segText, styles: [...styles] });
+    }
+  }
+  return out;
+}
+
 function normalizeContentBlocks(
   wrappers: ReadonlyArray<z.infer<typeof RawContentWrapper>>,
 ): SpectrumContentBlock[] {
   const out: SpectrumContentBlock[] = [];
   for (const w of wrappers) {
     if (w.type === 'text') {
-      // text wrapper: data is { blocks: DraftJS[] }. Validate then
-      // flatten one level — each DraftJS block becomes a top-level
-      // SpectrumContentBlock the renderer can dispatch by type.
+      // text wrapper: data is { blocks: DraftJS[], entityMap? }.
+      // Each DraftJS block becomes a top-level SpectrumContentBlock
+      // with computed segments preserving inline styles + entities.
       const parsed = z
-        .object({ blocks: z.array(RawDraftBlock).default([]) })
+        .object({
+          blocks: z.array(RawDraftBlock).default([]),
+          entityMap: RawEntityMap,
+        })
         .passthrough()
         .safeParse(w.data);
       if (parsed.success) {
+        const entityMap = parsed.data.entityMap;
         for (const b of parsed.data.blocks) {
-          out.push({ type: b.type, text: b.text, depth: b.depth });
+          out.push({
+            type: b.type,
+            text: b.text,
+            depth: b.depth,
+            segments: computeBlockSegments(b, entityMap),
+          });
         }
       }
     } else if (w.type === 'image') {

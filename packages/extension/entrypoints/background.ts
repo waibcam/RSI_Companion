@@ -105,7 +105,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
   // v2: every message gained `authorIsStaff` for the CIG gold tint.
-  'spectrum:lobbyMessages': 2,
+  // v3: messages gained content_state segments (rich-text rendering).
+  'spectrum:lobbyMessages': 3,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
   // v2: content_blocks normalizer was unwrapping wrong (ignored the
@@ -115,8 +116,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // entries don't have it and the expand-replies UI would render
   // empty children for already-cached threads. v4: every reply +
   // OP gained `authorIsStaff` so the gold-tint rendering kicks in
-  // for CIG posts.
-  'spectrum:threadDetail': 4,
+  // for CIG posts. v5: SpectrumContentBlock gained `segments` so
+  // inline styles + links + mentions render as rich text.
+  'spectrum:threadDetail': 5,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on

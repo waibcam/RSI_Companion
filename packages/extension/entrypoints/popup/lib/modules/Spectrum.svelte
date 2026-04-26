@@ -42,6 +42,7 @@
   type ThreadDetail = Rsi.SpectrumThreadDetail;
   type ThreadReply = Rsi.SpectrumThreadReply;
   type ContentBlock = Rsi.SpectrumContentBlock;
+  type ContentSegment = Rsi.SpectrumContentSegment;
   type Message = Rsi.SpectrumMessage;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
@@ -1037,7 +1038,9 @@
         {/if}
       </div>
       <p
-        class="line-clamp-2 text-xs font-medium group-hover:text-sky-200"
+        class="line-clamp-2 text-xs font-medium {t.authorIsStaff
+          ? ''
+          : 'text-slate-100 group-hover:text-sky-200'}"
         style:color={t.authorIsStaff ? 'rgb(255, 230, 130)' : ''}
       >
         {t.subject}
@@ -1382,6 +1385,43 @@
     </div>
   {/snippet}
 
+  {#snippet richText(b: ContentBlock, baseColor: string)}
+    <!-- Render either segments (rich) when available, or fall back
+         to plain text. Each segment's BOLD/ITALIC/CODE/STRIKETHROUGH
+         compose; LINK and MENTION become anchor / styled span. -->
+    {#if b.segments && b.segments.length > 0}
+      {#each b.segments as seg, sIdx (sIdx)}
+        {@const styles = seg.styles}
+        {@const isBold = styles.includes('BOLD')}
+        {@const isItalic = styles.includes('ITALIC')}
+        {@const isCode = styles.includes('CODE')}
+        {@const isStrike = styles.includes('STRIKETHROUGH')}
+        {@const cls = `${isBold ? 'font-semibold ' : ''}${isItalic ? 'italic ' : ''}${isCode ? 'rounded bg-slate-950/80 px-1 py-0.5 font-mono text-[10px] ' : ''}${isStrike ? 'line-through ' : ''}`}
+        {#if seg.kind === 'link' && seg.url}
+          <a
+            href={seg.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sky-300 underline decoration-sky-700 underline-offset-2 hover:text-sky-200 hover:decoration-sky-400 {cls}"
+          >{seg.text}</a>
+        {:else if seg.kind === 'mention' && seg.mentionNickname}
+          <a
+            href="{RSI_BASE_URL}/citizens/{seg.mentionNickname}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="rounded bg-sky-500/20 px-1 text-sky-200 hover:bg-sky-500/30 {cls}"
+          >@{seg.text.replace(/^@/, '')}</a>
+        {:else if cls}
+          <span class={cls.trim()} style:color={baseColor}>{seg.text}</span>
+        {:else}
+          <span style:color={baseColor}>{seg.text}</span>
+        {/if}
+      {/each}
+    {:else}
+      <span style:color={baseColor}>{b.text}</span>
+    {/if}
+  {/snippet}
+
   {#snippet contentBlocks(blocks: ContentBlock[], tintGold: boolean = false)}
     <!-- Block list with two layers folded into one. The shared
          normalizer in spectrum.ts unwraps the {type:'text', data:{blocks}}
@@ -1389,6 +1429,8 @@
          'image' / 'unknown' types for media wrappers. Inline styles +
          entities inside DraftJS (links, mentions, embeds) are still
          dropped — covers ~90% of what people actually post. -->
+    {@const baseColor = tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
+    {@const headColor = tintGold ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
     {#each blocks as b, i (i)}
       {#if b.type === 'image' && b.imageUrl}
         <img
@@ -1404,39 +1446,29 @@
              render a small gap rather than a stray empty <p>. -->
         <div class="h-1"></div>
       {:else if b.type === 'header-one' || b.type === 'header-two'}
-        <p
-          class="mt-1.5 text-xs font-semibold"
-          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
-        >{b.text}</p>
+        <p class="mt-1.5 text-xs font-semibold" style:color={headColor}>
+          {@render richText(b, headColor)}
+        </p>
       {:else if b.type === 'unordered-list-item'}
-        <p
-          class="ml-3 text-[11px]"
-          style:padding-left="{b.depth * 0.75}rem"
-          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
-        >
-          • {b.text}
+        <p class="ml-3 text-[11px]" style:padding-left="{b.depth * 0.75}rem">
+          <span style:color={baseColor}>•</span>{' '}{@render richText(b, baseColor)}
         </p>
       {:else if b.type === 'ordered-list-item'}
-        <p
-          class="ml-3 text-[11px]"
-          style:padding-left="{b.depth * 0.75}rem"
-          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
-        >
-          {i + 1}. {b.text}
+        <p class="ml-3 text-[11px]" style:padding-left="{b.depth * 0.75}rem">
+          <span style:color={baseColor}>{i + 1}.</span>{' '}{@render richText(b, baseColor)}
         </p>
       {:else if b.type === 'blockquote'}
         <p class="border-l-2 border-slate-700 pl-2 text-[11px] italic text-slate-400">
-          {b.text}
+          {@render richText(b, 'rgb(148, 163, 184)')}
         </p>
       {:else if b.type === 'code-block'}
         <pre class="overflow-x-auto rounded bg-slate-950/80 p-1.5 font-mono text-[10px] text-slate-300">{b.text}</pre>
       {:else if b.type === 'atomic'}
         <p class="text-[10px] italic text-slate-500">📎 [media — open on Spectrum to view]</p>
       {:else}
-        <p
-          class="whitespace-pre-wrap text-[11px] leading-relaxed"
-          style:color={tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
-        >{b.text}</p>
+        <p class="whitespace-pre-wrap text-[11px] leading-relaxed">
+          {@render richText(b, baseColor)}
+        </p>
       {/if}
     {/each}
   {/snippet}
@@ -1600,9 +1632,16 @@
           style:border-left="3px solid {stripe}"
           style:background-color={detail.authorIsStaff ? 'rgba(191, 167, 57, 0.12)' : ''}
         >
-          <h2 class="text-sm font-semibold leading-tight text-slate-100">
+          <h2
+            class="text-sm font-semibold leading-tight"
+            style:color={detail.authorIsStaff ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
+          >
             {#if detail.isPinned}
-              <span class="mr-1 rounded bg-amber-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-200">
+              <span
+                class="mr-1 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                style:background-color="rgba(245, 158, 11, 0.25)"
+                style:color="rgb(252, 211, 77)"
+              >
                 pinned
               </span>
             {/if}
@@ -1611,8 +1650,12 @@
                 locked
               </span>
             {/if}
-            {#if detail.isCigHighlighted}
-              <span class="mr-1 rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
+            {#if detail.isCigHighlighted || detail.authorIsStaff}
+              <span
+                class="mr-1 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+                style:background-color="rgba(191, 167, 57, 0.25)"
+                style:color="rgb(255, 230, 130)"
+              >
                 cig
               </span>
             {/if}
