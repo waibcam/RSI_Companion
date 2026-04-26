@@ -5,9 +5,12 @@
     ArrowLeft,
     AtSign,
     Bell,
+    Bookmark,
+    BookmarkX,
     CheckCheck,
     ChevronRight,
     Code2,
+    FileText,
     Flame,
     Heart,
     LayoutGrid,
@@ -32,13 +35,21 @@
   type ForumChannelInfo = Rsi.SpectrumForumChannelInfo;
   type ForumSort = Rsi.SpectrumSort;
   type Community = Rsi.SpectrumCommunity;
+  type BookmarkItem = Rsi.SpectrumBookmark;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
   // selections keep pointing at this tab.
-  type Tab = 'devtracker' | 'forums' | 'trending' | 'dms' | 'notifications';
+  type Tab = 'devtracker' | 'forums' | 'bookmarks' | 'trending' | 'dms' | 'notifications';
 
-  const TABS: readonly Tab[] = ['devtracker', 'forums', 'trending', 'dms', 'notifications'];
+  const TABS: readonly Tab[] = [
+    'devtracker',
+    'forums',
+    'bookmarks',
+    'trending',
+    'dms',
+    'notifications',
+  ];
   const isTab = (v: unknown): v is Tab =>
     typeof v === 'string' && (TABS as readonly string[]).includes(v);
   const tabP = persistedState<Tab>('spectrum:tab', 'devtracker', isTab);
@@ -105,6 +116,15 @@
       badgeBg: 'bg-teal-500/20',
       badgeText: 'text-teal-300',
       stripeHex: '#14b8a6',
+    },
+    bookmarks: {
+      label: 'Bookmarks',
+      icon: Bookmark,
+      textActive: 'text-pink-300',
+      underline: 'bg-pink-400',
+      badgeBg: 'bg-pink-500/20',
+      badgeText: 'text-pink-300',
+      stripeHex: '#ec4899',
     },
     trending: {
       label: 'Trending',
@@ -211,6 +231,19 @@
   let communitiesError = $state<string | null>(null);
   let communitiesLoaded = $state(false);
 
+  // Bookmarks tab state. The `removingId` map tracks per-row
+  // in-flight removals so the click button can disable just its own
+  // row while the network round trip resolves.
+  let bookmarks = $state<BookmarkItem[]>([]);
+  let bookmarksLoading = $state(false);
+  let bookmarksError = $state<string | null>(null);
+  let bookmarksLoaded = $state(false);
+  let bookmarksFromCache = $state(false);
+  // Key shape: `${entityType}:${entityId}` — bookmarks are addressed
+  // by (type, id) tuple in the API too, so this keeps the shapes
+  // consistent.
+  let bookmarkRemoving = $state(new Set<string>());
+
   let query = $state('');
 
   async function loadThreads(force = false) {
@@ -276,6 +309,43 @@
       if (extractSignedIn(e) === false) signedIn = false;
     } finally {
       lobbiesLoading = false;
+    }
+  }
+
+  async function loadBookmarks(force = false) {
+    bookmarksLoading = true;
+    bookmarksError = null;
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.bookmarks', force });
+      bookmarks = res.bookmarks;
+      signedIn = res.signedIn;
+      bookmarksFromCache = res.fromCache;
+      bookmarksLoaded = true;
+    } catch (e) {
+      bookmarksError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      bookmarksLoading = false;
+    }
+  }
+
+  async function removeBookmark(b: BookmarkItem) {
+    const key = `${b.entityType}:${b.entityId}`;
+    if (bookmarkRemoving.has(key)) return;
+    bookmarkRemoving = new Set([...bookmarkRemoving, key]);
+    try {
+      const res = await sendRsiMessage({
+        type: 'spectrum.bookmarkRemove',
+        entityId: b.entityId,
+        entityType: b.entityType,
+      });
+      bookmarks = res.bookmarks;
+    } catch (e) {
+      bookmarksError = errorMessage(e);
+    } finally {
+      const next = new Set(bookmarkRemoving);
+      next.delete(key);
+      bookmarkRemoving = next;
     }
   }
 
@@ -422,6 +492,8 @@
       loadTrending();
     } else if (next === 'dms' && !lobbiesLoaded) {
       loadLobbies();
+    } else if (next === 'bookmarks' && !bookmarksLoaded) {
+      loadBookmarks();
     } else if (next === 'forums') {
       if (!communitiesLoaded) loadCommunities();
       if (!forumGroupsLoaded || forumGroupsForCommunity !== forumCommunityP.value) {
@@ -439,6 +511,7 @@
     else if (tab === 'trending') loadTrending(true);
     else if (tab === 'notifications') loadNotifications(true);
     else if (tab === 'dms') loadLobbies(true);
+    else if (tab === 'bookmarks') loadBookmarks(true);
     else if (tab === 'forums') {
       if (forumChannelP.value != null) loadForumThreads(forumChannelP.value, true);
       else loadForumGroups(true);
@@ -475,16 +548,19 @@
           ? notifsLoading
           : tab === 'dms'
             ? lobbiesLoading
-            : tab === 'forums'
-              ? forumChannelP.value != null
-                ? forumThreadsLoading
-                : forumGroupsLoading
-              : false,
+            : tab === 'bookmarks'
+              ? bookmarksLoading
+              : tab === 'forums'
+                ? forumChannelP.value != null
+                  ? forumThreadsLoading
+                  : forumGroupsLoading
+                : false,
   );
   const showSearch = $derived(
     tab === 'devtracker' ||
       tab === 'trending' ||
       tab === 'dms' ||
+      tab === 'bookmarks' ||
       (tab === 'forums' && forumChannelP.value == null),
   );
   const showRefresh = $derived(
@@ -492,15 +568,26 @@
       tab === 'trending' ||
       tab === 'notifications' ||
       tab === 'dms' ||
+      tab === 'bookmarks' ||
       tab === 'forums',
   );
   const fromCache = $derived(
     (tab === 'devtracker' && threadsFromCache) ||
       (tab === 'trending' && trendingFromCache) ||
       (tab === 'dms' && lobbiesFromCache) ||
+      (tab === 'bookmarks' && bookmarksFromCache) ||
       (tab === 'forums' &&
         (forumChannelP.value != null ? forumThreadsFromCache : forumGroupsFromCache)),
   );
+
+  const filteredBookmarks = $derived.by<BookmarkItem[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bookmarks;
+    return bookmarks.filter((b) => {
+      const hay = `${b.name ?? ''} ${b.entityName} ${b.entityType}`.toLowerCase();
+      return hay.includes(q);
+    });
+  });
 
   const filteredForumChannels = $derived.by<ForumGroup[]>(() => {
     const q = query.trim().toLowerCase();
@@ -542,6 +629,7 @@
       // a manual tab toggle.
       if (tabP.value === 'trending') void loadTrending();
       else if (tabP.value === 'dms') void loadLobbies();
+      else if (tabP.value === 'bookmarks') void loadBookmarks();
       else if (tabP.value === 'forums') {
         void loadCommunities();
         void loadForumGroups();
@@ -571,6 +659,8 @@
         <span class="text-[10px] text-slate-500">{notifs.length} total</span>
       {:else if signedIn && tab === 'dms' && lobbiesLoaded}
         <span class="text-[10px] text-slate-500">{lobbies.length} lobbies</span>
+      {:else if signedIn && tab === 'bookmarks' && bookmarksLoaded}
+        <span class="text-[10px] text-slate-500">{bookmarks.length} saved</span>
       {:else if signedIn && tab === 'forums' && forumGroupsLoaded}
         {@const activeCommunity = communities.find((c) => c.id === forumCommunityP.value)}
         <span class="text-[10px] text-slate-500">
@@ -810,6 +900,88 @@
     </li>
   {/snippet}
 
+  {#snippet bookmarkCard(b: BookmarkItem)}
+    {@const key = `${b.entityType}:${b.entityId}`}
+    {@const removing = bookmarkRemoving.has(key)}
+    {@const label = b.name ?? b.entityName}
+    {@const TypeIcon =
+      b.entityType === 'forum_thread'
+        ? FileText
+        : b.entityType === 'message_lobby'
+          ? Mail
+          : b.entityType === 'forum_channel'
+            ? LayoutGrid
+            : Bookmark}
+    {@const typeLabel =
+      b.entityType === 'forum_thread'
+        ? 'Thread'
+        : b.entityType === 'message_lobby'
+          ? 'Lobby'
+          : b.entityType === 'forum_channel'
+            ? 'Channel'
+            : b.entityType.replace(/_/g, ' ')}
+    <li class="virt-item">
+      <div
+        class="group flex gap-2.5 rounded-md p-2 ring-1 transition {b.hasNewActivity
+          ? 'bg-pink-950/25 ring-pink-900/60 hover:ring-pink-500'
+          : 'bg-slate-900/40 ring-slate-800 hover:ring-pink-700'}"
+        style:border-left="3px solid {b.hasNewActivity ? TAB_META.bookmarks.stripeHex : 'transparent'}"
+      >
+        {#if b.thumbnail}
+          <img
+            src={b.thumbnail}
+            alt=""
+            loading="lazy"
+            class="size-9 shrink-0 rounded-md object-cover ring-1 ring-slate-800"
+          />
+        {:else}
+          {@const av = avatarFallback(label, b.entityType)}
+          <div
+            class="flex size-9 shrink-0 items-center justify-center rounded-md bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-white/90 ring-1 ring-slate-800"
+          >
+            <TypeIcon class="size-4" />
+          </div>
+        {/if}
+        <a
+          href={b.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="min-w-0 flex-1"
+        >
+          <div class="mb-0.5 flex items-center gap-1.5">
+            <span class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300">
+              <TypeIcon class="size-2.5" />
+              {typeLabel}
+            </span>
+            {#if b.hasNewActivity}
+              <span class="size-1.5 rounded-full bg-pink-400" aria-label="new activity"></span>
+            {/if}
+          </div>
+          <p class="line-clamp-1 text-xs font-medium text-slate-100 group-hover:text-pink-200">
+            {label}
+          </p>
+          {#if b.name && b.entityName && b.name !== b.entityName}
+            <p class="mt-0.5 truncate text-[10px] text-slate-500">{b.entityName}</p>
+          {/if}
+        </a>
+        <button
+          type="button"
+          onclick={() => removeBookmark(b)}
+          disabled={removing}
+          class="shrink-0 rounded-md p-1 text-slate-500 transition hover:bg-rose-900/40 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-40"
+          title="Remove bookmark"
+          aria-label="Remove bookmark"
+        >
+          {#if removing}
+            <Loader2 class="size-3.5 animate-spin" />
+          {:else}
+            <BookmarkX class="size-3.5" />
+          {/if}
+        </button>
+      </div>
+    </li>
+  {/snippet}
+
   {#snippet communitySwitcher()}
     <div
       class="mx-auto mb-3 flex max-w-3xl gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -906,6 +1078,29 @@
 
         {#if filteredThreads.length === 0}
           <p class="mt-6 text-center text-xs italic text-slate-500">No threads match your filter.</p>
+        {/if}
+      {/if}
+    {:else if tab === 'bookmarks'}
+      {#if bookmarksError}
+        {@render errorBlock('Failed to load bookmarks', bookmarksError)}
+      {:else if bookmarksLoading && bookmarks.length === 0}
+        {@render centerSpinner()}
+      {:else if bookmarks.length === 0}
+        {@render emptyState(
+          Bookmark,
+          'No bookmarks yet — star a thread or chat lobby on Spectrum to pin it here.',
+        )}
+      {:else}
+        <ul class="mx-auto flex max-w-3xl flex-col gap-1">
+          {#each filteredBookmarks as b (`${b.entityType}:${b.entityId}`)}
+            {@render bookmarkCard(b)}
+          {/each}
+        </ul>
+
+        {#if filteredBookmarks.length === 0}
+          <p class="mt-6 text-center text-xs italic text-slate-500">
+            No bookmarks match your filter.
+          </p>
         {/if}
       {/if}
     {:else if tab === 'forums'}

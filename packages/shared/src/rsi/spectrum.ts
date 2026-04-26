@@ -397,6 +397,130 @@ export async function fetchTrendingThreads(token: string): Promise<SpectrumThrea
   return flat.sort((a, b) => b.timeCreated - a.timeCreated).slice(0, 40);
 }
 
+// --- Bookmarks (Phase 4) ------------------------------------------------
+//
+// Spectrum lets users bookmark any entity (forum thread, chat lobby,
+// occasionally a forum channel) for one-click access from the left
+// sidebar. We expose the same list under a "Bookmarks" tab here +
+// the remove mutation. Add-bookmark from a thread card is Phase 4b.
+//
+// Endpoints (v2 only, all confirmed live in spectrum-api.md):
+//   POST /api/spectrum/v2/bookmark/list   → array of bookmarks
+//   POST /api/spectrum/v2/bookmark/add    → { entityId, entityType, name? }
+//   POST /api/spectrum/v2/bookmark/remove → { entityId, entityType }
+
+export interface SpectrumBookmark {
+  entityId: number;
+  /** "forum_thread" | "message_lobby" | "forum_channel" — RSI may add
+   *  others. Treat as a string and key per-icon rendering off it. */
+  entityType: string;
+  /** RSI's canonical name for the bookmarked entity. */
+  entityName: string;
+  /** User-set custom label, or `null` to fall back to entityName. */
+  name: string | null;
+  url: string;
+  hasNewActivity: boolean;
+  order: number;
+  subscriptionKey: string;
+  thumbnail: string | null;
+}
+
+const RawBookmark = z
+  .object({
+    entityId: z.coerce.number().int(),
+    entityType: z.string().default(''),
+    entityName: z.string().default(''),
+    name: z.string().nullable().optional(),
+    url: z.string().default(''),
+    hasNewActivity: z.boolean().default(false),
+    order: z.coerce.number().int().default(0),
+    subscriptionKey: z.string().default(''),
+    thumbnail: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => (v && v.length > 0 ? v : null)),
+  })
+  .passthrough();
+
+const BookmarkListResponse = z.object({
+  success: z.number().int(),
+  data: z.array(RawBookmark).nullable().optional(),
+});
+
+const BookmarkMutationResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  msg: z.string().nullable().optional(),
+});
+
+function spectrumPost(token: string, path: string, body: unknown) {
+  return fetchWithTimeout(`${RSI_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-rsi-token': token,
+      'x-tavern-id': token,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchSpectrumBookmarks(token: string): Promise<SpectrumBookmark[]> {
+  const response = await spectrumPost(token, '/api/spectrum/v2/bookmark/list', {});
+  assertRsiOk(response, 'v2/bookmark/list');
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkListResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) return [];
+  return (parsed.data.data ?? []).map((b) => ({
+    entityId: b.entityId,
+    entityType: b.entityType,
+    entityName: b.entityName,
+    name: b.name && b.name.length > 0 ? b.name : null,
+    url: b.url,
+    hasNewActivity: b.hasNewActivity,
+    order: b.order,
+    subscriptionKey: b.subscriptionKey,
+    thumbnail: b.thumbnail,
+  }));
+}
+
+export async function addSpectrumBookmark(
+  token: string,
+  args: { entityId: number; entityType: string; name?: string },
+): Promise<void> {
+  const response = await spectrumPost(token, '/api/spectrum/v2/bookmark/add', {
+    entityId: String(args.entityId),
+    entityType: args.entityType,
+    ...(args.name ? { name: args.name } : {}),
+  });
+  assertRsiOk(response, 'v2/bookmark/add');
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkMutationResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    const code = parsed.success ? parsed.data.code : 'parse error';
+    throw new Error(`bookmark/add returned ${code}`);
+  }
+}
+
+export async function removeSpectrumBookmark(
+  token: string,
+  args: { entityId: number; entityType: string },
+): Promise<void> {
+  const response = await spectrumPost(token, '/api/spectrum/v2/bookmark/remove', {
+    entityId: String(args.entityId),
+    entityType: args.entityType,
+  });
+  assertRsiOk(response, 'v2/bookmark/remove');
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkMutationResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    const code = parsed.success ? parsed.data.code : 'parse error';
+    throw new Error(`bookmark/remove returned ${code}`);
+  }
+}
+
 // --- Notifications ------------------------------------------------------
 //
 // RSI's /api/spectrum/notification/search returns HTML (login page) for

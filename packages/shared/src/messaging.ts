@@ -41,6 +41,7 @@ import type { MyOrg, OrgMember, PublicOrg, PublicOrgSearchParams } from './rsi/o
 import type { RsiIdentity } from './rsi/auth.js';
 import type { Ship } from './rsi/ships.js';
 import type {
+  SpectrumBookmark,
   SpectrumCommunity,
   SpectrumForumGroup,
   SpectrumLobby,
@@ -331,6 +332,27 @@ export interface SpectrumForumGroupsResponsePayload {
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
+}
+
+export interface SpectrumBookmarksRequest {
+  type: 'spectrum.bookmarks';
+  force?: boolean;
+}
+export interface SpectrumBookmarksResponsePayload {
+  bookmarks: SpectrumBookmark[];
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+export interface SpectrumBookmarkRemoveRequest {
+  type: 'spectrum.bookmarkRemove';
+  entityId: number;
+  entityType: string;
+}
+export interface SpectrumBookmarkRemoveResponsePayload {
+  /** Refreshed list — saves the popup a follow-up fetch. */
+  bookmarks: SpectrumBookmark[];
 }
 
 export interface SpectrumForumThreadsRequest {
@@ -967,6 +989,8 @@ export type RsiMessage =
   | SpectrumMarkReadRequest
   | SpectrumLobbiesRequest
   | SpectrumCommunitiesRequest
+  | SpectrumBookmarksRequest
+  | SpectrumBookmarkRemoveRequest
   | SpectrumForumGroupsRequest
   | SpectrumForumThreadsRequest
   | DashboardRequest
@@ -1034,6 +1058,8 @@ interface ResponseMap {
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.communities': SpectrumCommunitiesResponsePayload;
+  'spectrum.bookmarks': SpectrumBookmarksResponsePayload;
+  'spectrum.bookmarkRemove': SpectrumBookmarkRemoveResponsePayload;
   'spectrum.forumGroups': SpectrumForumGroupsResponsePayload;
   'spectrum.forumThreads': SpectrumForumThreadsResponsePayload;
   'dashboard.summary': DashboardResponsePayload;

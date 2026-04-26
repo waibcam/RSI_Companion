@@ -103,6 +103,7 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
   'spectrum:communities': 1,
+  'spectrum:bookmarks': 1,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
@@ -1991,6 +1992,50 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
+async function handleSpectrumBookmarks(force: boolean) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      bookmarks: [],
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  const key = 'spectrum:bookmarks';
+  if (!force) {
+    const cached = await cacheGet<{ bookmarks: Rsi.SpectrumBookmark[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    const bookmarks = await Rsi.fetchSpectrumBookmarks(token);
+    const fetchedAt = Date.now();
+    // Bookmarks are user-curated and rarely change — same 30-min TTL
+    // as the rest of the per-user Spectrum data. Mutations
+    // (handleSpectrumBookmarkRemove) write the fresh list straight
+    // back so the cache stays warm without a follow-up fetch.
+    await cacheSet(key, { bookmarks, fetchedAt }, TTL.spectrum);
+    return { bookmarks, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
+async function handleSpectrumBookmarkRemove(message: {
+  entityId: number;
+  entityType: string;
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  await Rsi.removeSpectrumBookmark(token, {
+    entityId: message.entityId,
+    entityType: message.entityType,
+  });
+  // Refetch the list so the popup can paint the new state without a
+  // follow-up message round trip. Re-prime the cache while we're at it.
+  const bookmarks = await Rsi.fetchSpectrumBookmarks(token);
+  await cacheSet('spectrum:bookmarks', { bookmarks, fetchedAt: Date.now() }, TTL.spectrum);
+  return { bookmarks };
+}
+
 async function handleSpectrumCommunities(force: boolean) {
   const token = await Rsi.readRsiToken();
   if (!token) {
@@ -2616,6 +2661,16 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };
       case 'spectrum.communities':
         return { ok: true, data: await handleSpectrumCommunities(message.force ?? false) };
+      case 'spectrum.bookmarks':
+        return { ok: true, data: await handleSpectrumBookmarks(message.force ?? false) };
+      case 'spectrum.bookmarkRemove':
+        return {
+          ok: true,
+          data: await handleSpectrumBookmarkRemove({
+            entityId: message.entityId,
+            entityType: message.entityType,
+          }),
+        };
       case 'spectrum.forumGroups':
         return {
           ok: true,
