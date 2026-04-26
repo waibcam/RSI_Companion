@@ -163,6 +163,48 @@ export async function fetchSpectrumForumGroups(
   }));
 }
 
+// --- Custom community emojis -------------------------------------------
+//
+// /api/spectrum/community/fetch-emojis returns the catalog of custom
+// emojis a community has uploaded. Each entry maps a `short_name`
+// like "picardpalm" to a `media_url` PNG/GIF. We use them in two
+// places: as reaction chips (where reaction.type IS the shortcode)
+// and inlined in DraftJS text where users type `:short_name:`.
+
+const RawEmoji = z
+  .object({
+    short_name: z.string().default(''),
+    media_url: z.string().default(''),
+    type: z.string().default(''),
+  })
+  .passthrough();
+
+const EmojisResponse = z.object({
+  success: z.number().int(),
+  data: z.array(RawEmoji).nullable().optional(),
+});
+
+export interface SpectrumEmoji {
+  shortName: string;
+  mediaUrl: string;
+}
+
+export async function fetchSpectrumCommunityEmojis(
+  token: string,
+  communityId: number,
+): Promise<SpectrumEmoji[]> {
+  const response = await spectrumPost(token, '/api/spectrum/community/fetch-emojis', {
+    community_id: String(communityId),
+  });
+  assertRsiOk(response, 'community/fetch-emojis');
+  const raw = (await response.json()) as unknown;
+  const parsed = EmojisResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) return [];
+  return (parsed.data.data ?? [])
+    .filter((e) => e.short_name && e.media_url)
+    .map((e) => ({ shortName: e.short_name, mediaUrl: e.media_url }));
+}
+
 // --- Org communities + their forums (Phase 3) -----------------------------
 //
 // auth/identify only returns the SC community's forum structure. For the

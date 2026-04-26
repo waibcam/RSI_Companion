@@ -112,6 +112,7 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:lobbyMessages': 4,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
+  'spectrum:emojis': 1,
   // v2: content_blocks normalizer was unwrapping wrong (ignored the
   // {type:'text', data:{blocks}} wrapper layer), so cached entries
   // had empty/wrong content. v3: SpectrumThreadReply gained a
@@ -2021,6 +2022,28 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
+async function handleSpectrumEmojis(message: { communityId?: number; force?: boolean }) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return { emojis: [], fetchedAt: Date.now(), fromCache: false } as const;
+  }
+  const communityId = message.communityId ?? 1;
+  const key = `spectrum:emojis:${communityId}`;
+  if (!message.force) {
+    const cached = await cacheGet<{ emojis: Rsi.SpectrumEmoji[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, fromCache: true } as const;
+  }
+  return dedupe(key, async () => {
+    const emojis = await Rsi.fetchSpectrumCommunityEmojis(token, communityId);
+    const fetchedAt = Date.now();
+    // Reference TTL — community emojis change extremely rarely (admins
+    // upload a few per year). 7 days keeps the popup from re-fetching
+    // every session for no real change.
+    await cacheSet(key, { emojis, fetchedAt }, REFERENCE_TTL);
+    return { emojis, fetchedAt, fromCache: false } as const;
+  });
+}
+
 async function handleSpectrumSearch(message: { text: string; communityId?: number }) {
   const token = await Rsi.readRsiToken();
   if (!token) {
@@ -2805,6 +2828,14 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
           data: await handleSpectrumSearch({
             text: message.text,
             communityId: message.communityId,
+          }),
+        };
+      case 'spectrum.emojis':
+        return {
+          ok: true,
+          data: await handleSpectrumEmojis({
+            communityId: message.communityId,
+            force: message.force ?? false,
           }),
         };
       case 'spectrum.communities':

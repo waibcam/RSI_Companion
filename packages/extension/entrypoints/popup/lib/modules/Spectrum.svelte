@@ -282,6 +282,36 @@
   let lobbyMessagesFromCache = $state(false);
   let lobbyMessagesForLobby = $state<number | null>(null);
 
+  // Custom community emojis. Map<shortName, mediaUrl>. Loaded once
+  // when the user enters the Forums or DMs tab — REFERENCE_TTL cache
+  // (7 days) means subsequent sessions are pure cache hits.
+  let emojiMap = $state<Map<string, string>>(new Map());
+  /** Splits text on `:short_name:` patterns and resolves any matches
+   *  to {url, name} segments; everything else stays as text. Used by
+   *  the rich-text renderer for inline emoji rendering. */
+  function splitEmojis(text: string): Array<{ kind: 'text'; text: string } | { kind: 'emoji'; url: string; name: string }> {
+    if (emojiMap.size === 0 || !text.includes(':')) return [{ kind: 'text', text }];
+    const out: Array<{ kind: 'text'; text: string } | { kind: 'emoji'; url: string; name: string }> = [];
+    const re = /:([a-zA-Z0-9_+-]+):/g;
+    let lastEnd = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const url = emojiMap.get(m[1]!);
+      if (!url) continue;
+      if (m.index > lastEnd) out.push({ kind: 'text', text: text.slice(lastEnd, m.index) });
+      out.push({ kind: 'emoji', url, name: m[1]! });
+      lastEnd = m.index + m[0].length;
+    }
+    if (lastEnd < text.length) out.push({ kind: 'text', text: text.slice(lastEnd) });
+    return out.length > 0 ? out : [{ kind: 'text', text }];
+  }
+  /** Resolve a reaction shortcode (`:short_name:`) to its URL, or
+   *  null if it's not a known custom emoji. */
+  function resolveEmojiUrl(shortcode: string): string | null {
+    const stripped = shortcode.replace(/^:|:$/g, '');
+    return emojiMap.get(stripped) ?? null;
+  }
+
   // Forum content search state. Live fires when the user types in the
   // Forums channel-list filter input — channels filter immediately
   // client-side, AND a debounced server search runs for queries with
@@ -460,6 +490,28 @@
       void runForumSearch(q);
     }, 500);
     return () => clearTimeout(handle);
+  });
+
+  async function loadEmojis(communityId: number) {
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.emojis', communityId });
+      const next = new Map<string, string>();
+      for (const e of res.emojis) next.set(e.shortName, e.mediaUrl);
+      emojiMap = next;
+    } catch {
+      // Emojis are a polish — no need to surface a UI error if they fail.
+    }
+  }
+
+  // Trigger emoji catalog load once we have a sign-in confirmation +
+  // know which community to ask for. Currently we always ask for SC
+  // (id=1) since every joined community gets the SC emoji set as a
+  // baseline; per-community emojis would mean a small per-community
+  // map but in practice org communities have ~0 custom emojis.
+  $effect(() => {
+    if (!signedIn) return;
+    if (emojiMap.size > 0) return;
+    void loadEmojis(1);
   });
 
   async function loadCommunities(force = false) {
@@ -1554,12 +1606,17 @@
           </span>
         {/if}
         {#each reactions.slice(0, 6) as r (r.type)}
+          {@const emojiUrl = resolveEmojiUrl(r.type)}
           <span
-            class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-medium text-slate-300"
+            class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-medium text-slate-300"
             title="{r.type} — {r.count} reaction{r.count === 1 ? '' : 's'}"
           >
-            <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
-            {' '}{formatStat(r.count)}
+            {#if emojiUrl}
+              <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
+            {:else}
+              <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
+            {/if}
+            {formatStat(r.count)}
           </span>
         {/each}
         {#if reactions.length > 6}
@@ -1596,9 +1653,25 @@
             class="rounded bg-sky-500/20 px-1 text-sky-200 hover:bg-sky-500/30 {cls}"
           >@{seg.text.replace(/^@/, '')}</a>
         {:else if cls}
-          <span class={cls.trim()} style:color={baseColor}>{seg.text}</span>
+          <span class={cls.trim()} style:color={baseColor}>
+            {#each splitEmojis(seg.text) as part, pi (pi)}
+              {#if part.kind === 'emoji'}
+                <img src={part.url} alt={part.name} loading="lazy" class="inline-block size-3.5 align-text-bottom" />
+              {:else}
+                {part.text}
+              {/if}
+            {/each}
+          </span>
         {:else}
-          <span style:color={baseColor}>{seg.text}</span>
+          <span style:color={baseColor}>
+            {#each splitEmojis(seg.text) as part, pi (pi)}
+              {#if part.kind === 'emoji'}
+                <img src={part.url} alt={part.name} loading="lazy" class="inline-block size-3.5 align-text-bottom" />
+              {:else}
+                {part.text}
+              {/if}
+            {/each}
+          </span>
         {/if}
       {/each}
     {:else}

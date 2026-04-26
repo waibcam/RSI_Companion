@@ -43,6 +43,7 @@ import type { Ship } from './rsi/ships.js';
 import type {
   SpectrumBookmark,
   SpectrumCommunity,
+  SpectrumEmoji,
   SpectrumForumGroup,
   SpectrumLobby,
   SpectrumMessage,
@@ -333,6 +334,17 @@ export interface SpectrumForumGroupsResponsePayload {
   groups: SpectrumForumGroup[];
   communityId: number;
   signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+export interface SpectrumEmojisRequest {
+  type: 'spectrum.emojis';
+  communityId?: number;
+  force?: boolean;
+}
+export interface SpectrumEmojisResponsePayload {
+  emojis: SpectrumEmoji[];
   fetchedAt: number;
   fromCache: boolean;
 }
@@ -1051,6 +1063,7 @@ export type RsiMessage =
   | SpectrumLobbiesRequest
   | SpectrumLobbyMessagesRequest
   | SpectrumSearchRequest
+  | SpectrumEmojisRequest
   | SpectrumCommunitiesRequest
   | SpectrumBookmarksRequest
   | SpectrumBookmarkAddRequest
@@ -1124,6 +1137,7 @@ interface ResponseMap {
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
   'spectrum.search': SpectrumSearchResponsePayload;
+  'spectrum.emojis': SpectrumEmojisResponsePayload;
   'spectrum.communities': SpectrumCommunitiesResponsePayload;
   'spectrum.bookmarks': SpectrumBookmarksResponsePayload;
   'spectrum.bookmarkAdd': SpectrumBookmarkAddResponsePayload;
