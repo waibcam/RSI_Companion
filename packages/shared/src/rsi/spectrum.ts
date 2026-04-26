@@ -7,6 +7,13 @@ import { RSI_BASE_URL } from '../constants.js';
 import { fetchWithTimeout } from '../net.js';
 import { assertRsiOk, identifyFull, RsiNotAuthenticatedError, type IdentifyData } from './auth.js';
 
+const RawVotes = z
+  .object({
+    count: z.coerce.number().int().default(0),
+    voted: z.coerce.number().int().default(0),
+  })
+  .passthrough();
+
 const RawThread = z.object({
   id: z.coerce.number().int(),
   slug: z.string(),
@@ -16,6 +23,9 @@ const RawThread = z.object({
   is_new: z.boolean().default(false),
   is_pinned: z.boolean().default(false),
   highlight_role_id: z.coerce.number().int().nullable().optional(),
+  votes: RawVotes.nullable().optional(),
+  replies_count: z.coerce.number().int().default(0),
+  views_count: z.coerce.number().int().default(0),
   member: z
     .object({
       nickname: z.string().default(''),
@@ -59,6 +69,9 @@ export interface SpectrumThread {
   authorIsStaff: boolean;
   isNew: boolean;
   isPinned: boolean;
+  votesCount: number;
+  repliesCount: number;
+  viewsCount: number;
   url: string;
 }
 
@@ -419,6 +432,9 @@ export async function fetchChannelThreads(
       authorIsStaff: !!t.member?.isGM,
       isNew: t.is_new,
       isPinned: t.is_pinned,
+      votesCount: t.votes?.count ?? 0,
+      repliesCount: t.replies_count,
+      viewsCount: t.views_count,
       url: `${RSI_BASE_URL}/spectrum/community/${channel.communitySlug}/forum/${channel.id}/thread/${t.slug}`,
     });
   }
@@ -570,6 +586,8 @@ type RawThreadReplyOutput = {
   content_blocks: z.infer<typeof RawContentWrapper>[];
   replies_count: number;
   is_erased: boolean;
+  votes?: z.infer<typeof RawVotes> | null;
+  reactions?: ReadonlyArray<{ type?: string; count?: number }>;
   replies: RawThreadReplyOutput[];
 };
 type RawThreadReplyInput = {
@@ -581,9 +599,18 @@ type RawThreadReplyInput = {
   content_blocks?: z.input<typeof RawContentWrapper>[];
   replies_count?: number | string;
   is_erased?: boolean;
+  votes?: z.input<typeof RawVotes> | null;
+  reactions?: ReadonlyArray<{ type?: string; count?: number | string }>;
   replies?: RawThreadReplyInput[];
   [k: string]: unknown;
 };
+const RawReactionEntry = z
+  .object({
+    type: z.string().default(''),
+    count: z.coerce.number().int().default(0),
+  })
+  .passthrough();
+
 const RawThreadReply: z.ZodType<RawThreadReplyOutput, z.ZodTypeDef, RawThreadReplyInput> = z.lazy(
   () =>
     z
@@ -596,6 +623,8 @@ const RawThreadReply: z.ZodType<RawThreadReplyOutput, z.ZodTypeDef, RawThreadRep
         content_blocks: z.array(RawContentWrapper).default([]),
         replies_count: z.coerce.number().int().default(0),
         is_erased: z.boolean().default(false),
+        votes: RawVotes.nullable().optional(),
+        reactions: z.array(RawReactionEntry).default([]),
         replies: z.array(RawThreadReply).default([]),
       })
       .passthrough(),
@@ -617,6 +646,8 @@ const RawThreadDetail = z
     content_blocks: z.array(RawContentWrapper).default([]),
     replies_count: z.coerce.number().int().default(0),
     views_count: z.coerce.number().int().default(0),
+    votes: RawVotes.nullable().optional(),
+    reactions: z.array(RawReactionEntry).default([]),
     replies: z.array(RawThreadReply).default([]),
   })
   .passthrough();
@@ -673,6 +704,8 @@ export interface SpectrumThreadReply {
    *  Spectrum's site uses to make staff replies visually distinct. */
   authorIsStaff: boolean;
   contentBlocks: SpectrumContentBlock[];
+  votesCount: number;
+  reactions: SpectrumReaction[];
   /** Total number of nested replies according to the server. May
    *  be larger than `replies.length` — the API embeds at most ~5
    *  children per parent and the rest live behind
@@ -682,6 +715,11 @@ export interface SpectrumThreadReply {
   /** Inline-embedded children. Recurses to whatever depth the
    *  server returned. */
   replies: SpectrumThreadReply[];
+}
+
+export interface SpectrumReaction {
+  type: string; // ':picardpalm:' shortcode form
+  count: number;
 }
 
 export interface SpectrumThreadDetail {
@@ -699,6 +737,8 @@ export interface SpectrumThreadDetail {
   authorDisplayName: string;
   authorAvatar: string | null;
   authorIsStaff: boolean;
+  votesCount: number;
+  reactions: SpectrumReaction[];
   contentBlocks: SpectrumContentBlock[];
   repliesCount: number;
   viewsCount: number;
@@ -875,6 +915,8 @@ export async function fetchSpectrumThreadDetail(
     contentBlocks: normalizeContentBlocks(t.content_blocks),
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
+    votesCount: t.votes?.count ?? 0,
+    reactions: t.reactions.map((r) => ({ type: r.type, count: r.count })),
     replies: t.replies.map(normalizeReply),
   };
 }
@@ -893,6 +935,10 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
     contentBlocks: normalizeContentBlocks(r.content_blocks),
     repliesCount: r.replies_count,
     isErased: r.is_erased,
+    votesCount: r.votes?.count ?? 0,
+    reactions: (r.reactions ?? [])
+      .filter((x): x is { type: string; count: number } => !!x.type)
+      .map((x) => ({ type: x.type, count: x.count })),
     replies: (r.replies ?? []).map(normalizeReply),
   };
 }

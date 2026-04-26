@@ -11,7 +11,9 @@
     CheckCheck,
     ChevronDown,
     ChevronRight,
+    ChevronUp,
     Code2,
+    Eye,
     FileText,
     Flame,
     Heart,
@@ -27,7 +29,13 @@
   import SignInPrompt from '../components/SignInPrompt.svelte';
   import { notifyState } from '../notify.svelte';
   import { authState } from '../state.svelte';
-  import { avatarFallback, timeAgo } from '../format';
+  import { avatarFallback, formatCompact, timeAgo } from '../format';
+
+  /** Wraps the compact formatter with a small-numbers passthrough so
+   *  single-digit counts don't get the "k" suffix (formatCompact only
+   *  truncates ≥1000 anyway, but keeping the name local makes the
+   *  snippets read clearly). */
+  const formatStat = (n: number) => formatCompact(n);
   import { persistedState } from '../persist.svelte';
   import { extractSignedIn, errorMessage } from '../error';
 
@@ -1135,8 +1143,27 @@
       >
         {t.subject}
       </p>
-      <p class="mt-0.5 truncate text-[10px] text-slate-500">
-        {t.authorDisplayName} · {timeAgo(t.timeCreated)}
+      <p class="mt-0.5 flex items-center gap-2 truncate text-[10px] text-slate-500">
+        <span class="truncate">{t.authorDisplayName}</span>
+        <span>· {timeAgo(t.timeCreated)}</span>
+        {#if t.votesCount > 0}
+          <span class="flex items-center gap-0.5">
+            <ChevronUp class="size-2.5" />
+            {formatStat(t.votesCount)}
+          </span>
+        {/if}
+        {#if t.repliesCount > 0}
+          <span class="flex items-center gap-0.5">
+            <MessageCircle class="size-2.5" />
+            {formatStat(t.repliesCount)}
+          </span>
+        {/if}
+        {#if t.viewsCount > 0}
+          <span class="flex items-center gap-0.5">
+            <Eye class="size-2.5" />
+            {formatStat(t.viewsCount)}
+          </span>
+        {/if}
       </p>
     </div>
   {/snippet}
@@ -1482,6 +1509,34 @@
     </div>
   {/snippet}
 
+  {#snippet reactionsList(reactions: Rsi.SpectrumReaction[], voteCount: number = 0)}
+    {#if voteCount > 0 || reactions.length > 0}
+      <div class="mt-1.5 flex flex-wrap items-center gap-1">
+        {#if voteCount > 0}
+          <span
+            class="flex items-center gap-0.5 rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium text-sky-300"
+            title="{voteCount} vote{voteCount === 1 ? '' : 's'}"
+          >
+            <ChevronUp class="size-2.5" />
+            {formatStat(voteCount)}
+          </span>
+        {/if}
+        {#each reactions.slice(0, 6) as r (r.type)}
+          <span
+            class="rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-medium text-slate-300"
+            title="{r.type} — {r.count} reaction{r.count === 1 ? '' : 's'}"
+          >
+            <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
+            {' '}{formatStat(r.count)}
+          </span>
+        {/each}
+        {#if reactions.length > 6}
+          <span class="text-[9px] italic text-slate-500">+{reactions.length - 6} more</span>
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
+
   {#snippet richText(b: ContentBlock, baseColor: string)}
     <!-- Render either segments (rich) when available, or fall back
          to plain text. Each segment's BOLD/ITALIC/CODE/STRIKETHROUGH
@@ -1633,6 +1688,7 @@
           {@render contentBlocks(r.contentBlocks, r.authorIsStaff)}
         </div>
       {/if}
+      {@render reactionsList(r.reactions, r.votesCount)}
       {#if expanded && hasInlineChildren}
         <ul class="mt-2 flex flex-col gap-1">
           {#each r.replies as child (child.id)}
@@ -1782,6 +1838,7 @@
               {@render contentBlocks(detail.contentBlocks, detail.authorIsStaff)}
             {/if}
           </div>
+          {@render reactionsList(detail.reactions, detail.votesCount)}
         </article>
 
         <!-- Replies — first 25 top-level replies. Deeper nesting links

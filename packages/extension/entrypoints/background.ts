@@ -100,8 +100,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'roadmap:data': 1,
   // v2: SpectrumThread gained isPinned + authorIsStaff for the new
   // pin badge + CIG gold tint in the threadCard renderer.
-  'spectrum:threads': 2,
-  'spectrum:trending': 2,
+  // v3: SpectrumThread gained votesCount + repliesCount + viewsCount
+  // so the threadCard footer can show post engagement at a glance.
+  'spectrum:threads': 3,
+  'spectrum:trending': 3,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
   // v2: every message gained `authorIsStaff` for the CIG gold tint.
@@ -117,8 +119,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // empty children for already-cached threads. v4: every reply +
   // OP gained `authorIsStaff` so the gold-tint rendering kicks in
   // for CIG posts. v5: SpectrumContentBlock gained `segments` so
-  // inline styles + links + mentions render as rich text.
-  'spectrum:threadDetail': 5,
+  // inline styles + links + mentions render as rich text. v6:
+  // detail + replies gained votesCount + reactions so the
+  // engagement chips render properly.
+  'spectrum:threadDetail': 6,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
@@ -131,7 +135,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // invalidate the still-empty entries from v3.
   'spectrum:forumGroups': 4,
   // v3: forum threads list got the same isPinned + authorIsStaff bump.
-  'spectrum:forumThreads': 3,
+  // v4: forum threads list gained votesCount/repliesCount/viewsCount.
+  'spectrum:forumThreads': 4,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';
