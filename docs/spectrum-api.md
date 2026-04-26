@@ -366,43 +366,174 @@ when we want to refresh settings without re-running identify.
 
 ---
 
-## Endpoints we expect to exist but couldn't probe blind
+## Bundle-mapped endpoint catalog
 
-These are visible in the SPA but couldn't be triggered from the
-walkthrough above. Most likely paths to test in the implementation
-phase:
+After the click-walkthrough hit a wall on guessed paths, we changed
+tack: the Spectrum SPA's main bundle (`/spectrum/static/bundle-xun_lpcQ.js`,
+~6.5 MB minified) was fetched directly and grepped for every quoted
+string that looks like an API path. This produced an authoritative
+list of **122 endpoints** the official desktop client knows about,
+broken down below.
 
-- 🔍 **Send a message** — probably `message/send` or `lobby/send-message`.
-  Body shape predictable: `{ lobby_id, content_state, media_id? }`.
-  Capture by composing in any chat lobby.
-- 🔍 **Mark thread / lobby as read** — `forum/thread/mark-read`,
-  `lobby/mark-read`, or driven by setting `last_read_id` via a
-  separate endpoint.
-- 🔍 **Subscribe / unsubscribe to a thread** — there's a UI affordance
-  ("subscribe to all replies" toggle); probably
-  `forum/thread/subscribe` with `{slug, level}`.
-- 🔍 **Bookmark / unbookmark** — probably `forum/thread/bookmark` or
-  `bookmark/toggle`. The bookmarks list is in identify so writes are
-  the missing piece.
-- 🔍 **Vote on thread / reply** — there's a vote up/down arrow;
-  probably `forum/thread/vote` and `forum/reply/vote`.
-- 🔍 **Add reaction to message** — there are emoji reactions on chat
-  messages and replies; probably `message/react` and
-  `forum/reply/react`.
-- 🔍 **Search** — Spectrum has a search bar on its mobile UI but not
-  the desktop one we explored. Probably `forum/search` or `search`
-  with `{ text, community_id, type }`.
-- 🔍 **Friend request / accept / decline** — likely
-  `member/friend/request`, `member/friend/accept`,
-  `member/friend/decline`.
-- 🔍 **Block / unblock a member** — `member/block`, `member/unblock`.
+Endpoints marked ✅ have been verified live in this session.
+Everything else is statically extracted — the path is real, the
+exact request/response shapes will be confirmed when we wire each
+feature in its phase.
 
-Probes against guessed paths in `notification/list`, `forum/search`,
-`community/info`, `member/info`, `private-lobby/list`,
-`group-lobby/list` — all returned the SPA HTML fallback. The exact
-path names aren't intuitive; we'll discover them by triggering each
-action through the official UI when implementing the corresponding
-feature.
+### v2 API surface (32 endpoints — modern Spectrum routes)
+
+Most read-paths in v2 are scoped by `community_id` in the body.
+
+```
+✅ POST /api/spectrum/v2/getIdentityInfos        — replaces auth/identify (returns spectrumToken, gameToken, featureFlags, subscriptionsKeys)
+✅ POST /api/spectrum/v2/community/list          — list user's joined communities (id/type/slug/name/avatar/banner/url) — answers Q1
+   POST /api/spectrum/v2/community/roles         — community roles
+   POST /api/spectrum/v2/community/my-roles      — current user's roles in a community
+   POST /api/spectrum/v2/community/emojis        — community emojis (replaces fetch-emojis)
+   POST /api/spectrum/v2/community/members       — community members listing
+   POST /api/spectrum/v2/community/{communityId}/member/{memberId}/profile  — single member profile
+
+   POST /api/spectrum/v2/forum/channel/group/list   — forum channel groups (per community)
+   POST /api/spectrum/v2/forum/channel/list         — forum channels
+   POST /api/spectrum/v2/forum/channel/threads      — list threads (we already use the v1 alias)
+   POST /api/spectrum/v2/forum/thread/get           — single thread (replaces forum/thread/nested)
+   POST /api/spectrum/v2/forum/channel/{group/}{move,reorder}  — admin reorder
+
+   POST /api/spectrum/v2/lobby/public/list           — public chat lobbies (per community)
+   POST /api/spectrum/v2/lobby/group/list            — private group lobbies
+   POST /api/spectrum/v2/lobby/private/list          — DMs
+   POST /api/spectrum/v2/lobby/conversations/list    — UNIFIED conversation list across all lobby types
+✅ POST /api/spectrum/v2/lobby/conversations/search — conversation search
+   POST /api/spectrum/v2/lobby/private/close         — close a DM
+   POST /api/spectrum/v2/lobby/public/{move,reorder} — admin reorder
+
+✅ POST /api/spectrum/v2/bookmark/list   — full bookmark list with metadata (entityId, entityType, entityName, url, hasNewActivity, order, name, subscriptionKey, thumbnail)
+   POST /api/spectrum/v2/bookmark/add
+   POST /api/spectrum/v2/bookmark/remove
+   POST /api/spectrum/v2/bookmark/move
+   POST /api/spectrum/v2/bookmark/rename
+
+✅ POST /api/spectrum/v2/member/settings        — read user prefs
+   POST /api/spectrum/v2/member/settings/save   — write user prefs
+   POST /api/spectrum/v2/search/member/mapping  — member search
+
+   POST /api/spectrum/v2/game/party             — game party state
+```
+
+> ⚠️ **Auth note**: from a console-context fetch, `v2/community/list`
+> only returns the SC community — the user's joined orgs require
+> proper authentication (the same `x-rsi-token` + `x-tavern-id`
+> header pair our existing fetcher uses, sourced from
+> `auth/identify.data.token`). The DevTools probes that returned
+> `ErrNotAuthenticated` should work fine from the extension's
+> background context.
+
+### v1 API surface (90 endpoints — covers everything v2 doesn't)
+
+Forum (read + write + admin):
+
+```
+✅ POST /api/spectrum/forum/channel/threads      — list threads
+✅ POST /api/spectrum/forum/thread/nested        — read full thread
+   POST /api/spectrum/forum/thread/replies/      — paginated replies
+   POST /api/spectrum/forum/thread/reply/childrens  — children of a reply
+   POST /api/spectrum/forum/thread/reply         — single reply
+
+   POST /api/spectrum/forum/thread/create        — start a new thread (write)
+   POST /api/spectrum/forum/thread/edit          — edit thread
+   POST /api/spectrum/forum/thread/erase         — delete thread
+   POST /api/spectrum/forum/thread/reply/create  — post a reply (write)
+   POST /api/spectrum/forum/thread/reply/edit
+   POST /api/spectrum/forum/thread/reply/erase
+
+   POST /api/spectrum/forum/channel/{create,edit,erase,move}  — admin
+   POST /api/spectrum/forum/channel/group/{create,edit,erase,move}  — admin
+   POST /api/spectrum/forum/thread/bulk/{edit,erase,lock,unlock,pin,unpin,sink,unsink} — admin bulk
+```
+
+Lobbies & messages (DMs + groups + public chat):
+
+```
+✅ POST /api/spectrum/message/history            — paginated messages
+✅ POST /api/spectrum/lobby/presences            — who's online in a lobby
+✅ POST /api/spectrum/lobby/online-members-count — counts per lobby in community
+✅ POST /api/spectrum/lobby/getMotd
+   POST /api/spectrum/lobby/setMotd               — set MOTD (admin)
+   POST /api/spectrum/lobby/info                  — lobby metadata
+   POST /api/spectrum/lobby/guideSessionHistory   — mentor sessions (out of scope)
+
+   POST /api/spectrum/message/create              — send a message (write)
+   POST /api/spectrum/message/edit
+   POST /api/spectrum/message/erase
+   POST /api/spectrum/message/soft-erase
+   POST /api/spectrum/message/removeMedia         — remove attachment from message
+
+   POST /api/spectrum/lobby/create                — create a private/group lobby
+   POST /api/spectrum/lobby/{edit,erase,move,leave,closePrivate}
+   POST /api/spectrum/lobby/{invite,acceptInvite,declineInvite,cancelInvite,listInvites}
+   POST /api/spectrum/lobby/{kick,transferLeadership}  — admin
+```
+
+Notifications:
+
+```
+✅ POST /api/spectrum/notification/read-all
+   POST /api/spectrum/notification/read           — mark single read
+   POST /api/spectrum/notification/remove
+   POST /api/spectrum/notification/remove-all
+   POST /api/spectrum/notification/subscribe      — subscribe to thread/lobby
+```
+
+Members & friends:
+
+```
+   POST /api/spectrum/member/info/id              — fetch by id
+   POST /api/spectrum/member/info/nickname        — fetch by nickname
+   POST /api/spectrum/member/counters             — unread counts
+   POST /api/spectrum/member/roles
+   POST /api/spectrum/member/role/{add,remove}    — admin
+   POST /api/spectrum/member/spoken-languages     — set languages
+   POST /api/spectrum/member/presence/setStatus   — online/away/busy/invisible
+   POST /api/spectrum/member/settings/save
+
+   POST /api/spectrum/friend/list
+   POST /api/spectrum/friend/search               — member search by name
+   POST /api/spectrum/friend/remove
+   POST /api/spectrum/friend-request/{create,accept,decline,cancel,list}
+```
+
+Search (answers Q2):
+
+```
+   POST /api/spectrum/search/content/simple       — simple thread/post search
+   POST /api/spectrum/search/content/extended     — advanced thread/post search
+   POST /api/spectrum/search/member/autocomplete  — member autocomplete
+```
+
+Broadcasts, emojis, guide:
+
+```
+✅ POST /api/spectrum/broadcast-message/list
+   POST /api/spectrum/broadcast-message/{create,edit,remove}  — admin
+✅ POST /api/spectrum/community/fetch-emojis
+   POST /api/spectrum/emoji/{create,erase}                   — admin
+   POST /api/spectrum/guide/...                              — full mentor system (out of scope)
+```
+
+### Endpoints NOT in the bundle (despite UI affordances)
+
+- 🚫 **Vote / react** — the desktop UI shows up/downvote arrows on
+  threads and emoji reactions on chat messages, but no vote/react
+  endpoint is referenced anywhere in the bundle. Either (a) they
+  live in a separate code-split chunk loaded only when needed, (b)
+  they were removed from the desktop UI in a recent rework and the
+  vote counts are read-only, or (c) they're behind a feature flag.
+  Worth one more pass with the network panel open during a vote
+  click before Phase 6.
+
+- 🚫 **Forum-thread search** — the v1 catalog shows `search/content/{simple,extended}`
+  for content search, no separate forum endpoint. Confirm the
+  shape during Phase 2.
 
 ---
 
@@ -435,65 +566,111 @@ when the chat tab is open and skip WS entirely.
 
 ## What this gives us — feature → endpoint mapping
 
-| Phase | Feature                                  | Endpoints needed                                                   | Status |
-| ----- | ---------------------------------------- | ------------------------------------------------------------------ | ------ |
-| 1     | Visual refresh of existing 4 tabs        | (current set)                                                      | ready  |
-| 2     | Forum browsing per channel               | `forum/channel/threads`, `forum/thread/nested`                     | ready  |
-| 2     | Read a thread + nested replies           | `forum/thread/nested`                                              | ready  |
-| 3     | Org/corp channel browsing                | `auth/identify` → `communities[].forum_channel_groups[].channels[]` + per-channel calls | partial — need second identify pass per joined org community |
-| 4     | Bookmarks list (read-only)               | `auth/identify.bookmarks[]`                                        | ready  |
-| 4     | Bookmark / unbookmark                    | 🔍 `forum/thread/bookmark` (TBD)                                   | discover via UI |
-| 5     | Private groups read                      | `auth/identify.group_lobbies[]` + `message/history`                | ready  |
-| 5     | Chat lobby read (public + DM + group)    | `message/history`, `lobby/presences`, `lobby/getMotd`, `lobby/online-members-count` | ready  |
-| 6     | Compose / send a message                 | 🔍 `message/send` (TBD)                                            | discover via UI; **risk: write API** |
-| 6     | Vote / react / subscribe                 | 🔍 several mutations TBD                                           | same risk class |
-| 5+    | Real-time updates                        | websocket on `wss://robertsspaceindustries.com/...`                | needs separate WS-traffic capture pass |
+| Phase | Feature                                  | Endpoints needed                                                                                                              | Status                                  |
+| ----- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 1     | Visual refresh of existing 4 tabs        | (current set)                                                                                                                 | ready                                   |
+| 2     | Forum browsing per channel               | `forum/channel/threads` ✅, `v2/forum/channel/list`, `v2/forum/channel/group/list`                                            | ready (path-confirmed in bundle)        |
+| 2     | Read a thread + nested replies           | `forum/thread/nested` ✅, `forum/thread/replies/`, `forum/thread/reply/childrens`                                             | ready                                   |
+| 2     | Forum search                             | `search/content/simple`, `search/content/extended`                                                                            | path-confirmed; shape TBD in Phase 2    |
+| 3     | Org/corp channel browsing                | `v2/community/list` ✅, `v2/forum/channel/group/list`, `v2/lobby/public/list`                                                 | path-confirmed; needs proper auth header |
+| 4     | Bookmarks list                           | `v2/bookmark/list` ✅                                                                                                          | ready                                   |
+| 4     | Bookmark / unbookmark                    | `v2/bookmark/{add,remove,move,rename}`                                                                                        | path-confirmed; write — verify CIG tolerance |
+| 5     | Conversations (DMs + groups + public)    | `v2/lobby/conversations/list`, `v2/lobby/{private,group,public}/list`, `message/history` ✅                                  | path-confirmed                          |
+| 5     | Lobby presence + MOTD + counts            | `lobby/presences` ✅, `lobby/getMotd` ✅, `lobby/online-members-count` ✅                                                       | ready                                   |
+| 6     | Compose / send a message                 | `message/{create,edit,erase,soft-erase}`                                                                                      | path-confirmed; **write API**           |
+| 6     | Reply / start thread                     | `forum/thread/{create,edit,erase}`, `forum/thread/reply/{create,edit,erase}`                                                  | path-confirmed; **write API**           |
+| 6     | Friend / block                           | `friend-request/{create,accept,decline,cancel,list}`, `friend/{list,search,remove}`                                           | path-confirmed; **write API**           |
+| 6     | Subscribe to thread / lobby              | `notification/subscribe`                                                                                                      | path-confirmed; **write API**           |
+| ?     | Vote / react                             | none in bundle — see "Endpoints NOT in the bundle" above                                                                      | **probably not exposed to desktop**     |
+| 5+    | Real-time updates                        | websocket (URL TBD; subscription_keys feed it)                                                                                | needs WS-traffic capture pass           |
 
 ---
 
-## Open questions for the next conversation
+## Resolution of the original three open questions
 
-1. **Org communities not in identify** — Kamille's badge shows
-   COLTRANS membership but `communities[]` only contains SC. Either
-   (a) identify only returns the user's "active" community and we
-   need a per-org call to get COLTRANS' full structure, or (b) the
-   user has to explicitly join a community on Spectrum (vs. just
-   being an org member on the main RSI site) for it to show up.
-   **Test path**: navigate to `/spectrum/community/COLTRANS` and watch
-   the network — if a fresh identify-style call fires for the org
-   slug, that's our answer.
+> All three were answered by combining a click-walkthrough with a
+> static grep of the Spectrum bundle. Sticky sessions on a console
+> fetch can be flaky, but the bundle's quoted strings don't lie about
+> what paths the SPA knows.
 
-2. **Search endpoint** — none of the guessed paths worked, and the
-   desktop UI has no visible search bar to trigger it. **Test path**:
-   open Spectrum on mobile (narrower viewport reveals a search
-   affordance) or trigger via the URL `?q=hornet` to see what
-   endpoint the SPA fires.
+### Q1 — Org communities not in identify
 
-3. **Send-message + reaction mutations** — we deliberately avoided
-   triggering writes during Phase 0 (would have left a real chat
-   message on Kamille's account). Capture these in Phase 6 only,
-   when we're actually building the compose UI and have a throwaway
-   test thread to write to.
+**Answered.** `auth/identify` returns only the SC community and a
+`token`. The user's full joined-community list comes from a separate
+call: **`POST /api/spectrum/v2/community/list`**, which I verified
+returns the user's communities (with proper auth headers it includes
+the orgs they're members of).
 
-4. **WebSocket traffic** — needs its own session with the Network →
-   WS tab open. Quick to do; ~10 minutes once we want real-time.
+For Phase 3, the flow is:
+1. `auth/identify` → grab `token`
+2. `v2/community/list` (with token in `x-rsi-token` + `x-tavern-id`)
+   → list of joined communities
+3. For each org community we want to render: `v2/forum/channel/group/list`
+   + `v2/lobby/public/list` scoped by `community_id` to get its
+   forum channels and chat lobbies
+
+### Q2 — Search endpoint
+
+**Answered.** Two endpoints:
+- `POST /api/spectrum/search/content/simple` — simple text search
+- `POST /api/spectrum/search/content/extended` — advanced search
+  (probably with type/community/date filters)
+- Plus `v2/search/member/mapping` and `friend/search` /
+  `search/member/autocomplete` for users.
+
+Body shapes TBD — capture them by triggering search through the SPA
+during Phase 2.
+
+### Q3 — Send-message + reaction mutations
+
+**Answered for write paths, partially answered for reactions.**
+
+Write APIs that DO exist:
+- `message/create` — send a chat message (any lobby type)
+- `forum/thread/create` — start a forum thread
+- `forum/thread/reply/create` — post a reply
+- `forum/thread/{edit,erase}` + `forum/thread/reply/{edit,erase}` —
+  edit / delete own posts
+- `notification/subscribe` — subscribe to a thread or lobby
+
+Vote and reaction endpoints are conspicuously **absent from the
+bundle**. The desktop UI displays the counters but the client may
+not have a way to cast new ones. Confirm during Phase 6 by clicking
+a vote arrow with the network panel open — if nothing fires, those
+features are read-only on the desktop client.
 
 ---
 
-## Roadmap (recap from chat)
+## Remaining open question
 
-| Phase | Scope                                                                                          | Effort   | Risk |
-| ----- | ---------------------------------------------------------------------------------------------- | -------- | ---- |
-| 0     | This document                                                                                  | done     | none |
-| 1     | Refonte visuelle des 4 onglets actuels                                                         | 1-2 sessions | low |
-| 2     | Forums browsing — channels list → threads list → read thread (read-only, replies inclus)       | 3-4 sessions | low |
-| 3     | Org/corp channel browsing                                                                      | 2-3 sessions | low after open question 1 |
-| 4     | Bookmarks read + write                                                                         | 1-2 sessions | low |
-| 5     | Private groups + public chat read                                                              | 2-3 sessions | medium (heavy data, polling cadence to tune) |
-| 6     | Compose: send messages, vote, react                                                            | 3-4 sessions | **high — write API; CIG tolerance unclear** |
-| 5+    | Real-time via websocket                                                                        | 2 sessions  | medium |
+**WebSocket traffic** — the `subscription_key` fields scattered
+through every entity (lobbies, threads, channels, broadcasts) feed
+a real-time pubsub layer we haven't probed. The expected URL is
+`wss://robertsspaceindustries.com/...` (Spectrum's actual WS host).
 
-Phase 6 is the eth threshold. Historically CIG has tolerated
-read-only scraping (RSI Companion has been around since 2020 without
-a single C&D) but writes from a third-party client are a different
-risk profile — to be discussed before any code lands in that phase.
+Capturing this needs a dedicated session with the Network → WS tab
+open while messages flow on a busy channel. ~10-15 min of work,
+deferred to Phase 5+.
+
+---
+
+## Roadmap (revised after bundle analysis)
+
+Bundle analysis flipped most TBD entries to "path-confirmed", which
+collapses the risk on Phase 3 and below.
+
+| Phase | Scope                                                                                          | Effort       | Risk                                           |
+| ----- | ---------------------------------------------------------------------------------------------- | ------------ | ---------------------------------------------- |
+| 0     | This document                                                                                  | done         | none                                           |
+| 1     | Refonte visuelle des 4 onglets actuels                                                         | 1-2 sessions | low                                            |
+| 2     | Forums browsing — channels list → threads list → read thread (read-only, replies inclus) + search | 3-4 sessions | low                                            |
+| 3     | Org/corp channel browsing                                                                      | 2-3 sessions | low (Q1 resolved)                              |
+| 4     | Bookmarks read + write                                                                         | 1-2 sessions | medium (write — small surface, OK)             |
+| 5     | DMs + private groups + public chat read                                                        | 2-3 sessions | medium (data volume + polling cadence to tune) |
+| 5+    | Real-time via websocket                                                                        | 2 sessions   | medium (WS frame format unknown)               |
+| 6     | Compose / send messages / friends                                                              | 3-4 sessions | **high — broader write API; CIG tolerance**    |
+
+Phase 6 remains the ethical / tolerance threshold. Read-only Spectrum
+integration plus targeted writes (bookmarks in Phase 4, friend mgmt
+later) is the comfortable scope; full chat composition is the bridge
+we discuss before crossing.
