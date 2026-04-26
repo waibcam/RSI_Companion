@@ -104,6 +104,7 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:lobbies': 1,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
+  'spectrum:threadDetail': 1,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
@@ -1995,6 +1996,40 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
+async function handleSpectrumThreadDetail(message: {
+  slug: string;
+  sort?: 'votes' | 'time_created';
+  force?: boolean;
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      thread: null,
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  const sort = message.sort ?? 'votes';
+  const key = `spectrum:threadDetail:${message.slug}:${sort}`;
+  if (!message.force) {
+    const cached = await cacheGet<{ thread: Rsi.SpectrumThreadDetail | null; fetchedAt: number }>(
+      key,
+    );
+    if (cached) return { ...cached, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    const thread = await Rsi.fetchSpectrumThreadDetail(token, message.slug, { sort });
+    const fetchedAt = Date.now();
+    // 30-min TTL — same as forum threads. A user re-opening the same
+    // thread within their session shouldn't re-pay; long enough that
+    // typical popup tab-flipping is a hit, short enough that a real
+    // refresh shows new replies.
+    await cacheSet(key, { thread, fetchedAt }, TTL.spectrum);
+    return { thread, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
 async function handleSpectrumBookmarks(force: boolean) {
   const token = await Rsi.readRsiToken();
   if (!token) {
@@ -2666,6 +2701,15 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumCommunities(message.force ?? false) };
       case 'spectrum.bookmarks':
         return { ok: true, data: await handleSpectrumBookmarks(message.force ?? false) };
+      case 'spectrum.threadDetail':
+        return {
+          ok: true,
+          data: await handleSpectrumThreadDetail({
+            slug: message.slug,
+            sort: message.sort,
+            force: message.force ?? false,
+          }),
+        };
       case 'spectrum.bookmarkRemove':
         return {
           ok: true,

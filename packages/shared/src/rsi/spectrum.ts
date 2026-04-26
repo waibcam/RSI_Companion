@@ -440,6 +440,192 @@ export async function fetchTrendingThreads(token: string): Promise<SpectrumThrea
   return flat.sort((a, b) => b.timeCreated - a.timeCreated).slice(0, 40);
 }
 
+// --- Thread reading (Phase 2b) ------------------------------------------
+//
+// `forum/thread/nested` returns a full thread: the thread metadata,
+// the OP body (in `content_blocks`), the first 25 top-level replies
+// (each with their own content_blocks), and a flat `nested_replies_ids`
+// list of every reply id in the tree. The replies array includes a
+// `replies` field with up to 5 children per top-level reply, but
+// further nesting is paginated via `forum/thread/reply/childrens`
+// (TBD when we want full nested rendering).
+//
+// Content blocks are DraftJS-shaped:
+//   { type, text, depth, inlineStyleRanges, entityRanges, data }
+// We only render text right now — inline styles + entities (links,
+// mentions, embeds) ship in a follow-up. Plain text covers ~90% of
+// what people actually post on Spectrum.
+
+const RawContentBlock = z
+  .object({
+    key: z.string().default(''),
+    text: z.string().default(''),
+    type: z.string().default('unstyled'),
+    depth: z.coerce.number().int().default(0),
+  })
+  .passthrough();
+
+const RawThreadMember = z
+  .object({
+    id: z.coerce.number().int().default(0),
+    nickname: z.string().default(''),
+    displayname: z.string().nullable().optional(),
+    avatar: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const RawThreadReply = z
+  .object({
+    id: z.coerce.number().int(),
+    thread_id: z.coerce.number().int().default(0),
+    time_created: z.coerce.number().int().default(0),
+    time_modified: z.coerce.number().int().default(0),
+    member: RawThreadMember.nullable().optional(),
+    content_blocks: z.array(RawContentBlock).default([]),
+    replies_count: z.coerce.number().int().default(0),
+    is_erased: z.boolean().default(false),
+  })
+  .passthrough();
+
+const RawThreadDetail = z
+  .object({
+    id: z.coerce.number().int(),
+    slug: z.string().default(''),
+    subject: z.string().default(''),
+    time_created: z.coerce.number().int().default(0),
+    time_modified: z.coerce.number().int().default(0),
+    channel_id: z.coerce.number().int().default(0),
+    is_locked: z.boolean().default(false),
+    is_pinned: z.boolean().default(false),
+    is_erased: z.boolean().default(false),
+    highlight_role_id: z.coerce.number().int().nullable().optional(),
+    member: RawThreadMember.nullable().optional(),
+    content_blocks: z.array(RawContentBlock).default([]),
+    replies_count: z.coerce.number().int().default(0),
+    views_count: z.coerce.number().int().default(0),
+    replies: z.array(RawThreadReply).default([]),
+  })
+  .passthrough();
+
+const ThreadDetailResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  data: RawThreadDetail.nullable().optional(),
+});
+
+export interface SpectrumContentBlock {
+  type: string;
+  text: string;
+  depth: number;
+}
+
+export interface SpectrumThreadReply {
+  id: number;
+  threadId: number;
+  timeCreated: number;
+  timeModified: number;
+  authorNickname: string;
+  authorDisplayName: string;
+  authorAvatar: string | null;
+  contentBlocks: SpectrumContentBlock[];
+  repliesCount: number;
+  isErased: boolean;
+}
+
+export interface SpectrumThreadDetail {
+  id: number;
+  slug: string;
+  subject: string;
+  timeCreated: number;
+  timeModified: number;
+  channelId: number;
+  isLocked: boolean;
+  isPinned: boolean;
+  isErased: boolean;
+  isCigHighlighted: boolean;
+  authorNickname: string;
+  authorDisplayName: string;
+  authorAvatar: string | null;
+  contentBlocks: SpectrumContentBlock[];
+  repliesCount: number;
+  viewsCount: number;
+  /** First 25 top-level replies (the rest live behind
+   *  forum/thread/reply/childrens — out of scope for the MVP read view). */
+  replies: SpectrumThreadReply[];
+}
+
+function normalizeContentBlocks(
+  blocks: ReadonlyArray<z.infer<typeof RawContentBlock>>,
+): SpectrumContentBlock[] {
+  return blocks.map((b) => ({ type: b.type, text: b.text, depth: b.depth }));
+}
+
+function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undefined) {
+  return {
+    nickname: m?.nickname ?? '',
+    displayName: m?.displayname ?? m?.nickname ?? '',
+    avatar: m?.avatar ?? null,
+  };
+}
+
+export async function fetchSpectrumThreadDetail(
+  token: string,
+  slug: string,
+  options: { sort?: 'votes' | 'time_created' } = {},
+): Promise<SpectrumThreadDetail | null> {
+  const sort = options.sort ?? 'votes';
+  const response = await spectrumPost(token, '/api/spectrum/forum/thread/nested', {
+    slug,
+    sort,
+    target_reply_id: null,
+  });
+  assertRsiOk(response, 'forum/thread/nested');
+  const raw = (await response.json()) as unknown;
+  const parsed = ThreadDetailResponse.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`forum/thread/nested: unexpected shape (${parsed.error.message})`);
+  }
+  if (parsed.data.success !== 1) {
+    throw new Error(`forum/thread/nested returned ${parsed.data.code ?? 'unknown'}`);
+  }
+  const t = parsed.data.data;
+  if (!t) return null;
+  const author = normalizeThreadMember(t.member);
+  return {
+    id: t.id,
+    slug: t.slug,
+    subject: t.subject,
+    timeCreated: t.time_created,
+    timeModified: t.time_modified,
+    channelId: t.channel_id,
+    isLocked: t.is_locked,
+    isPinned: t.is_pinned,
+    isErased: t.is_erased,
+    isCigHighlighted: Number(t.highlight_role_id ?? 0) === 2,
+    authorNickname: author.nickname,
+    authorDisplayName: author.displayName,
+    authorAvatar: author.avatar,
+    contentBlocks: normalizeContentBlocks(t.content_blocks),
+    repliesCount: t.replies_count,
+    viewsCount: t.views_count,
+    replies: t.replies.map((r) => {
+      const ra = normalizeThreadMember(r.member);
+      return {
+        id: r.id,
+        threadId: r.thread_id,
+        timeCreated: r.time_created,
+        timeModified: r.time_modified,
+        authorNickname: ra.nickname,
+        authorDisplayName: ra.displayName,
+        authorAvatar: ra.avatar,
+        contentBlocks: normalizeContentBlocks(r.content_blocks),
+        repliesCount: r.replies_count,
+        isErased: r.is_erased,
+      };
+    }),
+  };
+}
+
 // --- Bookmarks (Phase 4) ------------------------------------------------
 //
 // Spectrum lets users bookmark any entity (forum thread, chat lobby,

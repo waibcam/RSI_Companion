@@ -48,6 +48,7 @@ import type {
   SpectrumNotification,
   SpectrumSort,
   SpectrumThread,
+  SpectrumThreadDetail,
 } from './rsi/spectrum.js';
 import type { CrowdfundStats, ReferralStats } from './rsi/stats.js';
 import type { RsiStatusSummary } from './rsi/status.js';
@@ -353,6 +354,21 @@ export interface SpectrumBookmarkRemoveRequest {
 export interface SpectrumBookmarkRemoveResponsePayload {
   /** Refreshed list — saves the popup a follow-up fetch. */
   bookmarks: SpectrumBookmark[];
+}
+
+export interface SpectrumThreadDetailRequest {
+  type: 'spectrum.threadDetail';
+  slug: string;
+  /** 'votes' (default — matches the Spectrum desktop default) or
+   *  'time_created' for chronological. */
+  sort?: 'votes' | 'time_created';
+  force?: boolean;
+}
+export interface SpectrumThreadDetailResponsePayload {
+  thread: SpectrumThreadDetail | null;
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
 }
 
 export interface SpectrumForumThreadsRequest {
@@ -993,6 +1009,7 @@ export type RsiMessage =
   | SpectrumBookmarkRemoveRequest
   | SpectrumForumGroupsRequest
   | SpectrumForumThreadsRequest
+  | SpectrumThreadDetailRequest
   | DashboardRequest
   | BuyBackRequest
   | PatchNotesRequest
@@ -1062,6 +1079,7 @@ interface ResponseMap {
   'spectrum.bookmarkRemove': SpectrumBookmarkRemoveResponsePayload;
   'spectrum.forumGroups': SpectrumForumGroupsResponsePayload;
   'spectrum.forumThreads': SpectrumForumThreadsResponsePayload;
+  'spectrum.threadDetail': SpectrumThreadDetailResponsePayload;
   'dashboard.summary': DashboardResponsePayload;
   'buyback.list': BuyBackResponsePayload;
   'patchnotes.list': PatchNotesResponsePayload;

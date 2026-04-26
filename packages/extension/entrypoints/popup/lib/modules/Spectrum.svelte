@@ -36,6 +36,9 @@
   type ForumSort = Rsi.SpectrumSort;
   type Community = Rsi.SpectrumCommunity;
   type BookmarkItem = Rsi.SpectrumBookmark;
+  type ThreadDetail = Rsi.SpectrumThreadDetail;
+  type ThreadReply = Rsi.SpectrumThreadReply;
+  type ContentBlock = Rsi.SpectrumContentBlock;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
@@ -69,6 +72,14 @@
     'spectrum:forums:channelId',
     null,
     (v): v is number | null => v === null || typeof v === 'number',
+  );
+  // Third drill level — when a thread slug is set, we render the
+  // thread-detail view (subject + content_blocks + first 25 replies)
+  // inside the Forums tab instead of jumping out to RSI.
+  const forumThreadP = persistedState<string | null>(
+    'spectrum:forums:threadSlug',
+    null,
+    (v): v is string | null => v === null || typeof v === 'string',
   );
   const FORUM_SORTS: ReadonlyArray<{ value: ForumSort; label: string }> = [
     { value: 'hot', label: 'Hot' },
@@ -222,6 +233,14 @@
   let forumThreadsError = $state<string | null>(null);
   let forumThreadsFromCache = $state(false);
   let forumThreadsForChannel = $state<number | null>(null);
+
+  // Thread-detail state (Phase 2b). Loaded when forumThreadP.value is
+  // set; the thread's full body + first 25 replies render in-popup.
+  let threadDetail = $state<ThreadDetail | null>(null);
+  let threadDetailLoading = $state(false);
+  let threadDetailError = $state<string | null>(null);
+  let threadDetailFromCache = $state(false);
+  let threadDetailForSlug = $state<string | null>(null);
 
   // Community switcher (joined SC + orgs). Loaded lazily on first
   // Forums-tab visit so users who never open Forums don't pay for
@@ -419,18 +438,57 @@
     }
   }
 
+  async function loadThreadDetail(slug: string, force = false) {
+    threadDetailLoading = true;
+    threadDetailError = null;
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.threadDetail', slug, force });
+      // Stale-response guard: if user navigated away while in flight,
+      // don't overwrite their view.
+      if (forumThreadP.value !== slug) return;
+      threadDetail = res.thread;
+      threadDetailForSlug = slug;
+      signedIn = res.signedIn;
+      threadDetailFromCache = res.fromCache;
+    } catch (e) {
+      if (forumThreadP.value !== slug) return;
+      threadDetailError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      if (forumThreadP.value === slug) threadDetailLoading = false;
+    }
+  }
+
+  function selectThread(t: Thread) {
+    forumThreadP.value = t.slug;
+    threadDetail = null;
+    threadDetailForSlug = null;
+    threadDetailError = null;
+    loadThreadDetail(t.slug);
+  }
+  function backToThreadList() {
+    forumThreadP.value = null;
+    threadDetail = null;
+    threadDetailForSlug = null;
+    threadDetailError = null;
+  }
+
   function selectCommunity(communityId: number) {
     if (forumCommunityP.value === communityId) return;
     forumCommunityP.value = communityId;
-    // Reset drill state — channels are per-community, so the previous
-    // channel id is meaningless now.
+    // Reset drill state — channels and threads are per-community, so
+    // the previous ids are meaningless now.
     forumChannelP.value = null;
+    forumThreadP.value = null;
     forumGroups = [];
     forumGroupsForCommunity = null;
     forumGroupsError = null;
     forumThreads = [];
     forumThreadsForChannel = null;
     forumThreadsError = null;
+    threadDetail = null;
+    threadDetailForSlug = null;
+    threadDetailError = null;
     loadForumGroups();
   }
 
@@ -455,9 +513,13 @@
   }
   function backToForumChannels() {
     forumChannelP.value = null;
+    forumThreadP.value = null;
     forumThreads = [];
     forumThreadsForChannel = null;
     forumThreadsError = null;
+    threadDetail = null;
+    threadDetailForSlug = null;
+    threadDetailError = null;
   }
   function selectForumSort(s: ForumSort) {
     if (s === forumSortP.value) return;
@@ -499,10 +561,12 @@
       if (!forumGroupsLoaded || forumGroupsForCommunity !== forumCommunityP.value) {
         loadForumGroups();
       }
-      // If the user was mid-drill last session, re-fetch the channel's
-      // threads to populate the threads view from a clean state.
+      // Re-hydrate any drill the user was at when they last closed the
+      // popup. Order: thread detail → threads list → channel list.
       const ch = forumChannelP.value;
       if (ch != null && forumThreadsForChannel !== ch) loadForumThreads(ch);
+      const slug = forumThreadP.value;
+      if (slug != null && threadDetailForSlug !== slug) loadThreadDetail(slug);
     }
   }
 
@@ -513,7 +577,8 @@
     else if (tab === 'dms') loadLobbies(true);
     else if (tab === 'bookmarks') loadBookmarks(true);
     else if (tab === 'forums') {
-      if (forumChannelP.value != null) loadForumThreads(forumChannelP.value, true);
+      if (forumThreadP.value != null) loadThreadDetail(forumThreadP.value, true);
+      else if (forumChannelP.value != null) loadForumThreads(forumChannelP.value, true);
       else loadForumGroups(true);
     }
   }
@@ -551,9 +616,11 @@
             : tab === 'bookmarks'
               ? bookmarksLoading
               : tab === 'forums'
-                ? forumChannelP.value != null
-                  ? forumThreadsLoading
-                  : forumGroupsLoading
+                ? forumThreadP.value != null
+                  ? threadDetailLoading
+                  : forumChannelP.value != null
+                    ? forumThreadsLoading
+                    : forumGroupsLoading
                 : false,
   );
   const showSearch = $derived(
@@ -561,7 +628,7 @@
       tab === 'trending' ||
       tab === 'dms' ||
       tab === 'bookmarks' ||
-      (tab === 'forums' && forumChannelP.value == null),
+      (tab === 'forums' && forumChannelP.value == null && forumThreadP.value == null),
   );
   const showRefresh = $derived(
     tab === 'devtracker' ||
@@ -577,7 +644,11 @@
       (tab === 'dms' && lobbiesFromCache) ||
       (tab === 'bookmarks' && bookmarksFromCache) ||
       (tab === 'forums' &&
-        (forumChannelP.value != null ? forumThreadsFromCache : forumGroupsFromCache)),
+        (forumThreadP.value != null
+          ? threadDetailFromCache
+          : forumChannelP.value != null
+            ? forumThreadsFromCache
+            : forumGroupsFromCache)),
   );
 
   const filteredBookmarks = $derived.by<BookmarkItem[]>(() => {
@@ -634,6 +705,7 @@
         void loadCommunities();
         void loadForumGroups();
         if (forumChannelP.value != null) void loadForumThreads(forumChannelP.value);
+        if (forumThreadP.value != null) void loadThreadDetail(forumThreadP.value);
       }
       void notifyState.markSeen('spectrum');
     } else if (authState.signedIn === false) {
@@ -665,7 +737,9 @@
         {@const activeCommunity = communities.find((c) => c.id === forumCommunityP.value)}
         <span class="text-[10px] text-slate-500">
           {#if activeCommunity}{activeCommunity.name} ·{' '}{/if}
-          {#if forumChannelP.value != null}
+          {#if forumThreadP.value != null}
+            {threadDetail?.repliesCount ?? 0} replies
+          {:else if forumChannelP.value != null}
             {forumThreads.length} threads
           {:else}
             {forumGroups.reduce((n, g) => n + g.channels.length, 0)} channels
@@ -793,41 +867,56 @@
     {/if}
   {/snippet}
 
-  {#snippet threadCard(t: Thread)}
-    {@const ch = t.channel}
-    {@const stripe = ch.color || '#475569'}
+  {#snippet threadCardBody(t: Thread, stripe: string)}
+    {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
+    <div class="min-w-0 flex-1">
+      <div class="mb-0.5 flex flex-wrap items-center gap-1.5">
+        {#if t.isNew}
+          <span class="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
+            new
+          </span>
+        {/if}
+        <span
+          class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+          style:background-color="{stripe}33"
+          style:color={stripe}
+        >
+          {t.channel.name}
+        </span>
+      </div>
+      <p class="line-clamp-2 text-xs font-medium text-slate-100 group-hover:text-sky-200">
+        {t.subject}
+      </p>
+      <p class="mt-0.5 truncate text-[10px] text-slate-500">
+        {t.authorDisplayName} · {timeAgo(t.timeCreated)}
+      </p>
+    </div>
+  {/snippet}
+
+  {#snippet threadCard(t: Thread, onLocalClick?: (t: Thread) => void)}
+    {@const stripe = t.channel.color || '#475569'}
+    {@const cls = 'group flex w-full gap-2.5 rounded-md bg-slate-900/70 p-2 text-left ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-sky-600'}
     <li class="virt-item">
-      <a
-        href={t.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group flex gap-2.5 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-sky-600"
-        style:border-left="3px solid {stripe}"
-      >
-        {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
-        <div class="min-w-0 flex-1">
-          <div class="mb-0.5 flex flex-wrap items-center gap-1.5">
-            {#if t.isNew}
-              <span class="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
-                new
-              </span>
-            {/if}
-            <span
-              class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
-              style:background-color="{stripe}33"
-              style:color={stripe}
-            >
-              {ch.name}
-            </span>
-          </div>
-          <p class="line-clamp-2 text-xs font-medium text-slate-100 group-hover:text-sky-200">
-            {t.subject}
-          </p>
-          <p class="mt-0.5 truncate text-[10px] text-slate-500">
-            {t.authorDisplayName} · {timeAgo(t.timeCreated)}
-          </p>
-        </div>
-      </a>
+      {#if onLocalClick}
+        <button
+          type="button"
+          onclick={() => onLocalClick(t)}
+          class={cls}
+          style:border-left="3px solid {stripe}"
+        >
+          {@render threadCardBody(t, stripe)}
+        </button>
+      {:else}
+        <a
+          href={t.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class={cls}
+          style:border-left="3px solid {stripe}"
+        >
+          {@render threadCardBody(t, stripe)}
+        </a>
+      {/if}
     </li>
   {/snippet}
 
@@ -1023,6 +1112,184 @@
     </div>
   {/snippet}
 
+  {#snippet contentBlocks(blocks: ContentBlock[])}
+    <!-- DraftJS-shaped block list. We render each block as the right
+         HTML primitive based on its type. Inline styles + entities
+         (links, mentions, embeds) ship in a follow-up — plain text
+         covers ~90% of what people actually post on Spectrum. -->
+    {#each blocks as b, i (i)}
+      {#if !b.text.trim() && b.type !== 'atomic'}
+        <!-- Skip blank lines that DraftJS uses as paragraph breaks. -->
+      {:else if b.type === 'header-one' || b.type === 'header-two'}
+        <p class="mt-1.5 text-xs font-semibold text-slate-100">{b.text}</p>
+      {:else if b.type === 'unordered-list-item'}
+        <p class="ml-3 text-[11px] text-slate-200" style:padding-left="{b.depth * 0.75}rem">
+          • {b.text}
+        </p>
+      {:else if b.type === 'ordered-list-item'}
+        <p class="ml-3 text-[11px] text-slate-200" style:padding-left="{b.depth * 0.75}rem">
+          {i + 1}. {b.text}
+        </p>
+      {:else if b.type === 'blockquote'}
+        <p class="border-l-2 border-slate-700 pl-2 text-[11px] italic text-slate-400">
+          {b.text}
+        </p>
+      {:else if b.type === 'code-block'}
+        <pre class="overflow-x-auto rounded bg-slate-950/80 p-1.5 font-mono text-[10px] text-slate-300">{b.text}</pre>
+      {:else if b.type === 'atomic'}
+        <p class="text-[10px] italic text-slate-500">📎 [media — open on Spectrum to view]</p>
+      {:else}
+        <p class="text-[11px] leading-relaxed text-slate-200">{b.text}</p>
+      {/if}
+    {/each}
+  {/snippet}
+
+  {#snippet threadReplyCard(r: ThreadReply)}
+    <li class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800">
+      <div class="mb-1 flex items-center gap-2">
+        {@render avatar(avatarUrl(r.authorAvatar), r.authorDisplayName, r.authorNickname, 'size-7')}
+        <div class="min-w-0 flex-1">
+          <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
+            {r.authorDisplayName || r.authorNickname || 'Unknown'}
+          </p>
+          <p class="text-[9px] text-slate-500">{timeAgo(r.timeCreated)}</p>
+        </div>
+      </div>
+      {#if r.isErased}
+        <p class="text-[11px] italic text-slate-500">[erased]</p>
+      {:else}
+        <div class="flex flex-col gap-1">
+          {@render contentBlocks(r.contentBlocks)}
+        </div>
+      {/if}
+      {#if r.repliesCount > 0}
+        <p class="mt-1.5 text-[9px] italic text-slate-500">
+          {r.repliesCount}{' '}{r.repliesCount === 1 ? 'reply' : 'replies'} — open on Spectrum to read
+        </p>
+      {/if}
+    </li>
+  {/snippet}
+
+  {#snippet threadDetailView()}
+    {@const detail = threadDetail}
+    {@const ch = currentForumChannel}
+    {@const stripe = ch?.color || '#475569'}
+    {@const externalUrl =
+      detail && ch
+        ? `${RSI_BASE_URL}/spectrum/community/${ch.communitySlug}/forum/${ch.id}/thread/${detail.slug}`
+        : `${RSI_BASE_URL}/spectrum/`}
+    <div class="mx-auto flex max-w-3xl flex-col gap-2">
+      <!-- Header row — back arrow + channel chip + community context. -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          onclick={backToThreadList}
+          class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+          title="Back to threads"
+          aria-label="Back to threads"
+        >
+          <ArrowLeft class="size-4" />
+        </button>
+        <span
+          class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+          style:background-color="{stripe}33"
+          style:color={stripe}
+        >
+          {ch?.name ?? 'Thread'}
+        </span>
+        <a
+          href={externalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+        >
+          Open in Spectrum
+          <ChevronRight class="size-3" />
+        </a>
+      </div>
+
+      {#if threadDetailError}
+        {@render errorBlock('Failed to load thread', threadDetailError)}
+      {:else if threadDetailLoading && !detail}
+        {@render centerSpinner()}
+      {:else if !detail}
+        {@render emptyState(FileText, 'Thread not found.')}
+      {:else}
+        <!-- OP card: subject, author header, content blocks, stats. -->
+        <article
+          class="rounded-md bg-slate-900/70 p-3 ring-1 ring-slate-800"
+          style:border-left="3px solid {stripe}"
+        >
+          <h2 class="text-sm font-semibold leading-tight text-slate-100">
+            {#if detail.isPinned}
+              <span class="mr-1 rounded bg-amber-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-200">
+                pinned
+              </span>
+            {/if}
+            {#if detail.isLocked}
+              <span class="mr-1 rounded bg-rose-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-rose-200">
+                locked
+              </span>
+            {/if}
+            {#if detail.isCigHighlighted}
+              <span class="mr-1 rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
+                cig
+              </span>
+            {/if}
+            {detail.subject}
+          </h2>
+          <div class="mt-2 flex items-center gap-2">
+            {@render avatar(
+              avatarUrl(detail.authorAvatar),
+              detail.authorDisplayName,
+              detail.authorNickname,
+              'size-7',
+            )}
+            <div class="min-w-0 flex-1">
+              <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
+                {detail.authorDisplayName || detail.authorNickname}
+              </p>
+              <p class="text-[9px] text-slate-500">
+                {timeAgo(detail.timeCreated)}
+                {#if detail.viewsCount > 0} · {detail.viewsCount.toLocaleString()} views{/if}
+              </p>
+            </div>
+          </div>
+          <div class="mt-2 flex flex-col gap-1.5">
+            {#if detail.isErased}
+              <p class="text-[11px] italic text-slate-500">[erased]</p>
+            {:else}
+              {@render contentBlocks(detail.contentBlocks)}
+            {/if}
+          </div>
+        </article>
+
+        <!-- Replies — first 25 top-level replies. Deeper nesting links
+             out to Spectrum (forum/thread/reply/childrens TBD). -->
+        {#if detail.replies.length > 0}
+          <h3 class="mt-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">
+            Replies ({detail.repliesCount.toLocaleString()})
+          </h3>
+          <ul class="flex flex-col gap-1">
+            {#each detail.replies as r (r.id)}
+              {@render threadReplyCard(r)}
+            {/each}
+          </ul>
+          {#if detail.repliesCount > detail.replies.length}
+            <a
+              href={externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mt-1 rounded-md bg-slate-900/40 p-2 text-center text-[10px] italic text-slate-500 ring-1 ring-slate-800 transition hover:text-slate-200 hover:ring-teal-700"
+            >
+              {detail.repliesCount - detail.replies.length} more replies on Spectrum →
+            </a>
+          {/if}
+        {/if}
+      {/if}
+    </div>
+  {/snippet}
+
   {#snippet forumChannelCard(ch: ForumChannelInfo)}
     {@const stripe = ch.color || '#475569'}
     <li class="virt-item">
@@ -1108,11 +1375,15 @@
            one joined org community in addition to SC. The strip lives at
            the top of both the channel-list view and the threads view so
            switching is one click from anywhere. -->
-      {#if communities.length > 1}
+      {#if communities.length > 1 && forumThreadP.value == null}
         {@render communitySwitcher()}
       {/if}
 
-      {#if forumChannelP.value == null}
+      {#if forumThreadP.value != null}
+        <!-- Thread detail view (Phase 2b): renders the thread's
+             content_blocks + first 25 replies in-popup. -->
+        {@render threadDetailView()}
+      {:else if forumChannelP.value == null}
         <!-- Channel list — grouped by forum_channel_groups in identify
              order (or v2/forum/channel/group/list for org communities),
              search filters across all groups. -->
@@ -1195,7 +1466,7 @@
           {:else}
             <ul class="flex flex-col gap-1">
               {#each forumThreads as t (t.id)}
-                {@render threadCard(t)}
+                {@render threadCard(t, selectThread)}
               {/each}
             </ul>
           {/if}
