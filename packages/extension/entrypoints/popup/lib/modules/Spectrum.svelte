@@ -29,7 +29,15 @@
   import SignInPrompt from '../components/SignInPrompt.svelte';
   import { notifyState } from '../notify.svelte';
   import { authState } from '../state.svelte';
-  import { avatarFallback, formatCompact, timeAgo } from '../format';
+  import { avatarFallback, formatCompact, formatDate, timeAgo } from '../format';
+
+  /** Absolute date string for hover tooltips on relative-time
+   *  displays — saves the user from squinting at "5d ago" when
+   *  they want to know the actual posting date. */
+  function tsTooltip(when: number | string): string {
+    const date = formatDate(when);
+    return date ? `Posted ${date}` : '';
+  }
 
   /** Wraps the compact formatter with a small-numbers passthrough so
    *  single-digit counts don't get the "k" suffix (formatCompact only
@@ -271,6 +279,27 @@
     if (next.has(id)) next.delete(id);
     else next.add(id);
     expandedReplies = next;
+  }
+
+  /** Walk a reply tree and collect every id that carries inline
+   *  children — used by "Expand all" to flip the entire visible
+   *  reply graph open in one click. */
+  function collectReplyIdsWithChildren(replies: ThreadReply[], out: Set<number>) {
+    for (const r of replies) {
+      if (r.replies.length > 0) {
+        out.add(r.id);
+        collectReplyIdsWithChildren(r.replies, out);
+      }
+    }
+  }
+  function expandAllReplies() {
+    if (!threadDetail) return;
+    const next = new Set<number>();
+    collectReplyIdsWithChildren(threadDetail.replies, next);
+    expandedReplies = next;
+  }
+  function collapseAllReplies() {
+    expandedReplies = new Set();
   }
 
   // Lobby messages state (Phase 5). Loaded when dmLobbyP.value is
@@ -1197,7 +1226,7 @@
       </p>
       <p class="mt-0.5 flex items-center gap-2 truncate text-[10px] text-slate-500">
         <span class="truncate">{t.authorDisplayName}</span>
-        <span>· {timeAgo(t.timeCreated)}</span>
+        <span title={tsTooltip(t.timeCreated)}>· {timeAgo(t.timeCreated)}</span>
         {#if t.votesCount > 0}
           <span class="flex items-center gap-0.5">
             <ChevronUp class="size-2.5" />
@@ -1272,7 +1301,7 @@
           {#if l.lastAuthorDisplayName}<span class="text-slate-500">{l.lastAuthorDisplayName}:</span>{' '}{/if}{l.lastMessageText}
         </p>
       {/if}
-      <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(l.lastMessageAt)}</p>
+      <p class="mt-0.5 text-[10px] text-slate-500" title={tsTooltip(l.lastMessageAt)}>{timeAgo(l.lastMessageAt)}</p>
     </div>
   {/snippet}
 
@@ -1334,7 +1363,7 @@
             {/if}
           </p>
           {@render badgeRow(m.authorBadges)}
-          <p class="text-[9px] text-slate-500">{timeAgo(m.timeCreated)}</p>
+          <p class="text-[9px] text-slate-500" title={tsTooltip(m.timeCreated)}>{timeAgo(m.timeCreated)}</p>
         </div>
       </div>
       <div class="flex flex-col gap-1">
@@ -1433,7 +1462,7 @@
             {/if}
           </div>
           <p class="line-clamp-2 text-xs text-slate-100 group-hover:text-violet-200">{n.text}</p>
-          <p class="mt-0.5 text-[10px] text-slate-500">{timeAgo(n.timeCreated)}</p>
+          <p class="mt-0.5 text-[10px] text-slate-500" title={tsTooltip(n.timeCreated)}>{timeAgo(n.timeCreated)}</p>
         </div>
       </a>
     </li>
@@ -1764,7 +1793,7 @@
             {/if}
           </p>
           {@render badgeRow(r.authorBadges)}
-          <p class="text-[9px] text-slate-500">{timeAgo(r.timeCreated)}</p>
+          <p class="text-[9px] text-slate-500" title={tsTooltip(r.timeCreated)}>{timeAgo(r.timeCreated)}</p>
         </div>
         {#if r.repliesCount > 0}
           <button
@@ -1932,7 +1961,7 @@
                 {detail.authorDisplayName || detail.authorNickname}
               </p>
               {@render badgeRow(detail.authorBadges)}
-              <p class="text-[9px] text-slate-500">
+              <p class="text-[9px] text-slate-500" title={tsTooltip(detail.timeCreated)}>
                 {timeAgo(detail.timeCreated)}
                 {#if detail.viewsCount > 0} · {detail.viewsCount.toLocaleString()} views{/if}
               </p>
@@ -1951,9 +1980,31 @@
         <!-- Replies — first 25 top-level replies. Deeper nesting links
              out to Spectrum (forum/thread/reply/childrens TBD). -->
         {#if detail.replies.length > 0}
-          <h3 class="mt-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">
-            Replies ({detail.repliesCount.toLocaleString()})
-          </h3>
+          {@const anyExpandable = detail.replies.some((r) => r.replies.length > 0)}
+          <div class="mt-1 flex items-center gap-2 px-1">
+            <h3 class="flex-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">
+              Replies ({detail.repliesCount.toLocaleString()})
+            </h3>
+            {#if anyExpandable}
+              {#if expandedReplies.size > 0}
+                <button
+                  type="button"
+                  onclick={collapseAllReplies}
+                  class="rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-slate-500 transition hover:bg-slate-800 hover:text-slate-200"
+                >
+                  Collapse all
+                </button>
+              {:else}
+                <button
+                  type="button"
+                  onclick={expandAllReplies}
+                  class="rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-slate-500 transition hover:bg-slate-800 hover:text-teal-300"
+                >
+                  Expand all
+                </button>
+              {/if}
+            {/if}
+          </div>
           <ul class="flex flex-col gap-1">
             {#each detail.replies as r (r.id)}
               {@render threadReplyCard(r)}
@@ -2012,7 +2063,7 @@
               {channel.name}
             </span>
           {/if}
-          <span class="ml-auto text-[9px] text-slate-500">{timeAgo(h.timeCreated)}</span>
+          <span class="ml-auto text-[9px] text-slate-500" title={tsTooltip(h.timeCreated)}>{timeAgo(h.timeCreated)}</span>
         </div>
         <p
           class="line-clamp-1 text-xs font-medium group-hover:text-teal-200"
