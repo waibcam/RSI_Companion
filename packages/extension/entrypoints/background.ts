@@ -108,7 +108,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
   // first boot — fine, they expire on their own LIVE/ACCOUNT TTL.
-  'spectrum:forumGroups': 2,
+  // v3 (groups only): the org-community channels were silently empty
+  // because we only called group/list and assumed embedded channels.
+  // Bumped to invalidate the bad-shape entries.
+  'spectrum:forumGroups': 3,
   'spectrum:forumThreads': 2,
   'status:summary': 1,
 };

@@ -209,10 +209,22 @@ export async function fetchSpectrumCommunities(token: string): Promise<SpectrumC
   }));
 }
 
-// v2 channel-group response — same shape as the identify embed but each
-// channel object is parsed independently. We accept the same fields with
-// the same defaults so the conversion to SpectrumForumChannelInfo can be
-// shared.
+// v2 forum group + channel responses are SEPARATE: the group/list
+// endpoint returns only {id, name} per group (NOT the channels), and a
+// second call to channel/list returns the channels with a `group_id`
+// pointing back to their group. Our first attempt at this assumed the
+// identify-style embedded shape (groups carry their own channels) and
+// silently returned empty channels arrays for every org — see the
+// regression Kamille reported on COLTRANS. The fix is to fan out the
+// two calls in parallel and join client-side.
+
+const RawV2GroupOnly = z
+  .object({
+    id: z.coerce.number().int(),
+    name: z.string().default(''),
+  })
+  .passthrough();
+
 const RawV2Channel = z
   .object({
     id: z.coerce.number().int(),
@@ -229,61 +241,92 @@ const RawV2Channel = z
       .default('')
       .transform((v) => v ?? ''),
     threads_count: z.coerce.number().int().default(0),
-  })
-  .passthrough();
-
-const RawV2ChannelGroup = z
-  .object({
-    id: z.coerce.number().int(),
-    name: z.string().default(''),
-    channels: z.array(RawV2Channel).default([]),
+    /** Set on the channel/list response so we can match channels back
+     *  to their owning group. */
+    group_id: z.coerce.number().int().default(0),
   })
   .passthrough();
 
 const V2ForumChannelGroupListResponse = z.object({
   success: z.number().int(),
   code: z.string().nullable().optional(),
-  data: z.array(RawV2ChannelGroup).nullable().optional(),
+  data: z.array(RawV2GroupOnly).nullable().optional(),
+});
+
+const V2ForumChannelListResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  data: z.array(RawV2Channel).nullable().optional(),
 });
 
 /** Forum channel groups for an arbitrary community (orgs or SC). For
  *  the SC community (id=1) the caller should prefer
  *  `fetchSpectrumForumGroups` since identify already carries the data
- *  and we save a round trip. */
+ *  and we save a round trip.
+ *
+ *  Two parallel HTTP calls under the hood — one for groups, one for
+ *  channels. Wall-clock cost is one round trip; the extra request is
+ *  free if the v2 backend pipelines them like a normal HTTP/2 client
+ *  expects. The join key is `channel.group_id`. */
 export async function fetchSpectrumOrgForumGroups(
   token: string,
   community: { id: number; slug: string },
 ): Promise<SpectrumForumGroup[]> {
-  const response = await fetchWithTimeout(
-    `${RSI_BASE_URL}/api/spectrum/v2/forum/channel/group/list`,
-    {
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-rsi-token': token,
+    'x-tavern-id': token,
+  };
+  const body = JSON.stringify({ community_id: String(community.id) });
+  const [groupsR, channelsR] = await Promise.all([
+    fetchWithTimeout(`${RSI_BASE_URL}/api/spectrum/v2/forum/channel/group/list`, {
       method: 'POST',
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-rsi-token': token,
-        'x-tavern-id': token,
-      },
-      body: JSON.stringify({ community_id: String(community.id) }),
-    },
-  );
-  assertRsiOk(response, 'v2/forum/channel/group/list');
-  const raw = (await response.json()) as unknown;
-  const parsed = V2ForumChannelGroupListResponse.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`v2/forum/channel/group/list: unexpected shape (${parsed.error.message})`);
+      headers,
+      body,
+    }),
+    fetchWithTimeout(`${RSI_BASE_URL}/api/spectrum/v2/forum/channel/list`, {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body,
+    }),
+  ]);
+  assertRsiOk(groupsR, 'v2/forum/channel/group/list');
+  assertRsiOk(channelsR, 'v2/forum/channel/list');
+
+  const rawG = (await groupsR.json()) as unknown;
+  const parsedG = V2ForumChannelGroupListResponse.safeParse(rawG);
+  if (!parsedG.success) {
+    throw new Error(`v2/forum/channel/group/list: unexpected shape (${parsedG.error.message})`);
   }
-  if (parsed.data.success !== 1) {
+  if (parsedG.data.success !== 1) {
     // Org communities sometimes restrict forum access to members with a
     // specific role; surface that explicitly so the UI can render an
     // appropriate empty state instead of a generic error.
-    const code = parsed.data.code ?? 'unknown';
-    throw new Error(`v2/forum/channel/group/list returned ${code}`);
+    throw new Error(`v2/forum/channel/group/list returned ${parsedG.data.code ?? 'unknown'}`);
   }
-  return (parsed.data.data ?? []).map((g) => ({
+
+  const rawC = (await channelsR.json()) as unknown;
+  const parsedC = V2ForumChannelListResponse.safeParse(rawC);
+  if (!parsedC.success) {
+    throw new Error(`v2/forum/channel/list: unexpected shape (${parsedC.error.message})`);
+  }
+  if (parsedC.data.success !== 1) {
+    throw new Error(`v2/forum/channel/list returned ${parsedC.data.code ?? 'unknown'}`);
+  }
+
+  const channelsByGroup = new Map<number, z.infer<typeof RawV2Channel>[]>();
+  for (const ch of parsedC.data.data ?? []) {
+    const arr = channelsByGroup.get(ch.group_id) ?? [];
+    arr.push(ch);
+    channelsByGroup.set(ch.group_id, arr);
+  }
+
+  return (parsedG.data.data ?? []).map((g) => ({
     id: g.id,
     name: g.name,
-    channels: g.channels.map((ch) => ({
+    channels: (channelsByGroup.get(g.id) ?? []).map((ch) => ({
       id: ch.id,
       name: ch.name,
       slug: ch.slug,
