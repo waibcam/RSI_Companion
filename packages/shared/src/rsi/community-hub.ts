@@ -440,8 +440,12 @@ export interface CommunityHubHomeSnapshot {
   live: CommunityHubLivePost[];
   /** Live streams from accounts the signed-in user follows. */
   followed: CommunityHubLivePost[];
-  /** Top trending posts across all tags — small N, drives the home grid. */
+  /** Top trending posts across all tags. */
   trending: CommunityHubPost[];
+  /** Top trending posts tagged 'gameplay'. */
+  gameplay: CommunityHubPost[];
+  /** Top trending posts tagged 'tutorial'. */
+  tutorial: CommunityHubPost[];
 }
 
 export interface CommunityHubLiveSnapshot {
@@ -525,27 +529,37 @@ export async function fetchCommunityHubPosts(
 }
 
 /**
- * Home tab — mirrors the layout of robertsspaceindustries.com/community-hub
- * (live strip on top + trending posts grid below). RSI's actual home page
- * renders the trending strip client-side rather than baking it into SSR, so
- * we hit `/community-hub/discover?sort=trending` separately and join the two
- * results in-process. The two requests run in parallel so the wall-clock
- * cost is one round trip, not two.
+ * Home tab — mirrors the four-strip layout of
+ * robertsspaceindustries.com/community-hub (Livestreams → Trending →
+ * Gameplay → Tutorial, each a horizontally-scrolling strip with a
+ * "View all" link). RSI renders Gameplay and Tutorial below the fold
+ * lazily, but in our popup the viewport is short enough that a quick
+ * scroll surfaces all four — fetching them eagerly in parallel keeps
+ * the UX feeling like one snapshot instead of staggered loads.
  *
- * Caps are intentionally tight (8 live, 6 trending) — this is a glance
- * surface, not a full listing. Users who want more click through to the
- * dedicated tabs.
+ * Wall-clock cost: max of the four parallel HTTP round trips (the
+ * single live SSR fetch + three /discover SSR fetches with sort=trending
+ * and the appropriate tag filter). Total ~600KB-1MB on first load,
+ * cached at LIVE_TTL (2 min) for subsequent opens.
+ *
+ * Caps are tight on purpose (8 live, 6 per post strip) — this is a
+ * glance surface, not a full listing. "View all" jumps the user to
+ * the dedicated tab when they want to drill in.
  */
 export async function fetchCommunityHubHome(): Promise<CommunityHubHomeSnapshot> {
-  const [liveSnap, trendingSnap] = await Promise.all([
+  const [liveSnap, trendingSnap, gameplaySnap, tutorialSnap] = await Promise.all([
     fetchCommunityHubLive(),
     fetchCommunityHubPosts('discover', { sort: 'trending' }),
+    fetchCommunityHubPosts('gameplay', { sort: 'trending' }),
+    fetchCommunityHubPosts('tutorial', { sort: 'trending' }),
   ]);
   return {
     tab: 'home',
     live: liveSnap.live.slice(0, 8),
     followed: liveSnap.followed.slice(0, 8),
     trending: trendingSnap.posts.slice(0, 6),
+    gameplay: gameplaySnap.posts.slice(0, 6),
+    tutorial: tutorialSnap.posts.slice(0, 6),
   };
 }
 

@@ -55,9 +55,11 @@
   let live = $state<LivePost[]>([]);
   let followed = $state<LivePost[]>([]);
   let posts = $state<Post[]>([]);
-  // Trending strip on the Home tab — separate from `posts` so a fresh
-  // Home load doesn't blow away whatever the user had cached on Discover.
+  // Home-tab strips — kept separate from `posts` so a fresh Home load
+  // doesn't blow away the dedicated Discover/Gameplay/Tutorial tab data.
   let trending = $state<Post[]>([]);
+  let gameplay = $state<Post[]>([]);
+  let tutorial = $state<Post[]>([]);
   let upcoming = $state<Event[]>([]);
   let past = $state<Event[]>([]);
   let loading = $state(true);
@@ -94,6 +96,8 @@
         live = res.live;
         followed = res.followed;
         trending = res.trending;
+        gameplay = res.gameplay;
+        tutorial = res.tutorial;
         posts = [];
         upcoming = [];
         past = [];
@@ -101,6 +105,8 @@
         live = res.live;
         followed = res.followed;
         trending = [];
+        gameplay = [];
+        tutorial = [];
         posts = [];
         upcoming = [];
         past = [];
@@ -110,12 +116,16 @@
         live = [];
         followed = [];
         trending = [];
+        gameplay = [];
+        tutorial = [];
         posts = [];
       } else {
         posts = res.posts;
         live = [];
         followed = [];
         trending = [];
+        gameplay = [];
+        tutorial = [];
         upcoming = [];
         past = [];
       }
@@ -200,7 +210,7 @@
     {#snippet meta()}
       <span class="text-[10px] text-slate-500">
         {#if tabP.value === 'home'}
-          {live.length} live · {trending.length} trending
+          {live.length} live · {trending.length + gameplay.length + tutorial.length} posts
         {:else if tabP.value === 'live'}
           {live.length} live{followed.length > 0 ? ` · ${followed.length} followed` : ''}
         {:else if tabP.value === 'events'}
@@ -313,29 +323,149 @@
         <Loader2 class="size-5 animate-spin" />
       </div>
     {:else if tabP.value === 'home'}
-      <!-- Home tab — mirrors RSI's /community-hub layout. Three optional
-           sections (Followed → Live Now → Trending). Each is a glance
-           surface, capped to a small N; clicking the "View all" header
-           jumps to the dedicated tab so users can drill in. -->
-      {#if followed.length === 0 && live.length === 0 && trending.length === 0}
+      <!-- Home tab — mirrors the four-strip layout of RSI's
+           /community-hub home page (Livestreams → Trending → Gameplay →
+           Tutorial). Each strip caps at 6-8 items and has a "View all"
+           jump to the dedicated tab. The Followed slot above is
+           user-specific (only shows when the signed-in user has any
+           followed streams currently live) and uses a 2-col grid
+           rather than a strip — its size is unpredictable and a strip
+           with two cards looks abandoned.
+      -->
+      {#snippet stripHeader(
+        label: string,
+        subtitle: string,
+        accentColor: string,
+        viewAllTab: Tab,
+        IconCmp: typeof Tv,
+      )}
+        <div class="mb-1 flex items-baseline justify-between gap-2">
+          <div class="flex min-w-0 items-baseline gap-2">
+            <h3
+              class="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider {accentColor}"
+            >
+              <IconCmp class="size-3" />
+              {label}
+            </h3>
+            {#if subtitle}
+              <span class="truncate text-[9px] italic text-slate-500">{subtitle}</span>
+            {/if}
+          </div>
+          <button
+            type="button"
+            onclick={() => selectTab(viewAllTab)}
+            class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+          >
+            View all <ChevronRight class="size-3" />
+          </button>
+        </div>
+      {/snippet}
+
+      <!-- One <ul> per strip — common Tailwind soup factored once via this
+           wrapper class string. Hidden vertical scrollbar but visible
+           thin horizontal one so users actually realise the strip
+           scrolls. -->
+      {@const stripCls = 'mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-slate-700'}
+
+      {#snippet streamCard(p: LivePost)}
+        <li class="w-44 shrink-0">
+          <a
+            href={p.membershipUrl ?? '#'}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="group flex flex-col overflow-hidden rounded-md bg-slate-900/70 ring-1 ring-slate-800 transition hover:ring-sky-600"
+          >
+            {#if p.thumbnailUrl}
+              <div class="relative aspect-video w-full overflow-hidden bg-slate-950">
+                <img
+                  src={p.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  class="size-full object-cover transition group-hover:scale-105"
+                />
+                <span class="absolute left-1 top-1 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-bold uppercase text-white">
+                  Live
+                </span>
+                <span class="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-slate-950/80 px-1 py-0.5 text-[9px] text-slate-200">
+                  <Eye class="size-2.5" />
+                  {formatCompact(p.viewersCount)}
+                </span>
+              </div>
+            {:else}
+              {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+              <div
+                class="flex aspect-video w-full items-center justify-center bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-base font-semibold text-white/90"
+              >
+                {av.initials}
+              </div>
+            {/if}
+            <div class="p-1.5">
+              <p class="line-clamp-2 text-[11px] font-medium leading-tight text-slate-100">
+                {p.title}
+              </p>
+              <p class="mt-0.5 truncate text-[9px] text-slate-400">{p.authorDisplayName}</p>
+            </div>
+          </a>
+        </li>
+      {/snippet}
+
+      {#snippet postCard(p: Post)}
+        <li class="w-44 shrink-0">
+          <a
+            href={postHref(p)}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="group flex flex-col overflow-hidden rounded-md bg-slate-900/70 ring-1 ring-slate-800 transition hover:ring-sky-600"
+          >
+            {#if p.thumbnailUrl}
+              <div class="relative aspect-video w-full overflow-hidden bg-slate-950">
+                <img
+                  src={p.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  class="size-full object-cover transition group-hover:scale-105"
+                />
+                <span class="absolute left-1 top-1 rounded bg-slate-950/80 px-1 py-0.5 text-[8px] font-bold uppercase text-slate-300">
+                  {p.type}
+                </span>
+              </div>
+            {:else}
+              {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+              <div
+                class="flex aspect-video w-full items-center justify-center bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-base font-semibold text-white/90"
+              >
+                {av.initials}
+              </div>
+            {/if}
+            <div class="p-1.5">
+              <p class="line-clamp-2 text-[11px] font-medium leading-tight text-slate-100">
+                {p.title}
+              </p>
+              <p class="mt-0.5 truncate text-[9px] text-slate-400">{p.authorDisplayName}</p>
+              <p class="mt-0.5 flex items-center gap-2 text-[9px] text-slate-500">
+                <span class="flex items-center gap-0.5">
+                  <Heart class="size-2.5" />
+                  {p.votesCount}
+                </span>
+                <span class="flex items-center gap-0.5">
+                  <MessageCircle class="size-2.5" />
+                  {p.commentsCount}
+                </span>
+                <span>· {timeAgo(p.createdAt)}</span>
+              </p>
+            </div>
+          </a>
+        </li>
+      {/snippet}
+
+      {#if followed.length === 0 && live.length === 0 && trending.length === 0 && gameplay.length === 0 && tutorial.length === 0}
         <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
           <Sparkles class="size-8" />
           <p class="text-xs italic">The Community Hub is quiet right now.</p>
         </div>
       {:else}
         {#if followed.length > 0}
-          <div class="mb-1 flex items-center justify-between">
-            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-sky-400">
-              <Users class="size-3" /> Followed live
-            </h3>
-            <button
-              type="button"
-              onclick={() => selectTab('live')}
-              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
-            >
-              View all <ChevronRight class="size-3" />
-            </button>
-          </div>
+          {@render stripHeader('Followed live', 'Streams from accounts you follow', 'text-sky-400', 'live', Users)}
           <ul class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {#each followed as p (p.uid)}
               <li>
@@ -383,127 +513,37 @@
         {/if}
 
         {#if live.length > 0}
-          <div class="mb-1 flex items-center justify-between">
-            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              <Tv class="size-3" /> Live now
-            </h3>
-            <button
-              type="button"
-              onclick={() => selectTab('live')}
-              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
-            >
-              View all <ChevronRight class="size-3" />
-            </button>
-          </div>
-          <!-- Horizontal scroll strip — keeps the home tab dense. The
-               wider thumbnails (16:9) make the streams feel less stamp-y
-               than the 2-col grid on the dedicated Live tab. -->
-          <ul
-            class="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-slate-700"
-          >
+          {@render stripHeader('Livestreams', 'Live now on Twitch.tv', 'text-rose-300', 'live', Tv)}
+          <ul class={stripCls}>
             {#each live as p (p.uid)}
-              <li class="w-44 shrink-0">
-                <a
-                  href={p.membershipUrl ?? '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="group flex flex-col overflow-hidden rounded-md bg-slate-900/70 ring-1 ring-slate-800 transition hover:ring-sky-600"
-                >
-                  {#if p.thumbnailUrl}
-                    <div class="relative aspect-video w-full overflow-hidden bg-slate-950">
-                      <img
-                        src={p.thumbnailUrl}
-                        alt=""
-                        loading="lazy"
-                        class="size-full object-cover transition group-hover:scale-105"
-                      />
-                      <span class="absolute left-1 top-1 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-bold uppercase text-white">
-                        Live
-                      </span>
-                      <span class="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-slate-950/80 px-1 py-0.5 text-[9px] text-slate-200">
-                        <Eye class="size-2.5" />
-                        {formatCompact(p.viewersCount)}
-                      </span>
-                    </div>
-                  {:else}
-                    {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
-                    <div
-                      class="flex aspect-video w-full items-center justify-center bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-base font-semibold text-white/90"
-                    >
-                      {av.initials}
-                    </div>
-                  {/if}
-                  <div class="p-1.5">
-                    <p class="line-clamp-2 text-[11px] font-medium leading-tight text-slate-100">
-                      {p.title}
-                    </p>
-                    <p class="mt-0.5 truncate text-[9px] text-slate-400">{p.authorDisplayName}</p>
-                  </div>
-                </a>
-              </li>
+              {@render streamCard(p)}
             {/each}
           </ul>
         {/if}
 
         {#if trending.length > 0}
-          <div class="mb-1 flex items-center justify-between">
-            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
-              <Flame class="size-3" /> Trending
-            </h3>
-            <button
-              type="button"
-              onclick={() => selectTab('discover')}
-              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
-            >
-              View all <ChevronRight class="size-3" />
-            </button>
-          </div>
-          <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {@render stripHeader('Trending', "See what's hot on the Hub", 'text-amber-400', 'discover', Flame)}
+          <ul class={stripCls}>
             {#each trending as p (p.uid)}
-              <li>
-                <a
-                  href={postHref(p)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="group flex gap-2 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:ring-sky-600"
-                >
-                  {#if p.thumbnailUrl}
-                    <div class="relative size-16 shrink-0 overflow-hidden rounded bg-slate-950">
-                      <img
-                        src={p.thumbnailUrl}
-                        alt=""
-                        loading="lazy"
-                        class="size-full object-cover transition group-hover:scale-105"
-                      />
-                      <span class="absolute left-1 top-1 rounded bg-slate-950/80 px-1 py-0.5 text-[8px] font-bold uppercase text-slate-300">
-                        {p.type}
-                      </span>
-                    </div>
-                  {:else}
-                    {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
-                    <div
-                      class="flex size-16 shrink-0 items-center justify-center rounded bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-sm font-semibold text-white/90"
-                    >
-                      {av.initials}
-                    </div>
-                  {/if}
-                  <div class="min-w-0 flex-1">
-                    <p class="line-clamp-2 text-xs font-medium text-slate-100">{p.title}</p>
-                    <p class="mt-0.5 truncate text-[10px] text-slate-400">{p.authorDisplayName}</p>
-                    <p class="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
-                      <span class="flex items-center gap-0.5">
-                        <Heart class="size-3" />
-                        {p.votesCount}
-                      </span>
-                      <span class="flex items-center gap-0.5">
-                        <MessageCircle class="size-3" />
-                        {p.commentsCount}
-                      </span>
-                      <span>· {timeAgo(p.createdAt)}</span>
-                    </p>
-                  </div>
-                </a>
-              </li>
+              {@render postCard(p)}
+            {/each}
+          </ul>
+        {/if}
+
+        {#if gameplay.length > 0}
+          {@render stripHeader('Gameplay', 'Show off what you can do in the game', 'text-violet-400', 'gameplay', Gamepad2)}
+          <ul class={stripCls}>
+            {#each gameplay as p (p.uid)}
+              {@render postCard(p)}
+            {/each}
+          </ul>
+        {/if}
+
+        {#if tutorial.length > 0}
+          {@render stripHeader('Tutorial', 'Guides, breakdowns, and helpful content', 'text-emerald-400', 'tutorial', GraduationCap)}
+          <ul class={stripCls}>
+            {#each tutorial as p (p.uid)}
+              {@render postCard(p)}
             {/each}
           </ul>
         {/if}

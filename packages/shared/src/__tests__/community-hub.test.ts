@@ -40,17 +40,21 @@ describe('buildCommunityHubPostUrl', () => {
 // between fetcher / background-handler / popup UI — pin its shape here
 // so a careless refactor of the interface fails at the type-check gate.
 describe('CommunityHubHomeSnapshot contract', () => {
-  it('has the four required fields the UI consumes', () => {
+  it('has the six required strip fields the UI consumes', () => {
     const snap: CommunityHubHomeSnapshot = {
       tab: 'home',
       live: [],
       followed: [],
       trending: [],
+      gameplay: [],
+      tutorial: [],
     };
     expect(snap.tab).toBe('home');
     expect(snap.live).toEqual([]);
     expect(snap.followed).toEqual([]);
     expect(snap.trending).toEqual([]);
+    expect(snap.gameplay).toEqual([]);
+    expect(snap.tutorial).toEqual([]);
   });
 
   it('home is a recognised CommunityHubTab', () => {

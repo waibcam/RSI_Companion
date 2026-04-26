@@ -79,7 +79,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // switched from HTML scraping to a GraphQL batch (same shape fields,
   // but the scrape returned zeros so stored entries are unreliable).
   'stats:summary': 2,
-  'communityHub:home': 1,
+  // v2: snapshot gained `gameplay` + `tutorial` strips; v1 entries
+  // would render the old single-trending layout with two empty
+  // strips on the new UI. Bump to invalidate on first boot.
+  'communityHub:home': 2,
   'communityHub:live': 1,
   'communityHub:events': 1,
   'communityHub:posts': 1,
@@ -1012,14 +1015,29 @@ async function handleCommunityHub(
         live: Rsi.CommunityHubLivePost[];
         followed: Rsi.CommunityHubLivePost[];
         trending: Rsi.CommunityHubPost[];
+        gameplay: Rsi.CommunityHubPost[];
+        tutorial: Rsi.CommunityHubPost[];
         fetchedAt: number;
       }>(key);
       if (cached) return { tab, ...cached, fromCache: true } as const;
     }
-    const { live, followed, trending } = await Rsi.fetchCommunityHubHome();
+    const { live, followed, trending, gameplay, tutorial } = await Rsi.fetchCommunityHubHome();
     const fetchedAt = Date.now();
-    await cacheSet(key, { live, followed, trending, fetchedAt }, TTL.communityHub);
-    return { tab, live, followed, trending, fetchedAt, fromCache: false } as const;
+    await cacheSet(
+      key,
+      { live, followed, trending, gameplay, tutorial, fetchedAt },
+      TTL.communityHub,
+    );
+    return {
+      tab,
+      live,
+      followed,
+      trending,
+      gameplay,
+      tutorial,
+      fetchedAt,
+      fromCache: false,
+    } as const;
   }
 
   if (tab === 'live') {

@@ -556,6 +556,8 @@ export interface CommunityHubHomePayload {
   live: CommunityHubLivePost[];
   followed: CommunityHubLivePost[];
   trending: CommunityHubPost[];
+  gameplay: CommunityHubPost[];
+  tutorial: CommunityHubPost[];
   fetchedAt: number;
   fromCache: boolean;
 }
