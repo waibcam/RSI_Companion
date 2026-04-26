@@ -141,10 +141,20 @@ const Channel = z.object({
     .default('')
     .transform((v) => v ?? ''),
   slug: z.string().default(''),
+  // Forums-tab metadata (Phase 2). All optional in the wire format —
+  // older identify responses may not include them, especially for
+  // org communities that haven't been migrated to the new shape.
+  description: z
+    .string()
+    .nullable()
+    .default('')
+    .transform((v) => v ?? ''),
+  threads_count: z.coerce.number().int().default(0),
 });
 
 const ChannelGroup = z.object({
   id: z.coerce.number().int(),
+  name: z.string().default(''),
   channels: arrayOrRecord(Channel),
 });
 

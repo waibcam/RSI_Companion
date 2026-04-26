@@ -40,7 +40,13 @@ import type { DashboardSummary } from './rsi/dashboard.js';
 import type { MyOrg, OrgMember, PublicOrg, PublicOrgSearchParams } from './rsi/orgs.js';
 import type { RsiIdentity } from './rsi/auth.js';
 import type { Ship } from './rsi/ships.js';
-import type { SpectrumLobby, SpectrumNotification, SpectrumThread } from './rsi/spectrum.js';
+import type {
+  SpectrumForumGroup,
+  SpectrumLobby,
+  SpectrumNotification,
+  SpectrumSort,
+  SpectrumThread,
+} from './rsi/spectrum.js';
 import type { CrowdfundStats, ReferralStats } from './rsi/stats.js';
 import type { RsiStatusSummary } from './rsi/status.js';
 import type { NotifyModule, NotifyState } from './notify.js';
@@ -295,6 +301,31 @@ export interface SpectrumLobbiesRequest {
 }
 export interface SpectrumLobbiesResponsePayload {
   lobbies: SpectrumLobby[];
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+export interface SpectrumForumGroupsRequest {
+  type: 'spectrum.forumGroups';
+  force?: boolean;
+}
+export interface SpectrumForumGroupsResponsePayload {
+  groups: SpectrumForumGroup[];
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+export interface SpectrumForumThreadsRequest {
+  type: 'spectrum.forumThreads';
+  channelId: number;
+  /** Defaults to 'hot' to match the desktop SPA's default sort. */
+  sort?: SpectrumSort;
+  force?: boolean;
+}
+export interface SpectrumForumThreadsResponsePayload {
+  threads: SpectrumThread[];
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
@@ -916,6 +947,8 @@ export type RsiMessage =
   | SpectrumNotificationsRequest
   | SpectrumMarkReadRequest
   | SpectrumLobbiesRequest
+  | SpectrumForumGroupsRequest
+  | SpectrumForumThreadsRequest
   | DashboardRequest
   | BuyBackRequest
   | PatchNotesRequest
@@ -980,6 +1013,8 @@ interface ResponseMap {
   'spectrum.notifications': SpectrumNotificationsResponsePayload;
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
+  'spectrum.forumGroups': SpectrumForumGroupsResponsePayload;
+  'spectrum.forumThreads': SpectrumForumThreadsResponsePayload;
   'dashboard.summary': DashboardResponsePayload;
   'buyback.list': BuyBackResponsePayload;
   'patchnotes.list': PatchNotesResponsePayload;

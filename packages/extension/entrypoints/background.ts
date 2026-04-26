@@ -102,6 +102,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:trending': 1,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
+  'spectrum:forumGroups': 1,
+  'spectrum:forumThreads': 1,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';
@@ -1975,6 +1977,70 @@ async function handleSpectrumTrending(force: boolean) {
   });
 }
 
+// --- Forums tab (Phase 2) -------------------------------------------------
+//
+// The Forums tab fetches the full forum_channel_groups structure (all
+// groups, all channels — not just the Official+Concierge subset that
+// DevTracker covers) and lets users drill into a single channel for its
+// thread list. The groups list comes from identify, so it's fast and
+// can sit on a longer TTL than threads. Threads cache per (channel, sort)
+// combo so switching sort buckets doesn't fight a single cached entry.
+
+async function handleSpectrumForumGroups(force: boolean) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      groups: [],
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  const key = 'spectrum:forumGroups';
+  if (!force) {
+    const cached = await cacheGet<{ groups: Rsi.SpectrumForumGroup[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    const groups = await Rsi.fetchSpectrumForumGroups();
+    const fetchedAt = Date.now();
+    // 30-min TTL (TTL.spectrum is ACCOUNT_TTL): forum channel structure
+    // changes rarely (CIG adds a new channel maybe a couple of times a
+    // year), but we don't have a longer-than-account TTL bucket and the
+    // user can hit refresh if they need it sooner.
+    await cacheSet(key, { groups, fetchedAt }, TTL.spectrum);
+    return { groups, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
+async function handleSpectrumForumThreads(message: {
+  channelId: number;
+  sort?: Rsi.SpectrumSort;
+  force?: boolean;
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return {
+      threads: [],
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+  const sort = message.sort ?? 'hot';
+  const key = `spectrum:forumThreads:${message.channelId}:${sort}`;
+  if (!message.force) {
+    const cached = await cacheGet<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
+    if (cached) return { ...cached, signedIn: true, fromCache: true };
+  }
+  return dedupe(key, async () => {
+    const threads = await Rsi.fetchSpectrumForumChannelThreads(token, message.channelId, { sort });
+    const fetchedAt = Date.now();
+    await cacheSet(key, { threads, fetchedAt }, TTL.spectrum);
+    return { threads, signedIn: true as const, fetchedAt, fromCache: false };
+  });
+}
+
 // --- Notification polling -------------------------------------------------
 //
 // Two alarms run on separate cadences, split by how fast each module's data
@@ -2454,6 +2520,17 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumMarkRead() };
       case 'spectrum.lobbies':
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };
+      case 'spectrum.forumGroups':
+        return { ok: true, data: await handleSpectrumForumGroups(message.force ?? false) };
+      case 'spectrum.forumThreads':
+        return {
+          ok: true,
+          data: await handleSpectrumForumThreads({
+            channelId: message.channelId,
+            sort: message.sort,
+            force: message.force ?? false,
+          }),
+        };
       case 'dashboard.summary':
         return { ok: true, data: await handleDashboardSummary(message.force ?? false) };
       case 'buyback.list':

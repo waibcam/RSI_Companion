@@ -2,12 +2,15 @@
   import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
   import {
     AlertTriangle,
+    ArrowLeft,
     AtSign,
     Bell,
     CheckCheck,
+    ChevronRight,
     Code2,
     Flame,
     Heart,
+    LayoutGrid,
     Loader2,
     Mail,
     MessageCircle,
@@ -25,16 +28,39 @@
   type Thread = Rsi.SpectrumThread;
   type Notification = Rsi.SpectrumNotification;
   type Lobby = Rsi.SpectrumLobby;
+  type ForumGroup = Rsi.SpectrumForumGroup;
+  type ForumChannelInfo = Rsi.SpectrumForumChannelInfo;
+  type ForumSort = Rsi.SpectrumSort;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
   // selections keep pointing at this tab.
-  type Tab = 'devtracker' | 'trending' | 'dms' | 'notifications';
+  type Tab = 'devtracker' | 'forums' | 'trending' | 'dms' | 'notifications';
 
-  const TABS: readonly Tab[] = ['devtracker', 'trending', 'dms', 'notifications'];
+  const TABS: readonly Tab[] = ['devtracker', 'forums', 'trending', 'dms', 'notifications'];
   const isTab = (v: unknown): v is Tab =>
     typeof v === 'string' && (TABS as readonly string[]).includes(v);
   const tabP = persistedState<Tab>('spectrum:tab', 'devtracker', isTab);
+
+  // Forums-tab drill state — persisted so closing the popup mid-browse
+  // doesn't drop the user back at the channel list. `null` means "showing
+  // the channel list", a number is the active channel id (showing its
+  // threads). Numeric channel id is what RSI uses, so storing it directly
+  // saves a lookup.
+  const forumChannelP = persistedState<number | null>(
+    'spectrum:forums:channelId',
+    null,
+    (v): v is number | null => v === null || typeof v === 'number',
+  );
+  const FORUM_SORTS: ReadonlyArray<{ value: ForumSort; label: string }> = [
+    { value: 'hot', label: 'Hot' },
+    { value: 'new', label: 'New' },
+    { value: 'top', label: 'Top' },
+    { value: 'last_activity', label: 'Active' },
+  ];
+  const isForumSort = (v: unknown): v is ForumSort =>
+    typeof v === 'string' && FORUM_SORTS.some((s) => s.value === v);
+  const forumSortP = persistedState<ForumSort>('spectrum:forums:sort', 'hot', isForumSort);
   // Read-only alias so template references stay unchanged.
   const tab = $derived(tabP.value);
 
@@ -63,6 +89,15 @@
       badgeBg: 'bg-sky-500/20',
       badgeText: 'text-sky-300',
       stripeHex: '#38bdf8',
+    },
+    forums: {
+      label: 'Forums',
+      icon: LayoutGrid,
+      textActive: 'text-teal-300',
+      underline: 'bg-teal-400',
+      badgeBg: 'bg-teal-500/20',
+      badgeText: 'text-teal-300',
+      stripeHex: '#14b8a6',
     },
     trending: {
       label: 'Trending',
@@ -142,6 +177,23 @@
   let lobbiesLoaded = $state(false);
   let lobbiesFromCache = $state(false);
 
+  // Forums tab state — `forumGroups` is the channel-list view; once
+  // `forumChannelP.value` is set, `forumThreads` carries the threads in
+  // that channel. The two never display at the same time.
+  let forumGroups = $state<ForumGroup[]>([]);
+  let forumGroupsLoading = $state(false);
+  let forumGroupsError = $state<string | null>(null);
+  let forumGroupsLoaded = $state(false);
+  let forumGroupsFromCache = $state(false);
+
+  let forumThreads = $state<Thread[]>([]);
+  let forumThreadsLoading = $state(false);
+  let forumThreadsError = $state<string | null>(null);
+  let forumThreadsFromCache = $state(false);
+  // Track which channel id the threads array belongs to so a stale fetch
+  // for a previously-selected channel can't paint the current view.
+  let forumThreadsForChannel = $state<number | null>(null);
+
   let query = $state('');
 
   async function loadThreads(force = false) {
@@ -210,6 +262,79 @@
     }
   }
 
+  async function loadForumGroups(force = false) {
+    forumGroupsLoading = true;
+    forumGroupsError = null;
+    try {
+      const res = await sendRsiMessage({ type: 'spectrum.forumGroups', force });
+      forumGroups = res.groups;
+      signedIn = res.signedIn;
+      forumGroupsFromCache = res.fromCache;
+      forumGroupsLoaded = true;
+    } catch (e) {
+      forumGroupsError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      forumGroupsLoading = false;
+    }
+  }
+
+  async function loadForumThreads(channelId: number, force = false) {
+    forumThreadsLoading = true;
+    forumThreadsError = null;
+    try {
+      const res = await sendRsiMessage({
+        type: 'spectrum.forumThreads',
+        channelId,
+        sort: forumSortP.value,
+        force,
+      });
+      // Stale-response guard: if the user clicked into another channel
+      // while this fetch was in flight, don't overwrite their view.
+      if (forumChannelP.value !== channelId) return;
+      forumThreads = res.threads;
+      forumThreadsForChannel = channelId;
+      signedIn = res.signedIn;
+      forumThreadsFromCache = res.fromCache;
+    } catch (e) {
+      forumThreadsError = errorMessage(e);
+      if (extractSignedIn(e) === false) signedIn = false;
+    } finally {
+      forumThreadsLoading = false;
+    }
+  }
+
+  /** Find a single channel by id across all groups. Used by the threads
+   *  view to render the channel header (name + description + colour). */
+  const currentForumChannel = $derived.by<ForumChannelInfo | null>(() => {
+    const id = forumChannelP.value;
+    if (id == null) return null;
+    for (const g of forumGroups) {
+      for (const ch of g.channels) {
+        if (ch.id === id) return ch;
+      }
+    }
+    return null;
+  });
+
+  function selectForumChannel(channelId: number) {
+    forumChannelP.value = channelId;
+    forumThreads = [];
+    forumThreadsForChannel = null;
+    loadForumThreads(channelId);
+  }
+  function backToForumChannels() {
+    forumChannelP.value = null;
+    forumThreads = [];
+    forumThreadsForChannel = null;
+    forumThreadsError = null;
+  }
+  function selectForumSort(s: ForumSort) {
+    if (s === forumSortP.value) return;
+    forumSortP.value = s;
+    if (forumChannelP.value != null) loadForumThreads(forumChannelP.value);
+  }
+
   // Guard against double-submission: rapid clicks on "Mark all read"
   // would fire multiple POSTs to /api/spectrum/notifications/markAsRead
   // in parallel. The server is idempotent, but we still want to avoid
@@ -230,12 +355,19 @@
 
   function switchTab(next: Tab) {
     tabP.value = next;
-    if (next === 'notifications' && !notifsLoaded && signedIn !== false) {
+    if (signedIn === false) return;
+    if (next === 'notifications' && !notifsLoaded) {
       loadNotifications();
-    } else if (next === 'trending' && !trendingLoaded && signedIn !== false) {
+    } else if (next === 'trending' && !trendingLoaded) {
       loadTrending();
-    } else if (next === 'dms' && !lobbiesLoaded && signedIn !== false) {
+    } else if (next === 'dms' && !lobbiesLoaded) {
       loadLobbies();
+    } else if (next === 'forums') {
+      if (!forumGroupsLoaded) loadForumGroups();
+      // If the user was mid-drill last session, re-fetch the channel's
+      // threads to populate the threads view from a clean state.
+      const ch = forumChannelP.value;
+      if (ch != null && forumThreadsForChannel !== ch) loadForumThreads(ch);
     }
   }
 
@@ -244,6 +376,10 @@
     else if (tab === 'trending') loadTrending(true);
     else if (tab === 'notifications') loadNotifications(true);
     else if (tab === 'dms') loadLobbies(true);
+    else if (tab === 'forums') {
+      if (forumChannelP.value != null) loadForumThreads(forumChannelP.value, true);
+      else loadForumGroups(true);
+    }
   }
 
   const filteredThreads = $derived.by<Thread[]>(() => {
@@ -276,17 +412,46 @@
           ? notifsLoading
           : tab === 'dms'
             ? lobbiesLoading
-            : false,
+            : tab === 'forums'
+              ? forumChannelP.value != null
+                ? forumThreadsLoading
+                : forumGroupsLoading
+              : false,
   );
-  const showSearch = $derived(tab === 'devtracker' || tab === 'trending' || tab === 'dms');
+  const showSearch = $derived(
+    tab === 'devtracker' ||
+      tab === 'trending' ||
+      tab === 'dms' ||
+      (tab === 'forums' && forumChannelP.value == null),
+  );
   const showRefresh = $derived(
-    tab === 'devtracker' || tab === 'trending' || tab === 'notifications' || tab === 'dms',
+    tab === 'devtracker' ||
+      tab === 'trending' ||
+      tab === 'notifications' ||
+      tab === 'dms' ||
+      tab === 'forums',
   );
   const fromCache = $derived(
     (tab === 'devtracker' && threadsFromCache) ||
       (tab === 'trending' && trendingFromCache) ||
-      (tab === 'dms' && lobbiesFromCache),
+      (tab === 'dms' && lobbiesFromCache) ||
+      (tab === 'forums' &&
+        (forumChannelP.value != null ? forumThreadsFromCache : forumGroupsFromCache)),
   );
+
+  const filteredForumChannels = $derived.by<ForumGroup[]>(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return forumGroups;
+    return forumGroups
+      .map((g) => ({
+        ...g,
+        channels: g.channels.filter((c) => {
+          const hay = `${c.name} ${c.description} ${g.name}`.toLowerCase();
+          return hay.includes(q);
+        }),
+      }))
+      .filter((g) => g.channels.length > 0);
+  });
 
   function avatarUrl(path: string | null | undefined): string | null {
     if (!path) return null;
@@ -307,12 +472,17 @@
       // small slice of that behavior that matters for users who live in the
       // badge-count glance (not the tab itself).
       void loadNotifications();
-      // If the user's persisted tab is Trending or DMs, kick those loaders
-      // too so returning to the Spectrum module (e.g. after visiting another
-      // module) shows the cached content immediately instead of an empty
-      // list that only populates after a manual tab toggle.
+      // If the user's persisted tab is Trending / DMs / Forums, kick
+      // those loaders too so returning to the Spectrum module (e.g.
+      // after visiting another module) shows the cached content
+      // immediately instead of an empty list that only populates after
+      // a manual tab toggle.
       if (tabP.value === 'trending') void loadTrending();
       else if (tabP.value === 'dms') void loadLobbies();
+      else if (tabP.value === 'forums') {
+        void loadForumGroups();
+        if (forumChannelP.value != null) void loadForumThreads(forumChannelP.value);
+      }
       void notifyState.markSeen('spectrum');
     } else if (authState.signedIn === false) {
       signedIn = false;
@@ -337,6 +507,14 @@
         <span class="text-[10px] text-slate-500">{notifs.length} total</span>
       {:else if signedIn && tab === 'dms' && lobbiesLoaded}
         <span class="text-[10px] text-slate-500">{lobbies.length} lobbies</span>
+      {:else if signedIn && tab === 'forums' && forumGroupsLoaded}
+        <span class="text-[10px] text-slate-500">
+          {#if forumChannelP.value != null}
+            {forumThreads.length} threads
+          {:else}
+            {forumGroups.reduce((n, g) => n + g.channels.length, 0)} channels
+          {/if}
+        </span>
       {/if}
     {/snippet}
     {#snippet controls()}
@@ -566,6 +744,33 @@
     </li>
   {/snippet}
 
+  {#snippet forumChannelCard(ch: ForumChannelInfo)}
+    {@const stripe = ch.color || '#475569'}
+    <li class="virt-item">
+      <button
+        type="button"
+        onclick={() => selectForumChannel(ch.id)}
+        class="group flex w-full items-start gap-2.5 rounded-md bg-slate-900/70 p-2 text-left ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-teal-600"
+        style:border-left="3px solid {stripe}"
+      >
+        <div class="min-w-0 flex-1">
+          <div class="flex items-baseline justify-between gap-2">
+            <p class="line-clamp-1 text-xs font-medium text-slate-100 group-hover:text-teal-200">
+              {ch.name}
+            </p>
+            <span class="shrink-0 text-[10px] text-slate-500">
+              {ch.threadsCount.toLocaleString()} threads
+            </span>
+          </div>
+          {#if ch.description}
+            <p class="mt-0.5 line-clamp-1 text-[10px] text-slate-500">{ch.description}</p>
+          {/if}
+        </div>
+        <ChevronRight class="mt-0.5 size-3.5 shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-teal-400" />
+      </button>
+    </li>
+  {/snippet}
+
   <div class="flex-1 overflow-y-auto p-2">
     {#if authState.signedIn === false || signedIn === false}
       <SignInPrompt label="Spectrum" />
@@ -595,6 +800,95 @@
         {#if filteredThreads.length === 0}
           <p class="mt-6 text-center text-xs italic text-slate-500">No threads match your filter.</p>
         {/if}
+      {/if}
+    {:else if tab === 'forums'}
+      {#if forumChannelP.value == null}
+        <!-- Channel list — grouped by forum_channel_groups in identify
+             order, search filters across all groups. -->
+        {#if forumGroupsError}
+          {@render errorBlock('Failed to load forum channels', forumGroupsError)}
+        {:else if forumGroupsLoading && forumGroups.length === 0}
+          {@render centerSpinner()}
+        {:else if forumGroups.length === 0}
+          {@render emptyState(LayoutGrid, 'No forum channels available.')}
+        {:else}
+          <div class="mx-auto flex max-w-3xl flex-col gap-3">
+            {#each filteredForumChannels as g (g.id)}
+              <section>
+                <h3 class="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">
+                  {g.name || `Group ${g.id}`}
+                </h3>
+                <ul class="flex flex-col gap-1">
+                  {#each g.channels as ch (ch.id)}
+                    {@render forumChannelCard(ch)}
+                  {/each}
+                </ul>
+              </section>
+            {/each}
+          </div>
+
+          {#if filteredForumChannels.length === 0}
+            <p class="mt-6 text-center text-xs italic text-slate-500">
+              No channels match your filter.
+            </p>
+          {/if}
+        {/if}
+      {:else}
+        <!-- Threads view: header (back + channel meta) + sort selector + list. -->
+        {@const ch = currentForumChannel}
+        {@const stripe = ch?.color || '#475569'}
+        <div class="mx-auto flex max-w-3xl flex-col gap-2">
+          <div
+            class="flex items-start gap-2 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800"
+            style:border-left="3px solid {stripe}"
+          >
+            <button
+              type="button"
+              onclick={backToForumChannels}
+              class="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-800 hover:text-slate-100"
+              title="Back to channels"
+              aria-label="Back to channels"
+            >
+              <ArrowLeft class="size-4" />
+            </button>
+            <div class="min-w-0 flex-1">
+              <p class="line-clamp-1 text-xs font-semibold text-slate-100">
+                {ch?.name ?? 'Channel'}
+              </p>
+              {#if ch?.description}
+                <p class="mt-0.5 line-clamp-1 text-[10px] text-slate-500">{ch.description}</p>
+              {/if}
+            </div>
+            <div class="flex shrink-0 rounded-md border border-slate-800 bg-slate-900 p-0.5 text-[10px]">
+              {#each FORUM_SORTS as s (s.value)}
+                <button
+                  type="button"
+                  onclick={() => selectForumSort(s.value)}
+                  class="rounded px-1.5 py-0.5 transition
+                    {forumSortP.value === s.value
+                    ? 'bg-teal-600 text-white'
+                    : 'text-slate-400 hover:text-slate-200'}"
+                >
+                  {s.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          {#if forumThreadsError}
+            {@render errorBlock('Failed to load threads', forumThreadsError)}
+          {:else if forumThreadsLoading && forumThreads.length === 0}
+            {@render centerSpinner()}
+          {:else if forumThreads.length === 0}
+            {@render emptyState(LayoutGrid, 'No threads in this channel yet.')}
+          {:else}
+            <ul class="flex flex-col gap-1">
+              {#each forumThreads as t (t.id)}
+                {@render threadCard(t)}
+              {/each}
+            </ul>
+          {/if}
+        </div>
       {/if}
     {:else if tab === 'dms'}
       {#if lobbiesError}

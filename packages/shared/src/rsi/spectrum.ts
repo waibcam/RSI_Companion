@@ -86,7 +86,96 @@ function extractSpectrumChannels(data: IdentifyData): SpectrumChannel[] {
   return out;
 }
 
-export type SpectrumSort = 'hot' | 'trending' | 'new';
+// --- Forum browsing (Phase 2) ------------------------------------------
+//
+// The DevTracker / Trending tabs were always a curated subset of the SC
+// forum: highlighted-only and limited to the Official + Concierge groups
+// (the only two `extractSpectrumChannels` returns). For the Forums tab
+// we expose the full structure — every group, every channel — so users
+// can browse the way they do on robertsspaceindustries.com/spectrum.
+
+export interface SpectrumForumChannelInfo extends SpectrumChannel {
+  description: string;
+  threadsCount: number;
+  groupId: number;
+  groupName: string;
+}
+
+export interface SpectrumForumGroup {
+  id: number;
+  name: string;
+  channels: SpectrumForumChannelInfo[];
+}
+
+/** All forum channel groups for the Star Citizen community, with their
+ *  channels expanded inline. The shape is read straight from
+ *  `auth/identify.communities[0].forum_channel_groups` — no extra HTTP
+ *  call, since identify is called for every other Spectrum tab anyway
+ *  and its response is cached at the chrome.cookies layer. */
+export async function fetchSpectrumForumGroups(): Promise<SpectrumForumGroup[]> {
+  const data = await identifyFull();
+  if (!data) throw new RsiNotAuthenticatedError();
+  const community = (data.communities ?? []).find((c) => c.id === 1);
+  if (!community) return [];
+  return community.forum_channel_groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    channels: g.channels.map((ch) => ({
+      id: ch.id,
+      name: ch.name,
+      slug: ch.slug,
+      color: ch.color,
+      communitySlug: community.slug,
+      description: ch.description ?? '',
+      threadsCount: ch.threads_count ?? 0,
+      groupId: g.id,
+      groupName: g.name,
+    })),
+  }));
+}
+
+/** Threads in a single forum channel — same `forum/channel/threads`
+ *  endpoint we use for DevTracker, but with `highlightedOnly: false`
+ *  so community-driven threads come through. The channel object is
+ *  resolved from the cached identify response so callers only have to
+ *  know the channel id. */
+export async function fetchSpectrumForumChannelThreads(
+  token: string,
+  channelId: number,
+  options: FetchChannelThreadsOptions = {},
+): Promise<SpectrumThread[]> {
+  const data = await identifyFull();
+  if (!data) throw new RsiNotAuthenticatedError();
+  const community = (data.communities ?? []).find((c) => c.id === 1);
+  if (!community) throw new Error('SC community missing from identify response');
+  let channel: SpectrumChannel | undefined;
+  for (const g of community.forum_channel_groups) {
+    for (const ch of g.channels) {
+      if (ch.id === channelId) {
+        channel = {
+          id: ch.id,
+          name: ch.name,
+          slug: ch.slug,
+          color: ch.color,
+          communitySlug: community.slug,
+        };
+        break;
+      }
+    }
+    if (channel) break;
+  }
+  if (!channel) {
+    throw new Error(
+      `forum channel ${channelId} not found in identify (try refreshing — it may have been added by CIG since last cache hit)`,
+    );
+  }
+  return fetchChannelThreads(token, channel, { highlightedOnly: false, ...options });
+}
+
+// Sort options accepted by /forum/channel/threads. Only 'hot' is exercised
+// by the DevTracker/Trending tabs, but the Forums tab (Phase 2) lets users
+// pick any of these — RSI's desktop SPA uses the same set.
+export type SpectrumSort = 'hot' | 'top' | 'new' | 'last_activity' | 'trending';
 
 export interface FetchChannelThreadsOptions {
   sort?: SpectrumSort;
