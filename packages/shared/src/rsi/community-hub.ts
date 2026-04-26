@@ -422,7 +422,7 @@ async function graphqlEvents(
 
 // ---------- Public API -------------------------------------------------------
 
-export type CommunityHubTab = 'live' | 'discover' | 'gameplay' | 'tutorial' | 'events';
+export type CommunityHubTab = 'home' | 'live' | 'discover' | 'gameplay' | 'tutorial' | 'events';
 
 export type CommunityHubSort = 'newest' | 'trending';
 
@@ -432,6 +432,16 @@ export interface CommunityHubPostFilters {
   sort?: CommunityHubSort;
   types?: CommunityHubType[];
   tags?: string[];
+}
+
+export interface CommunityHubHomeSnapshot {
+  tab: 'home';
+  /** Live streams currently broadcasting, capped to a small N for the strip. */
+  live: CommunityHubLivePost[];
+  /** Live streams from accounts the signed-in user follows. */
+  followed: CommunityHubLivePost[];
+  /** Top trending posts across all tags — small N, drives the home grid. */
+  trending: CommunityHubPost[];
 }
 
 export interface CommunityHubLiveSnapshot {
@@ -453,13 +463,14 @@ export interface CommunityHubEventsSnapshot {
 }
 
 export type CommunityHubSnapshot =
+  | CommunityHubHomeSnapshot
   | CommunityHubLiveSnapshot
   | CommunityHubPostsSnapshot
   | CommunityHubEventsSnapshot;
 
-// Only the post-grid tabs accept filters; 'live' and 'events' come from their
-// own pipelines.
-export type CommunityHubPostTab = Exclude<CommunityHubTab, 'live' | 'events'>;
+// Only the post-grid tabs accept filters; 'home', 'live' and 'events' come
+// from their own pipelines.
+export type CommunityHubPostTab = Exclude<CommunityHubTab, 'home' | 'live' | 'events'>;
 
 function buildDiscoverPath(tab: CommunityHubPostTab, filters: CommunityHubPostFilters): string {
   const params = new URLSearchParams();
@@ -511,6 +522,31 @@ export async function fetchCommunityHubPosts(
   const html = await fetchHtml(path);
   const { state, rootQuery } = readApolloState(html);
   return { tab, posts: extractPosts(state, rootQuery), filters };
+}
+
+/**
+ * Home tab — mirrors the layout of robertsspaceindustries.com/community-hub
+ * (live strip on top + trending posts grid below). RSI's actual home page
+ * renders the trending strip client-side rather than baking it into SSR, so
+ * we hit `/community-hub/discover?sort=trending` separately and join the two
+ * results in-process. The two requests run in parallel so the wall-clock
+ * cost is one round trip, not two.
+ *
+ * Caps are intentionally tight (8 live, 6 trending) — this is a glance
+ * surface, not a full listing. Users who want more click through to the
+ * dedicated tabs.
+ */
+export async function fetchCommunityHubHome(): Promise<CommunityHubHomeSnapshot> {
+  const [liveSnap, trendingSnap] = await Promise.all([
+    fetchCommunityHubLive(),
+    fetchCommunityHubPosts('discover', { sort: 'trending' }),
+  ]);
+  return {
+    tab: 'home',
+    live: liveSnap.live.slice(0, 8),
+    followed: liveSnap.followed.slice(0, 8),
+    trending: trendingSnap.posts.slice(0, 6),
+  };
 }
 
 export async function fetchCommunityHubEvents(): Promise<CommunityHubEventsSnapshot> {

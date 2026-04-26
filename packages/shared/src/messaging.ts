@@ -551,6 +551,14 @@ export interface CommunityHubRequest {
   tags?: string[];
   force?: boolean;
 }
+export interface CommunityHubHomePayload {
+  tab: 'home';
+  live: CommunityHubLivePost[];
+  followed: CommunityHubLivePost[];
+  trending: CommunityHubPost[];
+  fetchedAt: number;
+  fromCache: boolean;
+}
 export interface CommunityHubLivePayload {
   tab: 'live';
   live: CommunityHubLivePost[];
@@ -573,6 +581,7 @@ export interface CommunityHubEventsPayload {
   fromCache: boolean;
 }
 export type CommunityHubResponsePayload =
+  | CommunityHubHomePayload
   | CommunityHubLivePayload
   | CommunityHubPostsPayload
   | CommunityHubEventsPayload;

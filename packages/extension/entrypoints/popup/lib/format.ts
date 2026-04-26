@@ -77,3 +77,46 @@ export function formatUsdCompact(cents: number): string {
   if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(0)}K`;
   return `$${dollars.toFixed(0)}`;
 }
+
+// ---------- avatar fallback ----------------------------------------------
+
+// 8 distinct gradient pairs — picked to be readable on the dark UI and
+// distinct from each other at a glance. The hash-to-index mapping is
+// deterministic so the same nickname always renders with the same colour
+// (helps recognition in feeds where the same author shows up multiple times).
+const AVATAR_GRADIENTS: ReadonlyArray<readonly [string, string]> = [
+  ['from-sky-700', 'to-indigo-700'],
+  ['from-emerald-700', 'to-teal-700'],
+  ['from-amber-700', 'to-orange-700'],
+  ['from-rose-700', 'to-pink-700'],
+  ['from-violet-700', 'to-fuchsia-700'],
+  ['from-cyan-700', 'to-blue-700'],
+  ['from-lime-700', 'to-emerald-700'],
+  ['from-red-700', 'to-rose-700'],
+];
+
+/** Author avatar fallback when no thumbnail URL is available. Returns short
+ *  initials (1–2 chars) and a stable Tailwind gradient class pair derived
+ *  from the source string. The two strings get concatenated so that an
+ *  author with a fancy display name + plain nickname still hashes the same
+ *  way regardless of which one we pass in first. */
+export function avatarFallback(
+  primary: string,
+  secondary = '',
+): { initials: string; gradientFrom: string; gradientTo: string } {
+  const source = `${primary}${secondary}`.trim();
+  const initials = (() => {
+    const trimmed = primary.trim();
+    if (!trimmed) return '?';
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    if (words.length >= 2 && words[0] && words[1]) {
+      return (words[0][0]! + words[1][0]!).toUpperCase();
+    }
+    return trimmed.slice(0, 2).toUpperCase();
+  })();
+  // Tiny stable hash — sum of char codes is plenty for an 8-bucket palette.
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) hash = (hash + source.charCodeAt(i)) % 1000;
+  const [from, to] = AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]!;
+  return { initials, gradientFrom: from, gradientTo: to };
+}

@@ -79,6 +79,7 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // switched from HTML scraping to a GraphQL batch (same shape fields,
   // but the scrape returned zeros so stored entries are unreliable).
   'stats:summary': 2,
+  'communityHub:home': 1,
   'communityHub:live': 1,
   'communityHub:events': 1,
   'communityHub:posts': 1,
@@ -1004,6 +1005,23 @@ async function handleCommunityHub(
   filters: Rsi.CommunityHubPostFilters,
   force: boolean,
 ) {
+  if (tab === 'home') {
+    const key = 'communityHub:home';
+    if (!force) {
+      const cached = await cacheGet<{
+        live: Rsi.CommunityHubLivePost[];
+        followed: Rsi.CommunityHubLivePost[];
+        trending: Rsi.CommunityHubPost[];
+        fetchedAt: number;
+      }>(key);
+      if (cached) return { tab, ...cached, fromCache: true } as const;
+    }
+    const { live, followed, trending } = await Rsi.fetchCommunityHubHome();
+    const fetchedAt = Date.now();
+    await cacheSet(key, { live, followed, trending, fetchedAt }, TTL.communityHub);
+    return { tab, live, followed, trending, fetchedAt, fromCache: false } as const;
+  }
+
   if (tab === 'live') {
     const key = 'communityHub:live';
     if (!force) {

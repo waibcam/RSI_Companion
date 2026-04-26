@@ -1,21 +1,23 @@
 <script lang="ts">
   import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
-  import { formatCompact, formatDate, timeAgo, timeUntil } from '../format';
+  import { avatarFallback, formatCompact, formatDate, timeAgo, timeUntil } from '../format';
   import {
     AlertTriangle,
     CalendarRange,
     CalendarDays,
+    ChevronRight,
     CircleDot,
     Clock,
     Eye,
+    Flame,
     Gamepad2,
     GraduationCap,
     Heart,
+    Home,
     Loader2,
     MessageCircle,
     Sparkles,
     Tv,
-    UserRound,
     Users,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
@@ -29,7 +31,7 @@
   type Sort = Rsi.CommunityHubSort;
   type Type = Rsi.CommunityHubType;
 
-  const TABS: readonly Tab[] = ['live', 'discover', 'gameplay', 'tutorial', 'events'];
+  const TABS: readonly Tab[] = ['home', 'live', 'discover', 'gameplay', 'tutorial', 'events'];
   const isTab = (v: unknown): v is Tab =>
     typeof v === 'string' && (TABS as readonly string[]).includes(v);
 
@@ -45,12 +47,17 @@
     { value: 'audio', label: 'Audio' },
   ];
 
-  const tabP = persistedState<Tab>('communityHub:tab', 'live', isTab);
+  // Default tab is 'home' for new users; existing users keep whatever tab
+  // they last selected (the persisted-state guard now accepts 'home' too).
+  const tabP = persistedState<Tab>('communityHub:tab', 'home', isTab);
   let sort = $state<Sort>('newest');
   let selectedTypes = $state<Type[]>([]);
   let live = $state<LivePost[]>([]);
   let followed = $state<LivePost[]>([]);
   let posts = $state<Post[]>([]);
+  // Trending strip on the Home tab — separate from `posts` so a fresh
+  // Home load doesn't blow away whatever the user had cached on Discover.
+  let trending = $state<Post[]>([]);
   let upcoming = $state<Event[]>([]);
   let past = $state<Event[]>([]);
   let loading = $state(true);
@@ -59,6 +66,7 @@
   let query = $state('');
 
   const TAB_META: Record<Tab, { label: string; icon: typeof Tv; path: string }> = {
+    home: { label: 'Home', icon: Home, path: '/community-hub' },
     live: { label: 'Lives', icon: Tv, path: '/community-hub' },
     discover: { label: 'Discover', icon: Sparkles, path: '/community-hub/discover' },
     gameplay: { label: 'Gameplay', icon: Gamepad2, path: '/community-hub/discover?tags=gameplay' },
@@ -66,7 +74,9 @@
     events: { label: 'Events', icon: CalendarDays, path: '/community-hub/events' },
   };
 
-  const showSort = $derived(tabP.value !== 'live' && tabP.value !== 'events');
+  const showSort = $derived(
+    tabP.value !== 'home' && tabP.value !== 'live' && tabP.value !== 'events',
+  );
   const showTypes = $derived(tabP.value === 'discover' || tabP.value === 'gameplay' || tabP.value === 'tutorial');
 
   async function load(force = false) {
@@ -80,9 +90,17 @@
         types: showTypes && selectedTypes.length > 0 ? selectedTypes : undefined,
         force,
       });
-      if (res.tab === 'live') {
+      if (res.tab === 'home') {
         live = res.live;
         followed = res.followed;
+        trending = res.trending;
+        posts = [];
+        upcoming = [];
+        past = [];
+      } else if (res.tab === 'live') {
+        live = res.live;
+        followed = res.followed;
+        trending = [];
         posts = [];
         upcoming = [];
         past = [];
@@ -91,11 +109,13 @@
         past = res.past;
         live = [];
         followed = [];
+        trending = [];
         posts = [];
       } else {
         posts = res.posts;
         live = [];
         followed = [];
+        trending = [];
         upcoming = [];
         past = [];
       }
@@ -179,7 +199,9 @@
   <ModuleHeader title="Community Hub" {loading} {fromCache} onRefresh={() => load(true)}>
     {#snippet meta()}
       <span class="text-[10px] text-slate-500">
-        {#if tabP.value === 'live'}
+        {#if tabP.value === 'home'}
+          {live.length} live · {trending.length} trending
+        {:else if tabP.value === 'live'}
           {live.length} live{followed.length > 0 ? ` · ${followed.length} followed` : ''}
         {:else if tabP.value === 'events'}
           {upcoming.length} upcoming · {past.length} past
@@ -207,14 +229,21 @@
     {/snippet}
   </ModuleHeader>
 
-  <div class="flex gap-1 border-b border-slate-800 bg-slate-950/40 px-2">
+  <!-- Tabbar overflows horizontally on narrow popups (we have 6 tabs now;
+       at 360px popup width minus the 88px sidebar that gets tight). The
+       scrollbar is hidden because OS scrollbars look awful here, and the
+       native overflow-snap keeps the active tab nicely aligned when the
+       user lands on it via keyboard. -->
+  <div
+    class="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-800 bg-slate-950/40 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+  >
     {#each Object.entries(TAB_META) as [key, meta] (key)}
       {@const Icon = meta.icon}
       {@const active = tabP.value === key}
       <button
         type="button"
         onclick={() => selectTab(key as Tab)}
-        class="flex items-center gap-1 border-b-2 px-3 py-1.5 text-xs transition
+        class="flex shrink-0 items-center gap-1 border-b-2 px-2.5 py-1.5 text-xs transition
           {active
             ? 'border-sky-500 text-slate-100'
             : 'border-transparent text-slate-500 hover:text-slate-300'}"
@@ -283,6 +312,202 @@
       <div class="flex h-full items-center justify-center text-slate-500">
         <Loader2 class="size-5 animate-spin" />
       </div>
+    {:else if tabP.value === 'home'}
+      <!-- Home tab — mirrors RSI's /community-hub layout. Three optional
+           sections (Followed → Live Now → Trending). Each is a glance
+           surface, capped to a small N; clicking the "View all" header
+           jumps to the dedicated tab so users can drill in. -->
+      {#if followed.length === 0 && live.length === 0 && trending.length === 0}
+        <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
+          <Sparkles class="size-8" />
+          <p class="text-xs italic">The Community Hub is quiet right now.</p>
+        </div>
+      {:else}
+        {#if followed.length > 0}
+          <div class="mb-1 flex items-center justify-between">
+            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-sky-400">
+              <Users class="size-3" /> Followed live
+            </h3>
+            <button
+              type="button"
+              onclick={() => selectTab('live')}
+              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+            >
+              View all <ChevronRight class="size-3" />
+            </button>
+          </div>
+          <ul class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {#each followed as p (p.uid)}
+              <li>
+                <a
+                  href={p.membershipUrl ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group flex gap-2 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:ring-sky-600"
+                >
+                  {#if p.thumbnailUrl}
+                    <div class="relative size-14 shrink-0 overflow-hidden rounded bg-slate-950">
+                      <img
+                        src={p.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        class="size-full object-cover transition group-hover:scale-105"
+                      />
+                      <span class="absolute left-1 top-1 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-bold uppercase text-white">
+                        Live
+                      </span>
+                    </div>
+                  {:else}
+                    {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+                    <div
+                      class="flex size-14 shrink-0 items-center justify-center rounded bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-sm font-semibold text-white/90"
+                    >
+                      {av.initials}
+                    </div>
+                  {/if}
+                  <div class="min-w-0 flex-1">
+                    <p class="line-clamp-2 text-xs font-medium text-slate-100">{p.title}</p>
+                    <p class="mt-0.5 truncate text-[10px] text-slate-400">{p.authorDisplayName}</p>
+                    <p class="mt-0.5 flex items-center gap-2 text-[10px] text-slate-500">
+                      <span class="flex items-center gap-0.5">
+                        <Eye class="size-3" />
+                        {formatCompact(p.viewersCount)}
+                      </span>
+                      <span>· {timeAgo(p.createdAt)}</span>
+                    </p>
+                  </div>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if live.length > 0}
+          <div class="mb-1 flex items-center justify-between">
+            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <Tv class="size-3" /> Live now
+            </h3>
+            <button
+              type="button"
+              onclick={() => selectTab('live')}
+              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+            >
+              View all <ChevronRight class="size-3" />
+            </button>
+          </div>
+          <!-- Horizontal scroll strip — keeps the home tab dense. The
+               wider thumbnails (16:9) make the streams feel less stamp-y
+               than the 2-col grid on the dedicated Live tab. -->
+          <ul
+            class="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-slate-700"
+          >
+            {#each live as p (p.uid)}
+              <li class="w-44 shrink-0">
+                <a
+                  href={p.membershipUrl ?? '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group flex flex-col overflow-hidden rounded-md bg-slate-900/70 ring-1 ring-slate-800 transition hover:ring-sky-600"
+                >
+                  {#if p.thumbnailUrl}
+                    <div class="relative aspect-video w-full overflow-hidden bg-slate-950">
+                      <img
+                        src={p.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        class="size-full object-cover transition group-hover:scale-105"
+                      />
+                      <span class="absolute left-1 top-1 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-bold uppercase text-white">
+                        Live
+                      </span>
+                      <span class="absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-slate-950/80 px-1 py-0.5 text-[9px] text-slate-200">
+                        <Eye class="size-2.5" />
+                        {formatCompact(p.viewersCount)}
+                      </span>
+                    </div>
+                  {:else}
+                    {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+                    <div
+                      class="flex aspect-video w-full items-center justify-center bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-base font-semibold text-white/90"
+                    >
+                      {av.initials}
+                    </div>
+                  {/if}
+                  <div class="p-1.5">
+                    <p class="line-clamp-2 text-[11px] font-medium leading-tight text-slate-100">
+                      {p.title}
+                    </p>
+                    <p class="mt-0.5 truncate text-[9px] text-slate-400">{p.authorDisplayName}</p>
+                  </div>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if trending.length > 0}
+          <div class="mb-1 flex items-center justify-between">
+            <h3 class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+              <Flame class="size-3" /> Trending
+            </h3>
+            <button
+              type="button"
+              onclick={() => selectTab('discover')}
+              class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500 transition hover:text-slate-200"
+            >
+              View all <ChevronRight class="size-3" />
+            </button>
+          </div>
+          <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {#each trending as p (p.uid)}
+              <li>
+                <a
+                  href={postHref(p)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="group flex gap-2 rounded-md bg-slate-900/70 p-2 ring-1 ring-slate-800 transition hover:ring-sky-600"
+                >
+                  {#if p.thumbnailUrl}
+                    <div class="relative size-16 shrink-0 overflow-hidden rounded bg-slate-950">
+                      <img
+                        src={p.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        class="size-full object-cover transition group-hover:scale-105"
+                      />
+                      <span class="absolute left-1 top-1 rounded bg-slate-950/80 px-1 py-0.5 text-[8px] font-bold uppercase text-slate-300">
+                        {p.type}
+                      </span>
+                    </div>
+                  {:else}
+                    {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+                    <div
+                      class="flex size-16 shrink-0 items-center justify-center rounded bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-sm font-semibold text-white/90"
+                    >
+                      {av.initials}
+                    </div>
+                  {/if}
+                  <div class="min-w-0 flex-1">
+                    <p class="line-clamp-2 text-xs font-medium text-slate-100">{p.title}</p>
+                    <p class="mt-0.5 truncate text-[10px] text-slate-400">{p.authorDisplayName}</p>
+                    <p class="mt-0.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                      <span class="flex items-center gap-0.5">
+                        <Heart class="size-3" />
+                        {p.votesCount}
+                      </span>
+                      <span class="flex items-center gap-0.5">
+                        <MessageCircle class="size-3" />
+                        {p.commentsCount}
+                      </span>
+                      <span>· {timeAgo(p.createdAt)}</span>
+                    </p>
+                  </div>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
     {:else if tabP.value === 'live'}
       {#if live.length === 0 && followed.length === 0}
         <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
@@ -358,8 +583,11 @@
                     </span>
                   </div>
                 {:else}
-                  <div class="flex size-16 shrink-0 items-center justify-center rounded bg-slate-950 text-slate-700">
-                    <UserRound class="size-5" />
+                  {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+                  <div
+                    class="flex size-16 shrink-0 items-center justify-center rounded bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-sm font-semibold text-white/90"
+                  >
+                    {av.initials}
                   </div>
                 {/if}
                 <div class="min-w-0 flex-1">
@@ -523,8 +751,11 @@
                     </span>
                   </div>
                 {:else}
-                  <div class="flex size-16 shrink-0 items-center justify-center rounded bg-slate-950 text-slate-700">
-                    <UserRound class="size-5" />
+                  {@const av = avatarFallback(p.authorDisplayName, p.authorNickname)}
+                  <div
+                    class="flex size-16 shrink-0 items-center justify-center rounded bg-gradient-to-br {av.gradientFrom} {av.gradientTo} text-sm font-semibold text-white/90"
+                  >
+                    {av.initials}
                   </div>
                 {/if}
                 <div class="min-w-0 flex-1">
