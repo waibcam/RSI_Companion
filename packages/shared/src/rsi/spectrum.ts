@@ -897,6 +897,127 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
   };
 }
 
+// --- Forum search (Phase 2d) --------------------------------------------
+//
+// `search/content/simple` runs an Elasticsearch query across forum
+// thread OPs (and, presumably, replies + messages — but the live probe
+// only returned `tavern_forum_thread_op` hits for typical queries, so
+// the MVP focuses on threads). Body shape:
+//
+//   { text, type: 'all', community_id?: string }
+//
+// Only `type: 'all'` is accepted by the live API right now (other
+// values like 'thread' / 'lobby' fail validation). The response is the
+// raw Elasticsearch envelope: data.hits.hits[] with _index + _id +
+// _score + _source carrying body, subject, channel_id, thread_id,
+// member_id, votes, etc.
+
+const RawSearchHit = z
+  .object({
+    _index: z.string().default(''),
+    _id: z.string().default(''),
+    _score: z.coerce.number().default(0),
+    _source: z
+      .object({
+        body: z.string().default(''),
+        subject: z.string().default(''),
+        time_created: z.coerce.number().int().default(0),
+        community_id: z.coerce.number().int().default(0),
+        channel_id: z.coerce.number().int().default(0),
+        thread_id: z.coerce.number().int().default(0),
+        member_id: z.coerce.number().int().default(0),
+        highlight_role_id: z.coerce.number().int().nullable().optional(),
+      })
+      .passthrough()
+      .nullable()
+      .optional(),
+  })
+  .passthrough();
+
+const SearchResponse = z.object({
+  success: z.number().int(),
+  code: z.string().nullable().optional(),
+  data: z
+    .object({
+      hits: z
+        .object({
+          hits: z.array(RawSearchHit).default([]),
+          total: z
+            .union([
+              z.number(),
+              z.object({ value: z.number().default(0) }).passthrough(),
+            ])
+            .nullable()
+            .optional(),
+        })
+        .nullable()
+        .optional(),
+    })
+    .nullable()
+    .optional(),
+});
+
+export interface SpectrumSearchHit {
+  /** "thread" for forum thread OPs, "reply" for thread replies,
+   *  "message" for chat — derived from the underlying _index name. */
+  kind: 'thread' | 'reply' | 'message' | 'unknown';
+  id: string;
+  score: number;
+  /** OP body for threads, content for replies/messages. */
+  body: string;
+  /** Thread subject (only meaningful for kind === 'thread'). */
+  subject: string;
+  timeCreated: number;
+  communityId: number;
+  channelId: number;
+  threadId: number;
+  authorId: number;
+  isCigHighlighted: boolean;
+}
+
+function classifyHitKind(index: string): SpectrumSearchHit['kind'] {
+  if (index.includes('forum_thread_op')) return 'thread';
+  if (index.includes('forum_reply') || index.includes('forum_thread_reply')) return 'reply';
+  if (index.includes('message')) return 'message';
+  return 'unknown';
+}
+
+export async function fetchSpectrumContentSearch(
+  token: string,
+  args: { text: string; communityId?: number },
+): Promise<SpectrumSearchHit[]> {
+  const trimmed = args.text.trim();
+  if (!trimmed) return [];
+  const body: Record<string, unknown> = { text: trimmed, type: 'all' };
+  if (args.communityId) body.community_id = String(args.communityId);
+  const response = await spectrumPost(token, '/api/spectrum/search/content/simple', body);
+  assertRsiOk(response, 'search/content/simple');
+  const raw = (await response.json()) as unknown;
+  const parsed = SearchResponse.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(`search/content/simple: unexpected shape (${parsed.error.message})`);
+  }
+  if (parsed.data.success !== 1) {
+    throw new Error(`search/content/simple returned ${parsed.data.code ?? 'unknown'}`);
+  }
+  return (parsed.data.data?.hits?.hits ?? []).map((h) => {
+    const s = h._source;
+    return {
+      kind: classifyHitKind(h._index),
+      id: h._id,
+      score: h._score,
+      body: s?.body ?? '',
+      subject: s?.subject ?? '',
+      timeCreated: s?.time_created ?? 0,
+      communityId: s?.community_id ?? 0,
+      channelId: s?.channel_id ?? 0,
+      threadId: s?.thread_id ?? 0,
+      authorId: s?.member_id ?? 0,
+      isCigHighlighted: Number(s?.highlight_role_id ?? 0) === 2,
+    };
+  });
+}
+
 // --- Lobby messages (Phase 5) -------------------------------------------
 //
 // `message/history` returns paginated chat for any lobby (DM, private

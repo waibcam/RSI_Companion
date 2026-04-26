@@ -44,6 +44,7 @@
   type ContentBlock = Rsi.SpectrumContentBlock;
   type ContentSegment = Rsi.SpectrumContentSegment;
   type Message = Rsi.SpectrumMessage;
+  type SearchHit = Rsi.SpectrumSearchHit;
   // "devtracker" is the renamed "activity" tab — the underlying data is the
   // CIG-highlighted threads aggregate, which is exactly what RSI calls the
   // Dev Tracker. The old id is kept as the default so existing localStorage
@@ -273,6 +274,15 @@
   let lobbyMessagesFromCache = $state(false);
   let lobbyMessagesForLobby = $state<number | null>(null);
 
+  // Forum content search state. Live fires when the user types in the
+  // Forums channel-list filter input — channels filter immediately
+  // client-side, AND a debounced server search runs for queries with
+  // 3+ chars so threads come up too.
+  let searchHits = $state<SearchHit[]>([]);
+  let searchLoading = $state(false);
+  let searchError = $state<string | null>(null);
+  let searchedFor = $state<string>('');
+
   // Community switcher (joined SC + orgs). Loaded lazily on first
   // Forums-tab visit so users who never open Forums don't pay for
   // the v2/community/list call.
@@ -399,6 +409,51 @@
     }
   }
 
+  async function runForumSearch(text: string) {
+    searchLoading = true;
+    searchError = null;
+    try {
+      const res = await sendRsiMessage({
+        type: 'spectrum.search',
+        text,
+        communityId: forumCommunityP.value,
+      });
+      // Stale-response guard against rapid typing.
+      if (text !== query.trim()) return;
+      searchHits = res.hits;
+      searchedFor = text;
+    } catch (e) {
+      if (text !== query.trim()) return;
+      searchError = errorMessage(e);
+    } finally {
+      if (text === query.trim()) searchLoading = false;
+    }
+  }
+
+  // Debounced search trigger — fires on the Forums channel-list view
+  // when the query is 3+ chars. Ignores leading/trailing whitespace
+  // and avoids re-running for the same string. Channel filter (which
+  // operates on the same `query`) keeps running immediately client-side
+  // via $derived, untouched by this effect.
+  $effect(() => {
+    if (tab !== 'forums') return;
+    if (forumChannelP.value != null || forumThreadP.value != null) return;
+    const q = query.trim();
+    if (q.length < 3) {
+      if (searchHits.length > 0 || searchedFor) {
+        searchHits = [];
+        searchedFor = '';
+        searchError = null;
+      }
+      return;
+    }
+    if (q === searchedFor) return;
+    const handle = setTimeout(() => {
+      void runForumSearch(q);
+    }, 500);
+    return () => clearTimeout(handle);
+  });
+
   async function loadCommunities(force = false) {
     communitiesLoading = true;
     communitiesError = null;
@@ -510,6 +565,29 @@
     const id = dmLobbyP.value;
     if (id == null) return null;
     return lobbies.find((l) => l.id === id) ?? null;
+  });
+
+  // Auto-poll messages every 30s while the user has a lobby open
+  // on the DMs tab. We force-refresh (bypass cache) so the timer
+  // beats the LIVE_TTL — without this the user would have to hit
+  // the refresh button manually to see new chat. WebSocket is
+  // still TBD (Phase 5+); polling is the dumb-but-fine MVP.
+  let chatPollerActive = $state(false);
+  $effect(() => {
+    if (tab !== 'dms') return;
+    const lobbyId = dmLobbyP.value;
+    if (lobbyId == null) return;
+    chatPollerActive = true;
+    const interval = setInterval(() => {
+      // Re-check inside the tick — the user may have switched tabs
+      // or backed out of the lobby between polls; bail if so.
+      if (tabP.value !== 'dms' || dmLobbyP.value !== lobbyId) return;
+      void loadLobbyMessages(lobbyId, true);
+    }, 30_000);
+    return () => {
+      clearInterval(interval);
+      chatPollerActive = false;
+    };
   });
 
   async function loadThreadDetail(slug: string, force = false) {
@@ -775,6 +853,18 @@
             ? forumThreadsFromCache
             : forumGroupsFromCache)),
   );
+
+  /** Forum threads view: surface pinned threads at the top of the
+   *  list while preserving the server's order within each tier. */
+  const sortedForumThreads = $derived.by<Thread[]>(() => {
+    const pinned: Thread[] = [];
+    const rest: Thread[] = [];
+    for (const t of forumThreads) {
+      if (t.isPinned) pinned.push(t);
+      else rest.push(t);
+    }
+    return [...pinned, ...rest];
+  });
 
   const filteredBookmarks = $derived.by<BookmarkItem[]>(() => {
     const q = query.trim().toLowerCase();
@@ -1189,6 +1279,13 @@
         </button>
         <p class="line-clamp-1 flex-1 text-xs font-semibold text-slate-100">
           {lobby?.name ?? 'Lobby'}
+          {#if chatPollerActive}
+            <span
+              class="ml-1 inline-flex size-1.5 animate-pulse rounded-full bg-emerald-400 align-middle"
+              title="Auto-refreshing every 30 seconds"
+              aria-label="live"
+            ></span>
+          {/if}
         </p>
         {#if lobby?.url}
           <a
@@ -1713,6 +1810,59 @@
     </div>
   {/snippet}
 
+  {#snippet searchHitCard(h: SearchHit)}
+    {@const channel = (() => {
+      for (const g of forumGroups) {
+        const found = g.channels.find((c) => c.id === h.channelId);
+        if (found) return found;
+      }
+      return null;
+    })()}
+    {@const url = channel
+      ? `${RSI_BASE_URL}/spectrum/community/${channel.communitySlug}/forum/${channel.id}/thread/${h.threadId}`
+      : `${RSI_BASE_URL}/spectrum/`}
+    <li>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="group flex flex-col gap-0.5 rounded-md bg-slate-900/50 p-2 ring-1 ring-slate-800 transition hover:bg-slate-900 hover:ring-teal-600"
+        style:border-left="3px solid {h.isCigHighlighted ? 'rgb(191, 167, 57)' : channel?.color || '#475569'}"
+      >
+        <div class="flex flex-wrap items-center gap-1.5">
+          {#if h.isCigHighlighted}
+            <span
+              class="rounded px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider"
+              style:background-color="rgba(191, 167, 57, 0.25)"
+              style:color="rgb(255, 230, 130)"
+            >
+              cig
+            </span>
+          {/if}
+          {#if channel}
+            <span
+              class="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+              style:background-color="{channel.color || '#475569'}33"
+              style:color={channel.color || '#cbd5e1'}
+            >
+              {channel.name}
+            </span>
+          {/if}
+          <span class="ml-auto text-[9px] text-slate-500">{timeAgo(h.timeCreated)}</span>
+        </div>
+        <p
+          class="line-clamp-1 text-xs font-medium group-hover:text-teal-200"
+          style:color={h.isCigHighlighted ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
+        >
+          {h.subject || '(no subject)'}
+        </p>
+        {#if h.body}
+          <p class="line-clamp-2 text-[10px] leading-snug text-slate-400">{h.body}</p>
+        {/if}
+      </a>
+    </li>
+  {/snippet}
+
   {#snippet forumChannelCard(ch: ForumChannelInfo)}
     {@const stripe = ch.color || '#475569'}
     <li class="virt-item">
@@ -1832,10 +1982,36 @@
             {/each}
           </div>
 
-          {#if filteredForumChannels.length === 0}
+          {#if filteredForumChannels.length === 0 && searchHits.length === 0 && !searchLoading}
             <p class="mt-6 text-center text-xs italic text-slate-500">
               No channels match your filter.
             </p>
+          {/if}
+
+          {#if query.trim().length >= 3}
+            <div class="mt-4">
+              <h3 class="mb-1 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-teal-400">
+                Search results
+                {#if searchLoading}
+                  <Loader2 class="size-3 animate-spin" />
+                {:else if searchHits.length > 0}
+                  <span class="text-slate-500">({searchHits.length})</span>
+                {/if}
+              </h3>
+              {#if searchError}
+                {@render errorBlock('Search failed', searchError)}
+              {:else if !searchLoading && searchedFor && searchHits.length === 0}
+                <p class="text-center text-xs italic text-slate-500">
+                  No threads matched "{searchedFor}".
+                </p>
+              {:else if searchHits.length > 0}
+                <ul class="flex flex-col gap-1">
+                  {#each searchHits as h (`${h.kind}:${h.id}`)}
+                    {@render searchHitCard(h)}
+                  {/each}
+                </ul>
+              {/if}
+            </div>
           {/if}
         {/if}
       {:else}
@@ -1888,7 +2064,7 @@
             {@render emptyState(LayoutGrid, 'No threads in this channel yet.')}
           {:else}
             <ul class="flex flex-col gap-1">
-              {#each forumThreads as t (t.id)}
+              {#each sortedForumThreads as t (t.id)}
                 {@render threadCard(t, selectThread)}
               {/each}
             </ul>

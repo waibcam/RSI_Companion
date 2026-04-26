@@ -47,6 +47,7 @@ import type {
   SpectrumLobby,
   SpectrumMessage,
   SpectrumNotification,
+  SpectrumSearchHit,
   SpectrumSort,
   SpectrumThread,
   SpectrumThreadDetail,
@@ -334,6 +335,18 @@ export interface SpectrumForumGroupsResponsePayload {
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
+}
+
+export interface SpectrumSearchRequest {
+  type: 'spectrum.search';
+  text: string;
+  /** Defaults to SC (1) when omitted. */
+  communityId?: number;
+}
+export interface SpectrumSearchResponsePayload {
+  hits: SpectrumSearchHit[];
+  signedIn: boolean;
+  fetchedAt: number;
 }
 
 export interface SpectrumLobbyMessagesRequest {
@@ -1037,6 +1050,7 @@ export type RsiMessage =
   | SpectrumMarkReadRequest
   | SpectrumLobbiesRequest
   | SpectrumLobbyMessagesRequest
+  | SpectrumSearchRequest
   | SpectrumCommunitiesRequest
   | SpectrumBookmarksRequest
   | SpectrumBookmarkAddRequest
@@ -1109,6 +1123,7 @@ interface ResponseMap {
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
+  'spectrum.search': SpectrumSearchResponsePayload;
   'spectrum.communities': SpectrumCommunitiesResponsePayload;
   'spectrum.bookmarks': SpectrumBookmarksResponsePayload;
   'spectrum.bookmarkAdd': SpectrumBookmarkAddResponsePayload;

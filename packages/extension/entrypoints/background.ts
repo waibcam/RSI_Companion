@@ -2014,6 +2014,22 @@ async function handleSpectrumTrending(force: boolean) {
 // can sit on a longer TTL than threads. Threads cache per (channel, sort)
 // combo so switching sort buckets doesn't fight a single cached entry.
 
+async function handleSpectrumSearch(message: { text: string; communityId?: number }) {
+  const token = await Rsi.readRsiToken();
+  if (!token) {
+    return { hits: [], signedIn: false, fetchedAt: Date.now() } as const;
+  }
+  // Search results aren't cached — every query is unique and the cost
+  // is small, so the freshness/space trade-off favours always going to
+  // the network. The server enforces a throttle limit per IP, which
+  // we surface as an error in the UI.
+  const hits = await Rsi.fetchSpectrumContentSearch(token, {
+    text: message.text,
+    communityId: message.communityId,
+  });
+  return { hits, signedIn: true as const, fetchedAt: Date.now() };
+}
+
 async function handleSpectrumLobbyMessages(message: {
   lobbyId: number;
   before?: number;
@@ -2774,6 +2790,14 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
             after: message.after,
             size: message.size,
             force: message.force ?? false,
+          }),
+        };
+      case 'spectrum.search':
+        return {
+          ok: true,
+          data: await handleSpectrumSearch({
+            text: message.text,
+            communityId: message.communityId,
           }),
         };
       case 'spectrum.communities':
