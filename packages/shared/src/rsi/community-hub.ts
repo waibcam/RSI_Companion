@@ -148,6 +148,18 @@ const ApolloPost = z
   })
   .passthrough();
 
+/**
+ * RSI post URLs are `/community-hub/post/{slug}-{uid}` where `uid` is the
+ * Apollo cache identifier (e.g. `idrMZOEZR5iqm`). We used to build
+ * `/community-hub/user/{nickname}/post/{slug}` — that path 404s now (RSI
+ * collapsed the per-user routes during the late-2025 hub rework). Exported
+ * for unit testing; not part of the public surface.
+ */
+export function buildCommunityHubPostUrl(slug: string, uid: string): string {
+  if (!slug || !uid) return '';
+  return `${RSI_BASE_URL}/community-hub/post/${slug}-${uid}`;
+}
+
 function resolveRef<T>(
   state: Record<string, unknown>,
   ref: string | undefined,
@@ -215,7 +227,7 @@ function extractPosts(
         summary: p.summary,
         thumbnailUrl: p.thumbnailUrl ?? null,
         membershipUrl: p.membershipUrl ?? null,
-        url: nickname ? `${RSI_BASE_URL}/community-hub/user/${nickname}/post/${p.slug}` : '',
+        url: buildCommunityHubPostUrl(p.slug, p.uid),
         createdAt: p.createdAt,
         votesCount: p.votesCount,
         commentsCount: p.commentsCount,
