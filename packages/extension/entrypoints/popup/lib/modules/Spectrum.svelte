@@ -9,6 +9,7 @@
     BookmarkPlus,
     BookmarkX,
     CheckCheck,
+    ChevronDown,
     ChevronRight,
     Code2,
     FileText,
@@ -249,6 +250,17 @@
   let threadDetailError = $state<string | null>(null);
   let threadDetailFromCache = $state(false);
   let threadDetailForSlug = $state<string | null>(null);
+  // Reply ids whose nested children are currently expanded.
+  // Children are hidden by default to keep the long-thread view
+  // skim-friendly; user clicks the chevron on a reply to expand.
+  let expandedReplies = $state(new Set<number>());
+
+  function toggleReplyExpansion(id: number) {
+    const next = new Set(expandedReplies);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    expandedReplies = next;
+  }
 
   // Lobby messages state (Phase 5). Loaded when dmLobbyP.value is
   // set; we always render newest-at-bottom (chat-app orientation),
@@ -524,6 +536,7 @@
     threadDetail = null;
     threadDetailForSlug = null;
     threadDetailError = null;
+    expandedReplies = new Set();
     loadThreadDetail(t.slug);
     // Lazy-load bookmarks if we don't have them yet — drives the
     // toggle button's "is this bookmarked" state in the thread header.
@@ -573,6 +586,7 @@
     threadDetail = null;
     threadDetailForSlug = null;
     threadDetailError = null;
+    expandedReplies = new Set();
   }
 
   function selectCommunity(communityId: number) {
@@ -1367,8 +1381,17 @@
     {/each}
   {/snippet}
 
-  {#snippet threadReplyCard(r: ThreadReply)}
-    <li class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800">
+  {#snippet threadReplyCard(r: ThreadReply, level: number = 0)}
+    {@const expanded = expandedReplies.has(r.id)}
+    {@const hasInlineChildren = r.replies.length > 0}
+    <!-- Nested replies indent via padding-left so the cards keep
+         their full ring on every level. Cap visual depth at 4 nest
+         levels — beyond that the popup gets too cramped, and the
+         user can keep clicking "open in Spectrum" for full threads. -->
+    <li
+      class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800"
+      style:margin-left="{Math.min(level, 4) * 0.75}rem"
+    >
       <div class="mb-1 flex items-center gap-2">
         {@render avatar(avatarUrl(r.authorAvatar), r.authorDisplayName, r.authorNickname, 'size-7')}
         <div class="min-w-0 flex-1">
@@ -1377,6 +1400,26 @@
           </p>
           <p class="text-[9px] text-slate-500">{timeAgo(r.timeCreated)}</p>
         </div>
+        {#if r.repliesCount > 0}
+          <button
+            type="button"
+            onclick={() => toggleReplyExpansion(r.id)}
+            disabled={!hasInlineChildren}
+            class="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-slate-500 transition hover:bg-slate-800 hover:text-teal-300 disabled:cursor-not-allowed disabled:opacity-50"
+            title={hasInlineChildren
+              ? expanded
+                ? 'Hide replies'
+                : `Show ${r.replies.length} of ${r.repliesCount} replies`
+              : 'Open in Spectrum to read replies'}
+          >
+            {#if expanded}
+              <ChevronDown class="size-3" />
+            {:else}
+              <ChevronRight class="size-3" />
+            {/if}
+            {r.repliesCount}
+          </button>
+        {/if}
       </div>
       {#if r.isErased}
         <p class="text-[11px] italic text-slate-500">[erased]</p>
@@ -1385,10 +1428,19 @@
           {@render contentBlocks(r.contentBlocks)}
         </div>
       {/if}
-      {#if r.repliesCount > 0}
-        <p class="mt-1.5 text-[9px] italic text-slate-500">
-          {r.repliesCount}{' '}{r.repliesCount === 1 ? 'reply' : 'replies'} — open on Spectrum to read
-        </p>
+      {#if expanded && hasInlineChildren}
+        <ul class="mt-2 flex flex-col gap-1">
+          {#each r.replies as child (child.id)}
+            {@render threadReplyCard(child, level + 1)}
+          {/each}
+        </ul>
+        {#if r.repliesCount > r.replies.length}
+          <p class="mt-1 text-[9px] italic text-slate-500">
+            {r.repliesCount - r.replies.length} more reply{r.repliesCount - r.replies.length === 1
+              ? ''
+              : 'ies'} on Spectrum
+          </p>
+        {/if}
       {/if}
     </li>
   {/snippet}

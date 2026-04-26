@@ -505,18 +505,50 @@ const RawThreadMember = z
   })
   .passthrough();
 
-const RawThreadReply = z
-  .object({
-    id: z.coerce.number().int(),
-    thread_id: z.coerce.number().int().default(0),
-    time_created: z.coerce.number().int().default(0),
-    time_modified: z.coerce.number().int().default(0),
-    member: RawThreadMember.nullable().optional(),
-    content_blocks: z.array(RawContentWrapper).default([]),
-    replies_count: z.coerce.number().int().default(0),
-    is_erased: z.boolean().default(false),
-  })
-  .passthrough();
+// Self-referential — every reply can carry up to ~5 child replies
+// inline (deeper nesting is paginated via forum/thread/reply/childrens
+// which we don't expose yet). The output shape (after parsing) has
+// concrete numbers thanks to .default(0); the input shape allows the
+// fields to be missing. z.lazy() handles the recursion.
+type RawThreadReplyOutput = {
+  id: number;
+  thread_id: number;
+  time_created: number;
+  time_modified: number;
+  member?: z.infer<typeof RawThreadMember> | null;
+  content_blocks: z.infer<typeof RawContentWrapper>[];
+  replies_count: number;
+  is_erased: boolean;
+  replies: RawThreadReplyOutput[];
+};
+type RawThreadReplyInput = {
+  id: number | string;
+  thread_id?: number | string;
+  time_created?: number | string;
+  time_modified?: number | string;
+  member?: z.input<typeof RawThreadMember> | null;
+  content_blocks?: z.input<typeof RawContentWrapper>[];
+  replies_count?: number | string;
+  is_erased?: boolean;
+  replies?: RawThreadReplyInput[];
+  [k: string]: unknown;
+};
+const RawThreadReply: z.ZodType<RawThreadReplyOutput, z.ZodTypeDef, RawThreadReplyInput> = z.lazy(
+  () =>
+    z
+      .object({
+        id: z.coerce.number().int(),
+        thread_id: z.coerce.number().int().default(0),
+        time_created: z.coerce.number().int().default(0),
+        time_modified: z.coerce.number().int().default(0),
+        member: RawThreadMember.nullable().optional(),
+        content_blocks: z.array(RawContentWrapper).default([]),
+        replies_count: z.coerce.number().int().default(0),
+        is_erased: z.boolean().default(false),
+        replies: z.array(RawThreadReply).default([]),
+      })
+      .passthrough(),
+);
 
 const RawThreadDetail = z
   .object({
@@ -568,8 +600,15 @@ export interface SpectrumThreadReply {
   authorDisplayName: string;
   authorAvatar: string | null;
   contentBlocks: SpectrumContentBlock[];
+  /** Total number of nested replies according to the server. May
+   *  be larger than `replies.length` — the API embeds at most ~5
+   *  children per parent and the rest live behind
+   *  forum/thread/reply/childrens (TBD). */
   repliesCount: number;
   isErased: boolean;
+  /** Inline-embedded children. Recurses to whatever depth the
+   *  server returned. */
+  replies: SpectrumThreadReply[];
 }
 
 export interface SpectrumThreadDetail {
@@ -681,21 +720,24 @@ export async function fetchSpectrumThreadDetail(
     contentBlocks: normalizeContentBlocks(t.content_blocks),
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
-    replies: t.replies.map((r) => {
-      const ra = normalizeThreadMember(r.member);
-      return {
-        id: r.id,
-        threadId: r.thread_id,
-        timeCreated: r.time_created,
-        timeModified: r.time_modified,
-        authorNickname: ra.nickname,
-        authorDisplayName: ra.displayName,
-        authorAvatar: ra.avatar,
-        contentBlocks: normalizeContentBlocks(r.content_blocks),
-        repliesCount: r.replies_count,
-        isErased: r.is_erased,
-      };
-    }),
+    replies: t.replies.map(normalizeReply),
+  };
+}
+
+function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
+  const ra = normalizeThreadMember(r.member);
+  return {
+    id: r.id,
+    threadId: r.thread_id,
+    timeCreated: r.time_created,
+    timeModified: r.time_modified,
+    authorNickname: ra.nickname,
+    authorDisplayName: ra.displayName,
+    authorAvatar: ra.avatar,
+    contentBlocks: normalizeContentBlocks(r.content_blocks),
+    repliesCount: r.replies_count,
+    isErased: r.is_erased,
+    replies: (r.replies ?? []).map(normalizeReply),
   };
 }
 

@@ -107,8 +107,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:bookmarks': 1,
   // v2: content_blocks normalizer was unwrapping wrong (ignored the
   // {type:'text', data:{blocks}} wrapper layer), so cached entries
-  // had empty/wrong content. Bumped to invalidate.
-  'spectrum:threadDetail': 2,
+  // had empty/wrong content. v3: SpectrumThreadReply gained a
+  // recursive `replies` field for inline-embedded children — old
+  // entries don't have it and the expand-replies UI would render
+  // empty children for already-cached threads.
+  'spectrum:threadDetail': 3,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
