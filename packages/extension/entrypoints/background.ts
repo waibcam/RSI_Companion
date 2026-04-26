@@ -102,7 +102,8 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   'spectrum:trending': 1,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
-  'spectrum:lobbyMessages': 1,
+  // v2: every message gained `authorIsStaff` for the CIG gold tint.
+  'spectrum:lobbyMessages': 2,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
   // v2: content_blocks normalizer was unwrapping wrong (ignored the
@@ -110,16 +111,21 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // had empty/wrong content. v3: SpectrumThreadReply gained a
   // recursive `replies` field for inline-embedded children — old
   // entries don't have it and the expand-replies UI would render
-  // empty children for already-cached threads.
-  'spectrum:threadDetail': 3,
+  // empty children for already-cached threads. v4: every reply +
+  // OP gained `authorIsStaff` so the gold-tint rendering kicks in
+  // for CIG posts.
+  'spectrum:threadDetail': 4,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
   // first boot — fine, they expire on their own LIVE/ACCOUNT TTL.
   // v3 (groups only): the org-community channels were silently empty
   // because we only called group/list and assumed embedded channels.
-  // Bumped to invalidate the bad-shape entries.
-  'spectrum:forumGroups': 3,
+  // v4: ditched the v2 fallback entirely — identify carries org
+  // forum data when called from an authenticated session, and v2
+  // returned empty in the extension's auth context. Bumped to
+  // invalidate the still-empty entries from v3.
+  'spectrum:forumGroups': 4,
   'spectrum:forumThreads': 2,
   'status:summary': 1,
 };
@@ -2183,47 +2189,16 @@ async function handleSpectrumForumGroups(communityId: number, force: boolean) {
     if (cached) return { ...cached, communityId, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
-    let groups: Rsi.SpectrumForumGroup[];
-    if (communityId === 1) {
-      // SC: identify already carries the structure; no extra HTTP.
-      groups = await Rsi.fetchSpectrumForumGroups();
-    } else {
-      // Org community: needs a v2/forum/channel/group/list call. Look
-      // up the community slug from the cached list first (used as
-      // SpectrumChannel.communitySlug for thread URL construction).
-      const list = await getCachedSpectrumCommunities(token);
-      const community = list.find((c) => c.id === communityId);
-      if (!community) {
-        throw new Error(
-          `community ${communityId} not in joined list — refresh communities or rejoin the org on Spectrum`,
-        );
-      }
-      groups = await Rsi.fetchSpectrumOrgForumGroups(token, {
-        id: community.id,
-        slug: community.slug,
-      });
-    }
+    // Identify carries the forum tree for every community the user
+    // belongs to (SC + joined orgs). No need for v2/forum/channel/list
+    // — that endpoint returned empty for orgs in the extension's auth
+    // context anyway. The fetcher throws a clear error if the community
+    // isn't in identify, which the popup surfaces inline.
+    const groups = await Rsi.fetchSpectrumForumGroups(communityId);
     const fetchedAt = Date.now();
     await cacheSet(key, { groups, fetchedAt }, TTL.spectrum);
     return { groups, communityId, signedIn: true as const, fetchedAt, fromCache: false };
   });
-}
-
-/** Pull the list of joined communities, refreshing if it isn't already
- *  cached. Used by the forumGroups handler to resolve org community
- *  slugs without forcing the UI to pre-load the list. */
-async function getCachedSpectrumCommunities(token: string): Promise<Rsi.SpectrumCommunity[]> {
-  const cached = await cacheGet<{ communities: Rsi.SpectrumCommunity[]; fetchedAt: number }>(
-    'spectrum:communities',
-  );
-  if (cached) return cached.communities;
-  const fresh = await Rsi.fetchSpectrumCommunities(token);
-  await cacheSet(
-    'spectrum:communities',
-    { communities: fresh, fetchedAt: Date.now() },
-    TTL.spectrum,
-  );
-  return fresh;
 }
 
 async function handleSpectrumForumThreads(message: {

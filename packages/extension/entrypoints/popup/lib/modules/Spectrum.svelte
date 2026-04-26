@@ -1103,15 +1103,30 @@
   {/snippet}
 
   {#snippet messageCard(m: Message)}
-    <li class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800">
+    <!-- Staff messages (member.isGM === true) get the CIG gold tint
+         that matches the official Spectrum site. The is_highlighted
+         flag (per-message highlight, not per-author) gets the same
+         treatment since both signals mean "this came from staff". -->
+    {@const goldAccent = m.authorIsStaff || m.isHighlighted}
+    <li
+      class="rounded-md p-2 ring-1 {goldAccent
+        ? 'ring-[rgba(191,167,57,0.4)]'
+        : 'bg-slate-900/40 ring-slate-800'}"
+      style:background-color={goldAccent ? 'rgba(191, 167, 57, 0.12)' : ''}
+      style:border-left={goldAccent ? '3px solid rgb(191, 167, 57)' : ''}
+    >
       <div class="mb-1 flex items-center gap-2">
         {@render avatar(avatarUrl(m.authorAvatar), m.authorDisplayName, m.authorNickname, 'size-7')}
         <div class="min-w-0 flex-1">
           <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
             {m.authorDisplayName || m.authorNickname || 'Unknown'}
-            {#if m.isHighlighted}
-              <span class="ml-1 rounded bg-sky-500/25 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-sky-200">
-                staff
+            {#if goldAccent}
+              <span
+                class="ml-1 rounded px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider"
+                style:background-color="rgba(191, 167, 57, 0.25)"
+                style:color="rgb(255, 230, 130)"
+              >
+                cig
               </span>
             {/if}
           </p>
@@ -1387,16 +1402,32 @@
     <!-- Nested replies indent via padding-left so the cards keep
          their full ring on every level. Cap visual depth at 4 nest
          levels — beyond that the popup gets too cramped, and the
-         user can keep clicking "open in Spectrum" for full threads. -->
+         user can keep clicking "open in Spectrum" for full threads.
+         CIG-staff replies get the official gold accent
+         (rgb(191,167,57)) — bg tint + 3px left stripe — to match
+         how the Spectrum site flags staff posts. -->
     <li
-      class="rounded-md bg-slate-900/40 p-2 ring-1 ring-slate-800"
+      class="rounded-md p-2 ring-1 {r.authorIsStaff
+        ? 'ring-[rgba(191,167,57,0.4)]'
+        : 'bg-slate-900/40 ring-slate-800'}"
       style:margin-left="{Math.min(level, 4) * 0.75}rem"
+      style:background-color={r.authorIsStaff ? 'rgba(191, 167, 57, 0.12)' : ''}
+      style:border-left={r.authorIsStaff ? '3px solid rgb(191, 167, 57)' : ''}
     >
       <div class="mb-1 flex items-center gap-2">
         {@render avatar(avatarUrl(r.authorAvatar), r.authorDisplayName, r.authorNickname, 'size-7')}
         <div class="min-w-0 flex-1">
           <p class="line-clamp-1 text-[11px] font-medium text-slate-100">
             {r.authorDisplayName || r.authorNickname || 'Unknown'}
+            {#if r.authorIsStaff}
+              <span
+                class="ml-1 rounded px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider"
+                style:background-color="rgba(191, 167, 57, 0.25)"
+                style:color="rgb(255, 230, 130)"
+              >
+                cig
+              </span>
+            {/if}
           </p>
           <p class="text-[9px] text-slate-500">{timeAgo(r.timeCreated)}</p>
         </div>
@@ -1513,10 +1544,16 @@
       {:else if !detail}
         {@render emptyState(FileText, 'Thread not found.')}
       {:else}
-        <!-- OP card: subject, author header, content blocks, stats. -->
+        <!-- OP card: subject, author header, content blocks, stats.
+             CIG-staff OPs get a subtle gold background tint stacked on
+             top of the channel-coloured stripe — keeps the channel
+             identity visible while flagging the staff origin. -->
         <article
-          class="rounded-md bg-slate-900/70 p-3 ring-1 ring-slate-800"
+          class="rounded-md p-3 ring-1 {detail.authorIsStaff
+            ? 'ring-[rgba(191,167,57,0.4)]'
+            : 'bg-slate-900/70 ring-slate-800'}"
           style:border-left="3px solid {stripe}"
+          style:background-color={detail.authorIsStaff ? 'rgba(191, 167, 57, 0.12)' : ''}
         >
           <h2 class="text-sm font-semibold leading-tight text-slate-100">
             {#if detail.isPinned}

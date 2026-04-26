@@ -107,20 +107,26 @@ export interface SpectrumForumGroup {
   channels: SpectrumForumChannelInfo[];
 }
 
-/** All forum channel groups for the Star Citizen community, with their
- *  channels expanded inline. The shape is read straight from
- *  `auth/identify.communities[0].forum_channel_groups` — no extra HTTP
- *  call, since identify is called for every other Spectrum tab anyway
- *  and its response is cached at the chrome.cookies layer.
- *
- *  For org communities (Phase 3), use `fetchSpectrumOrgForumGroups`
- *  with the org's community id — those don't ride along on identify
- *  and need a dedicated `v2/forum/channel/group/list` call. */
-export async function fetchSpectrumForumGroups(): Promise<SpectrumForumGroup[]> {
+/** Forum channel groups for any community the user has access to —
+ *  identify returns the full forum_channel_groups tree for SC AND
+ *  every joined org (when called from an authenticated session;
+ *  anonymous identify returns only SC). No extra HTTP call: identify
+ *  is fired for every other Spectrum tab anyway and the response is
+ *  cached at the chrome.cookies layer. */
+export async function fetchSpectrumForumGroups(
+  communityId: number = 1,
+): Promise<SpectrumForumGroup[]> {
   const data = await identifyFull();
   if (!data) throw new RsiNotAuthenticatedError();
-  const community = (data.communities ?? []).find((c) => c.id === 1);
-  if (!community) return [];
+  const community = (data.communities ?? []).find((c) => c.id === communityId);
+  if (!community) {
+    // Either the user isn't actually a member, or this org's structure
+    // didn't ride along on identify (rare — usually means the user
+    // joined it on Spectrum after their last identify cache hit).
+    throw new Error(
+      `community ${communityId} not present in identify (rejoin on Spectrum and refresh, or this org's forum is private)`,
+    );
+  }
   return community.forum_channel_groups.map((g) => ({
     id: g.id,
     name: g.name,
@@ -502,6 +508,10 @@ const RawThreadMember = z
     nickname: z.string().default(''),
     displayname: z.string().nullable().optional(),
     avatar: z.string().nullable().optional(),
+    /** Spectrum's "is Game Master" flag — true for CIG staff. The
+     *  server tints messages from these members with a gold accent
+     *  on the official site; we mirror that. */
+    isGM: z.boolean().default(false),
   })
   .passthrough();
 
@@ -599,6 +609,9 @@ export interface SpectrumThreadReply {
   authorNickname: string;
   authorDisplayName: string;
   authorAvatar: string | null;
+  /** True for CIG staff posts (member.isGM). Drives the gold tint
+   *  Spectrum's site uses to make staff replies visually distinct. */
+  authorIsStaff: boolean;
   contentBlocks: SpectrumContentBlock[];
   /** Total number of nested replies according to the server. May
    *  be larger than `replies.length` — the API embeds at most ~5
@@ -625,6 +638,7 @@ export interface SpectrumThreadDetail {
   authorNickname: string;
   authorDisplayName: string;
   authorAvatar: string | null;
+  authorIsStaff: boolean;
   contentBlocks: SpectrumContentBlock[];
   repliesCount: number;
   viewsCount: number;
@@ -677,6 +691,9 @@ function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undef
     nickname: m?.nickname ?? '',
     displayName: m?.displayname ?? m?.nickname ?? '',
     avatar: m?.avatar ?? null,
+    /** True for CIG staff (member.isGM === true) — mirrors the
+     *  gold tint Spectrum's website uses on staff posts. */
+    isStaff: !!m?.isGM,
   };
 }
 
@@ -717,6 +734,7 @@ export async function fetchSpectrumThreadDetail(
     authorNickname: author.nickname,
     authorDisplayName: author.displayName,
     authorAvatar: author.avatar,
+    authorIsStaff: author.isStaff,
     contentBlocks: normalizeContentBlocks(t.content_blocks),
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
@@ -734,6 +752,7 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
     authorNickname: ra.nickname,
     authorDisplayName: ra.displayName,
     authorAvatar: ra.avatar,
+    authorIsStaff: ra.isStaff,
     contentBlocks: normalizeContentBlocks(r.content_blocks),
     repliesCount: r.replies_count,
     isErased: r.is_erased,
@@ -757,6 +776,7 @@ const RawMessageMember = z
     nickname: z.string().default(''),
     displayname: z.string().nullable().optional(),
     avatar: z.string().nullable().optional(),
+    isGM: z.boolean().default(false),
   })
   .passthrough();
 
@@ -800,6 +820,9 @@ export interface SpectrumMessage {
   authorNickname: string;
   authorDisplayName: string;
   authorAvatar: string | null;
+  /** True for CIG staff posts (member.isGM). Drives the gold tint
+   *  Spectrum's site uses to make staff messages visually distinct. */
+  authorIsStaff: boolean;
   contentBlocks: SpectrumContentBlock[];
   /** Empty when no attachment. The current MVP renders a placeholder
    *  for non-empty values; resolving the actual upload URL needs an
@@ -857,6 +880,7 @@ export async function fetchSpectrumLobbyMessages(
       authorNickname: author.nickname,
       authorDisplayName: author.displayName,
       authorAvatar: author.avatar,
+      authorIsStaff: author.isStaff,
       contentBlocks,
       mediaId: m.media_id,
       isHighlighted: Number(m.highlight_role_id ?? 0) > 0,
