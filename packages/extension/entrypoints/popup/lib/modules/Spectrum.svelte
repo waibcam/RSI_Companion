@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { sendRsiMessage, RSI_BASE_URL, type Rsi } from '@rsi-companion/shared';
+  import { sendRsiMessage, RSI_BASE_URL, Rsi } from '@rsi-companion/shared';
   import {
     AlertTriangle,
     ArrowLeft,
@@ -319,19 +319,31 @@
   // (7 days) means subsequent sessions are pure cache hits.
   let emojiMap = $state<Map<string, string>>(new Map());
   /** Splits text on `:short_name:` patterns and resolves any matches
-   *  to {url, name} segments; everything else stays as text. Used by
-   *  the rich-text renderer for inline emoji rendering. */
-  function splitEmojis(text: string): Array<{ kind: 'text'; text: string } | { kind: 'emoji'; url: string; name: string }> {
-    if (emojiMap.size === 0 || !text.includes(':')) return [{ kind: 'text', text }];
-    const out: Array<{ kind: 'text'; text: string } | { kind: 'emoji'; url: string; name: string }> = [];
+   *  to either an image segment (custom community emoji with
+   *  media_url) or a unicode segment (Spectrum's default catalog).
+   *  Unknown shortcodes stay as text — same fallback as the chip
+   *  renderer. Used by the rich-text renderer for inline emoji
+   *  rendering. */
+  type EmojiSegment =
+    | { kind: 'text'; text: string }
+    | { kind: 'image'; url: string; name: string }
+    | { kind: 'unicode'; char: string; name: string };
+  function splitEmojis(text: string): EmojiSegment[] {
+    if (!text.includes(':')) return [{ kind: 'text', text }];
+    const out: EmojiSegment[] = [];
     const re = /:([a-zA-Z0-9_+-]+):/g;
     let lastEnd = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
-      const url = emojiMap.get(m[1]!);
-      if (!url) continue;
+      const name = m[1]!;
+      const resolved = resolveEmoji(name);
+      if (!resolved) continue;
       if (m.index > lastEnd) out.push({ kind: 'text', text: text.slice(lastEnd, m.index) });
-      out.push({ kind: 'emoji', url, name: m[1]! });
+      if (resolved.kind === 'image') {
+        out.push({ kind: 'image', url: resolved.url, name });
+      } else {
+        out.push({ kind: 'unicode', char: resolved.char, name });
+      }
       lastEnd = m.index + m[0].length;
     }
     if (lastEnd < text.length) out.push({ kind: 'text', text: text.slice(lastEnd) });
@@ -342,6 +354,23 @@
   function resolveEmojiUrl(shortcode: string): string | null {
     const stripped = shortcode.replace(/^:|:$/g, '');
     return emojiMap.get(stripped) ?? null;
+  }
+  /** Like resolveEmojiUrl but also falls back to the default Spectrum
+   *  emoji catalog (Slack/Discord-style shortcodes mapped to Unicode).
+   *  Custom community emojis win when both layers know the shortcode —
+   *  an org might have re-skinned `:fire:` for instance. Returns null
+   *  only when neither layer recognizes the name; the caller renders
+   *  the raw shortcode as a last resort. */
+  type ResolvedEmoji =
+    | { kind: 'image'; url: string }
+    | { kind: 'unicode'; char: string };
+  function resolveEmoji(shortcode: string): ResolvedEmoji | null {
+    const stripped = shortcode.replace(/^:|:$/g, '');
+    const url = emojiMap.get(stripped);
+    if (url) return { kind: 'image', url };
+    const unicode = Rsi.resolveStandardEmoji(stripped);
+    if (unicode) return { kind: 'unicode', char: unicode };
+    return null;
   }
 
   // Forum content search state. Live fires when the user types in the
@@ -1128,10 +1157,27 @@
   // Filtered emoji list for the picker grid. Sorted by shortname so the
   // order is stable across renders. Cap at 200 to keep the popover
   // performant on communities with huge emoji catalogs.
-  const pickerEmojis = $derived.by<Array<{ name: string; url: string }>>(() => {
+  // Each entry is either a custom community emoji (image url) or a
+  // built-in standard one (unicode codepoint). Custom wins on
+  // shortcode collision.
+  type PickerEntry =
+    | { kind: 'image'; name: string; url: string }
+    | { kind: 'unicode'; name: string; char: string };
+  const pickerEmojis = $derived.by<PickerEntry[]>(() => {
     const q = pickerSearch.trim().toLowerCase();
-    const all = Array.from(emojiMap.entries()).map(([name, url]) => ({ name, url }));
-    const filtered = q ? all.filter((e) => e.name.toLowerCase().includes(q)) : all;
+    const seen = new Set<string>();
+    const out: PickerEntry[] = [];
+    // Custom community emojis first — an org may have re-skinned a
+    // standard shortcode and we want their version surfaced.
+    for (const [name, url] of emojiMap.entries()) {
+      out.push({ kind: 'image', name, url });
+      seen.add(name);
+    }
+    for (const [name, char] of Object.entries(Rsi.STANDARD_EMOJI_SHORTCODES)) {
+      if (seen.has(name)) continue;
+      out.push({ kind: 'unicode', name, char });
+    }
+    const filtered = q ? out.filter((e) => e.name.toLowerCase().includes(q)) : out;
     filtered.sort((a, b) => a.name.localeCompare(b.name));
     return filtered.slice(0, 200);
   });
@@ -1851,7 +1897,7 @@
     <div class="relative mt-1 flex flex-wrap items-center gap-1">
       <!-- Existing reaction chips: same toggle UX as forum entities. -->
       {#each m.reactions.slice(0, 6) as r (r.type)}
-        {@const emojiUrl = resolveEmojiUrl(r.type)}
+        {@const resolved = resolveEmoji(r.type)}
         {@const reactKey = engagementKey(entity, `react:${r.type}`)}
         {@const reactPending = pendingEngagement.has(reactKey)}
         <button
@@ -1865,8 +1911,10 @@
           disabled={reactPending}
           onclick={() => toggleReact(entity, r.type, r.userReacted)}
         >
-          {#if emojiUrl}
-            <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
+          {#if resolved?.kind === 'image'}
+            <img src={resolved.url} alt={r.type} loading="lazy" class="size-3" />
+          {:else if resolved?.kind === 'unicode'}
+            <span class="text-xs leading-none">{resolved.char}</span>
           {:else}
             <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
           {/if}
@@ -2247,7 +2295,7 @@
            removes the user's own reaction with that emoji. The chip is
            visually "pressed" (ring + brighter text) when userReacted. -->
       {#each reactions.slice(0, 6) as r (r.type)}
-        {@const emojiUrl = resolveEmojiUrl(r.type)}
+        {@const resolved = resolveEmoji(r.type)}
         {@const reactKey = engagementKey(entity, `react:${r.type}`)}
         {@const reactPending = pendingEngagement.has(reactKey)}
         <button
@@ -2261,8 +2309,10 @@
           disabled={reactPending}
           onclick={() => toggleReact(entity, r.type, r.userReacted)}
         >
-          {#if emojiUrl}
-            <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
+          {#if resolved?.kind === 'image'}
+            <img src={resolved.url} alt={r.type} loading="lazy" class="size-3" />
+          {:else if resolved?.kind === 'unicode'}
+            <span class="text-xs leading-none">{resolved.char}</span>
           {:else}
             <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
           {/if}
@@ -2322,13 +2372,11 @@
         autocorrect="off"
         spellcheck="false"
       />
-      {#if emojiMap.size === 0}
+      {#if pickerEmojis.length === 0}
         <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
-          Emoji catalog still loading…
-        </p>
-      {:else if pickerEmojis.length === 0}
-        <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
-          No emojis match "{pickerSearch}"
+          {emojiMap.size === 0 && !pickerSearch
+            ? 'Emoji catalog still loading…'
+            : `No emojis match "${pickerSearch}"`}
         </p>
       {:else}
         <div class="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto pr-1">
@@ -2350,7 +2398,11 @@
                 closePicker();
               }}
             >
-              <img src={e.url} alt={e.name} loading="lazy" class="size-4" />
+              {#if e.kind === 'image'}
+                <img src={e.url} alt={e.name} loading="lazy" class="size-4" />
+              {:else}
+                <span class="text-base leading-none">{e.char}</span>
+              {/if}
             </button>
           {/each}
         </div>
@@ -2391,8 +2443,10 @@
         {:else if cls}
           <span class={cls.trim()} style:color={baseColor}>
             {#each splitEmojis(seg.text) as part, pi (pi)}
-              {#if part.kind === 'emoji'}
+              {#if part.kind === 'image'}
                 <img src={part.url} alt={part.name} loading="lazy" class="inline-block size-3.5 align-text-bottom" />
+              {:else if part.kind === 'unicode'}
+                <span class="inline-block align-text-bottom" title={part.name}>{part.char}</span>
               {:else}
                 {part.text}
               {/if}
@@ -2401,8 +2455,10 @@
         {:else}
           <span style:color={baseColor}>
             {#each splitEmojis(seg.text) as part, pi (pi)}
-              {#if part.kind === 'emoji'}
+              {#if part.kind === 'image'}
                 <img src={part.url} alt={part.name} loading="lazy" class="inline-block size-3.5 align-text-bottom" />
+              {:else if part.kind === 'unicode'}
+                <span class="inline-block align-text-bottom" title={part.name}>{part.char}</span>
               {:else}
                 {part.text}
               {/if}

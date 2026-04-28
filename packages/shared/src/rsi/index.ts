@@ -11,5 +11,6 @@ export * from './pledge.js';
 export * from './roadmap.js';
 export * from './ships.js';
 export * from './spectrum.js';
+export * from './spectrum-emojis.js';
 export * from './stats.js';
 export * from './status.js';
