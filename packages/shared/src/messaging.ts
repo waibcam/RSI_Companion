@@ -319,6 +319,28 @@ export interface SpectrumNotifRemoveResponsePayload {
   ok: true;
 }
 
+export interface SpectrumVoteRequest {
+  type: 'spectrum.vote';
+  entityType: 'forum_thread' | 'forum_thread_reply';
+  entityId: number;
+  action: 'add' | 'remove';
+}
+export interface SpectrumVoteResponsePayload {
+  ok: true;
+}
+
+export interface SpectrumReactRequest {
+  type: 'spectrum.react';
+  entityType: 'forum_thread' | 'forum_thread_reply';
+  entityId: number;
+  /** Shortcode form, e.g. ':+1:' or ':heart:'. */
+  reactionType: string;
+  action: 'add' | 'remove';
+}
+export interface SpectrumReactResponsePayload {
+  ok: true;
+}
+
 export interface SpectrumLobbiesRequest {
   type: 'spectrum.lobbies';
   force?: boolean;
@@ -1080,6 +1102,8 @@ export type RsiMessage =
   | SpectrumMarkReadRequest
   | SpectrumNotifMarkReadRequest
   | SpectrumNotifRemoveRequest
+  | SpectrumVoteRequest
+  | SpectrumReactRequest
   | SpectrumLobbiesRequest
   | SpectrumLobbyMessagesRequest
   | SpectrumSearchRequest
@@ -1156,6 +1180,8 @@ interface ResponseMap {
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
   'spectrum.notifMarkRead': SpectrumNotifMarkReadResponsePayload;
   'spectrum.notifRemove': SpectrumNotifRemoveResponsePayload;
+  'spectrum.vote': SpectrumVoteResponsePayload;
+  'spectrum.react': SpectrumReactResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
   'spectrum.search': SpectrumSearchResponsePayload;

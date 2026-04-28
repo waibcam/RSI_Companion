@@ -125,8 +125,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // inline styles + links + mentions render as rich text. v6:
   // detail + replies gained votesCount + reactions so the
   // engagement chips render properly. v7: detail + replies gained
-  // authorBadges so org icons appear next to author name.
-  'spectrum:threadDetail': 7,
+  // authorBadges so org icons appear next to author name. v8: detail
+  // + replies + reactions gained user-state flags (`hasVoted` and
+  // `userReacted`) so the vote/react buttons can render their pressed
+  // state from cache hits.
+  'spectrum:threadDetail': 8,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
@@ -141,7 +144,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v3: forum threads list got the same isPinned + authorIsStaff bump.
   // v4: forum threads list gained votesCount/repliesCount/viewsCount.
   // v5: forum threads list gained mediaPreviewUrl for inline thumbnails.
-  'spectrum:forumThreads': 5,
+  // v6: forum threads list gained hasVoted (the user's upvote state)
+  // for the inline vote button on each thread card.
+  'spectrum:forumThreads': 6,
   'status:summary': 1,
 };
 const CACHE_NAMESPACE_VERSION_PREFIX = 'cache:__v:';
@@ -2251,6 +2256,59 @@ async function handleSpectrumNotifMarkRead(message: { notificationId: string }) 
   return { ok: true as const };
 }
 
+// Vote/react mutations don't return the new state — the server response is
+// just `{success:1, code:'OK', data:true}`. To paint the new vote count
+// (and the user's voted/reacted flags) we'd have to refetch the thread
+// detail. We don't bother in BG: we evict the thread-detail + channel
+// thread-list caches, and the popup applies an optimistic local delta
+// that's already correct in the typical case. Next time the user navigates
+// to the thread, the cache miss triggers a fresh fetch and any drift
+// (e.g. a count that ticked from someone else's vote in parallel) gets
+// reconciled.
+async function evictSpectrumThreadCaches(): Promise<void> {
+  const allKeys = await listStorageKeys();
+  const targets = allKeys.filter(
+    (k) =>
+      k.startsWith(`${CACHE_PREFIX}spectrum:threadDetail:`) ||
+      k.startsWith(`${CACHE_PREFIX}spectrum:forumThreads:`),
+  );
+  if (targets.length > 0) await chrome.storage.local.remove(targets);
+}
+
+async function handleSpectrumVote(message: {
+  entityType: 'forum_thread' | 'forum_thread_reply';
+  entityId: number;
+  action: 'add' | 'remove';
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  await Rsi.voteSpectrumEntity(token, {
+    entityType: message.entityType,
+    entityId: message.entityId,
+    action: message.action,
+  });
+  await evictSpectrumThreadCaches();
+  return { ok: true as const };
+}
+
+async function handleSpectrumReact(message: {
+  entityType: 'forum_thread' | 'forum_thread_reply';
+  entityId: number;
+  reactionType: string;
+  action: 'add' | 'remove';
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  await Rsi.reactSpectrumEntity(token, {
+    entityType: message.entityType,
+    entityId: message.entityId,
+    reactionType: message.reactionType,
+    action: message.action,
+  });
+  await evictSpectrumThreadCaches();
+  return { ok: true as const };
+}
+
 async function handleSpectrumNotifRemove(message: { notificationId: string }) {
   if (isSyntheticNotificationId(message.notificationId)) {
     await chrome.storage.local.remove(CACHE_PREFIX + 'spectrum:notifications');
@@ -2879,6 +2937,25 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return {
           ok: true,
           data: await handleSpectrumNotifRemove({ notificationId: message.notificationId }),
+        };
+      case 'spectrum.vote':
+        return {
+          ok: true,
+          data: await handleSpectrumVote({
+            entityType: message.entityType,
+            entityId: message.entityId,
+            action: message.action,
+          }),
+        };
+      case 'spectrum.react':
+        return {
+          ok: true,
+          data: await handleSpectrumReact({
+            entityType: message.entityType,
+            entityId: message.entityId,
+            reactionType: message.reactionType,
+            action: message.action,
+          }),
         };
       case 'spectrum.lobbies':
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };

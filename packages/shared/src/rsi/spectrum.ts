@@ -84,6 +84,9 @@ export interface SpectrumThread {
   isNew: boolean;
   isPinned: boolean;
   votesCount: number;
+  /** Whether the current user has upvoted this thread. Drives the
+   *  filled/outline state of the vote button. */
+  hasVoted: boolean;
   repliesCount: number;
   viewsCount: number;
   /** Server-extracted preview thumbnail (typically the first image
@@ -492,6 +495,7 @@ export async function fetchChannelThreads(
       isNew: t.is_new,
       isPinned: t.is_pinned,
       votesCount: t.votes?.count ?? 0,
+      hasVoted: (t.votes?.voted ?? 0) > 0,
       repliesCount: t.replies_count,
       viewsCount: t.views_count,
       mediaPreviewUrl: t.media_preview?.thumbnail?.url ?? null,
@@ -662,7 +666,7 @@ type RawThreadReplyOutput = {
   replies_count: number;
   is_erased: boolean;
   votes?: z.infer<typeof RawVotes> | null;
-  reactions?: ReadonlyArray<{ type?: string; count?: number }>;
+  reactions?: ReadonlyArray<{ type?: string; count?: number; voted?: number }>;
   replies: RawThreadReplyOutput[];
 };
 type RawThreadReplyInput = {
@@ -675,7 +679,7 @@ type RawThreadReplyInput = {
   replies_count?: number | string;
   is_erased?: boolean;
   votes?: z.input<typeof RawVotes> | null;
-  reactions?: ReadonlyArray<{ type?: string; count?: number | string }>;
+  reactions?: ReadonlyArray<{ type?: string; count?: number | string; voted?: number | string }>;
   replies?: RawThreadReplyInput[];
   [k: string]: unknown;
 };
@@ -683,6 +687,10 @@ const RawReactionEntry = z
   .object({
     type: z.string().default(''),
     count: z.coerce.number().int().default(0),
+    // 1 when the current user has reacted with this emoji. Drives the
+    // "filled" state on each reaction chip so the user knows which ones
+    // are theirs and which can be added vs removed.
+    voted: z.coerce.number().int().default(0),
   })
   .passthrough();
 
@@ -781,6 +789,8 @@ export interface SpectrumThreadReply {
   authorBadges: SpectrumMemberBadge[];
   contentBlocks: SpectrumContentBlock[];
   votesCount: number;
+  /** Whether the current user has upvoted this reply. */
+  hasVoted: boolean;
   reactions: SpectrumReaction[];
   /** Total number of nested replies according to the server. May
    *  be larger than `replies.length` — the API embeds at most ~5
@@ -796,6 +806,10 @@ export interface SpectrumThreadReply {
 export interface SpectrumReaction {
   type: string; // ':picardpalm:' shortcode form
   count: number;
+  /** Whether the *current* user has personally reacted with this emoji.
+   *  Used to render the chip in a "pressed" state and to know whether a
+   *  click should add or remove. */
+  userReacted: boolean;
 }
 
 export interface SpectrumThreadDetail {
@@ -815,6 +829,8 @@ export interface SpectrumThreadDetail {
   authorIsStaff: boolean;
   authorBadges: SpectrumMemberBadge[];
   votesCount: number;
+  /** Whether the current user has upvoted this thread. */
+  hasVoted: boolean;
   reactions: SpectrumReaction[];
   contentBlocks: SpectrumContentBlock[];
   repliesCount: number;
@@ -997,7 +1013,12 @@ export async function fetchSpectrumThreadDetail(
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
     votesCount: t.votes?.count ?? 0,
-    reactions: t.reactions.map((r) => ({ type: r.type, count: r.count })),
+    hasVoted: (t.votes?.voted ?? 0) > 0,
+    reactions: t.reactions.map((r) => ({
+      type: r.type,
+      count: r.count,
+      userReacted: (r.voted ?? 0) > 0,
+    })),
     replies: t.replies.map(normalizeReply),
   };
 }
@@ -1018,9 +1039,14 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
     repliesCount: r.replies_count,
     isErased: r.is_erased,
     votesCount: r.votes?.count ?? 0,
+    hasVoted: (r.votes?.voted ?? 0) > 0,
     reactions: (r.reactions ?? [])
-      .filter((x): x is { type: string; count: number } => !!x.type)
-      .map((x) => ({ type: x.type, count: x.count })),
+      .filter((x): x is { type: string; count: number; voted?: number } => !!x.type)
+      .map((x) => ({
+        type: x.type,
+        count: x.count,
+        userReacted: (x.voted ?? 0) > 0,
+      })),
     replies: (r.replies ?? []).map(normalizeReply),
   };
 }
@@ -1761,4 +1787,70 @@ export async function removeSpectrumNotification(
     args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
   );
   assertRsiOk(response, 'notification/remove');
+}
+
+// --- Vote / Reaction mutations ------------------------------------------
+//
+// Wire format captured live from a Spectrum upvote + thumbs-up reaction
+// HAR (April 2026):
+//
+//   POST /api/spectrum/vote/add
+//        {"entity_type":"forum_thread","entity_id":"546329"}
+//   POST /api/spectrum/reaction/add
+//        {"reaction_type":":+1:","entity_type":"forum_thread","entity_id":"546329"}
+//
+// Response: { success: 1, code: 'OK', msg: 'OK', data: true }.
+//
+// Headers we already set via spectrumPost (`x-rsi-token` + `x-tavern-id`)
+// are sufficient — vote/reaction endpoints do NOT require X-CSRF-TOKEN
+// (the bookmarks tree did, but only because v2/* paths gate writes
+// behind CSRF; vote/reaction live on the v1 path tree).
+//
+// `entityType` is the Spectrum entity tag — `forum_thread` for the OP,
+// `forum_thread_reply` for a reply, and presumably `message` for chat
+// reactions (out of scope for this commit). The /remove path is the
+// symmetric inverse, same body.
+
+export type SpectrumVoteEntity = 'forum_thread' | 'forum_thread_reply';
+
+export async function voteSpectrumEntity(
+  token: string,
+  args: { entityType: SpectrumVoteEntity; entityId: number; action: 'add' | 'remove' },
+): Promise<void> {
+  const response = await spectrumPost(token, `/api/spectrum/vote/${args.action}`, {
+    entity_type: args.entityType,
+    entity_id: String(args.entityId),
+  });
+  assertRsiOk(response, `vote/${args.action}`);
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkMutationResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    const code = parsed.success ? parsed.data.code : 'parse error';
+    throw new Error(`vote/${args.action} returned ${code}`);
+  }
+}
+
+export async function reactSpectrumEntity(
+  token: string,
+  args: {
+    entityType: SpectrumVoteEntity;
+    entityId: number;
+    /** Spectrum shortcode form, e.g. ':+1:', ':heart:' — must match the
+     *  community emoji table the SPA uses. */
+    reactionType: string;
+    action: 'add' | 'remove';
+  },
+): Promise<void> {
+  const response = await spectrumPost(token, `/api/spectrum/reaction/${args.action}`, {
+    reaction_type: args.reactionType,
+    entity_type: args.entityType,
+    entity_id: String(args.entityId),
+  });
+  assertRsiOk(response, `reaction/${args.action}`);
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkMutationResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    const code = parsed.success ? parsed.data.code : 'parse error';
+    throw new Error(`reaction/${args.action} returned ${code}`);
+  }
 }

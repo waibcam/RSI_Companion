@@ -878,6 +878,123 @@
     }
   }
 
+  // Vote / reaction optimistic mutations. The thread detail's `detail`
+  // object owns both the OP and the nested reply tree, so we flip flags
+  // locally first, then fire the BG message — rollback restores the
+  // original detail on failure. The pendingEngagement set guards against
+  // double-clicks on the same entity (vote spam, reaction toggle storms).
+  type EngageEntity = { entityType: 'forum_thread' | 'forum_thread_reply'; entityId: number };
+  let pendingEngagement = $state<Set<string>>(new Set());
+
+  function engagementKey(e: EngageEntity, suffix = ''): string {
+    return `${e.entityType}:${e.entityId}${suffix ? `:${suffix}` : ''}`;
+  }
+
+  // Walk the OP+replies tree, applying `mut` to whichever node matches
+  // the target entity. Returns a new detail object so Svelte's $state
+  // reactivity sees the change. Top-level forum_thread targets the OP
+  // (id == detail.id); forum_thread_reply targets the reply id.
+  function mutateThreadTree(
+    d: ThreadDetail | null,
+    target: EngageEntity,
+    mut: (node: { votesCount: number; hasVoted: boolean; reactions: Rsi.SpectrumReaction[] }) => {
+      votesCount: number;
+      hasVoted: boolean;
+      reactions: Rsi.SpectrumReaction[];
+    },
+  ): ThreadDetail | null {
+    if (!d) return d;
+    if (target.entityType === 'forum_thread' && d.id === target.entityId) {
+      const out = mut({ votesCount: d.votesCount, hasVoted: d.hasVoted, reactions: d.reactions });
+      return { ...d, ...out };
+    }
+    function walk(replies: ThreadReply[]): ThreadReply[] {
+      return replies.map((r) => {
+        if (target.entityType === 'forum_thread_reply' && r.id === target.entityId) {
+          const out = mut({ votesCount: r.votesCount, hasVoted: r.hasVoted, reactions: r.reactions });
+          return { ...r, ...out, replies: r.replies };
+        }
+        return { ...r, replies: walk(r.replies) };
+      });
+    }
+    return { ...d, replies: walk(d.replies) };
+  }
+
+  async function toggleVote(entity: EngageEntity, hasVoted: boolean) {
+    const key = engagementKey(entity, 'vote');
+    if (pendingEngagement.has(key)) return;
+    const action: 'add' | 'remove' = hasVoted ? 'remove' : 'add';
+    const delta = hasVoted ? -1 : 1;
+    pendingEngagement = new Set([...pendingEngagement, key]);
+    const before = threadDetail;
+    threadDetail = mutateThreadTree(threadDetail, entity, (n) => ({
+      ...n,
+      votesCount: Math.max(0, n.votesCount + delta),
+      hasVoted: !hasVoted,
+    }));
+    try {
+      await sendRsiMessage({
+        type: 'spectrum.vote',
+        entityType: entity.entityType,
+        entityId: entity.entityId,
+        action,
+      });
+    } catch (e) {
+      threadDetail = before;
+      threadDetailError = errorMessage(e);
+    } finally {
+      const next = new Set(pendingEngagement);
+      next.delete(key);
+      pendingEngagement = next;
+    }
+  }
+
+  async function toggleReact(entity: EngageEntity, reactionType: string, userReacted: boolean) {
+    const key = engagementKey(entity, `react:${reactionType}`);
+    if (pendingEngagement.has(key)) return;
+    const action: 'add' | 'remove' = userReacted ? 'remove' : 'add';
+    const delta = userReacted ? -1 : 1;
+    pendingEngagement = new Set([...pendingEngagement, key]);
+    const before = threadDetail;
+    threadDetail = mutateThreadTree(threadDetail, entity, (n) => {
+      const existing = n.reactions.find((r) => r.type === reactionType);
+      let reactions: Rsi.SpectrumReaction[];
+      if (existing) {
+        const newCount = Math.max(0, existing.count + delta);
+        if (newCount === 0) {
+          // Prune to zero — keeping a 0-count chip would be visual noise.
+          reactions = n.reactions.filter((r) => r.type !== reactionType);
+        } else {
+          reactions = n.reactions.map((r) =>
+            r.type === reactionType
+              ? { type: r.type, count: newCount, userReacted: !userReacted }
+              : r,
+          );
+        }
+      } else {
+        // First-time add: create the chip.
+        reactions = [...n.reactions, { type: reactionType, count: 1, userReacted: true }];
+      }
+      return { ...n, reactions };
+    });
+    try {
+      await sendRsiMessage({
+        type: 'spectrum.react',
+        entityType: entity.entityType,
+        entityId: entity.entityId,
+        reactionType,
+        action,
+      });
+    } catch (e) {
+      threadDetail = before;
+      threadDetailError = errorMessage(e);
+    } finally {
+      const next = new Set(pendingEngagement);
+      next.delete(key);
+      pendingEngagement = next;
+    }
+  }
+
   function switchTab(next: Tab) {
     tabP.value = next;
     if (signedIn === false) return;
@@ -1699,37 +1816,86 @@
     {/if}
   {/snippet}
 
-  {#snippet reactionsList(reactions: Rsi.SpectrumReaction[], voteCount: number = 0)}
-    {#if voteCount > 0 || reactions.length > 0}
-      <div class="mt-1.5 flex flex-wrap items-center gap-1">
-        {#if voteCount > 0}
-          <span
-            class="flex items-center gap-0.5 rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium text-sky-300"
-            title="{voteCount} vote{voteCount === 1 ? '' : 's'}"
-          >
-            <ChevronUp class="size-2.5" />
-            {formatStat(voteCount)}
-          </span>
-        {/if}
-        {#each reactions.slice(0, 6) as r (r.type)}
-          {@const emojiUrl = resolveEmojiUrl(r.type)}
-          <span
-            class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-medium text-slate-300"
-            title="{r.type} — {r.count} reaction{r.count === 1 ? '' : 's'}"
-          >
-            {#if emojiUrl}
-              <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
-            {:else}
-              <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
-            {/if}
-            {formatStat(r.count)}
-          </span>
-        {/each}
-        {#if reactions.length > 6}
-          <span class="text-[9px] italic text-slate-500">+{reactions.length - 6} more</span>
-        {/if}
-      </div>
-    {/if}
+  {#snippet engagementBar(
+    entity: EngageEntity,
+    voteCount: number,
+    hasVoted: boolean,
+    reactions: Rsi.SpectrumReaction[],
+  )}
+    {@const voteKey = engagementKey(entity, 'vote')}
+    {@const votePending = pendingEngagement.has(voteKey)}
+    {@const hasOwnThumbsUp = reactions.some((r) => r.type === ':+1:' && r.userReacted)}
+    {@const thumbsKey = engagementKey(entity, 'react::+1:')}
+    {@const thumbsPending = pendingEngagement.has(thumbsKey)}
+    <div class="mt-1.5 flex flex-wrap items-center gap-1">
+      <!-- Vote toggle. Filled state when the user has voted. Always
+           rendered (even at count 0) so the user has a target to click.
+           Disabled while a pending request is in flight to keep the
+           optimistic delta from spawning a duplicate POST. -->
+      <button
+        type="button"
+        class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 {hasVoted
+          ? 'bg-sky-500/30 text-sky-200 ring-1 ring-sky-400/60 hover:bg-sky-500/40'
+          : 'bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 hover:text-sky-200'}"
+        title={hasVoted
+          ? `Remove your vote · ${voteCount} vote${voteCount === 1 ? '' : 's'}`
+          : `Upvote · ${voteCount} vote${voteCount === 1 ? '' : 's'}`}
+        disabled={votePending}
+        onclick={() => toggleVote(entity, hasVoted)}
+      >
+        <ChevronUp class="size-2.5" />
+        {formatStat(voteCount)}
+      </button>
+
+      <!-- Existing reaction chips. Each is a toggle: clicking adds or
+           removes the user's own reaction with that emoji. The chip is
+           visually "pressed" (ring + brighter text) when userReacted. -->
+      {#each reactions.slice(0, 6) as r (r.type)}
+        {@const emojiUrl = resolveEmojiUrl(r.type)}
+        {@const reactKey = engagementKey(entity, `react:${r.type}`)}
+        {@const reactPending = pendingEngagement.has(reactKey)}
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 {r.userReacted
+            ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-400/60 hover:bg-violet-500/35'
+            : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80 hover:text-slate-100'}"
+          title={r.userReacted
+            ? `Remove your reaction · ${r.type}`
+            : `React with ${r.type} · ${r.count} reaction${r.count === 1 ? '' : 's'}`}
+          disabled={reactPending}
+          onclick={() => toggleReact(entity, r.type, r.userReacted)}
+        >
+          {#if emojiUrl}
+            <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
+          {:else}
+            <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
+          {/if}
+          {formatStat(r.count)}
+        </button>
+      {/each}
+      {#if reactions.length > 6}
+        <span class="text-[9px] italic text-slate-500">+{reactions.length - 6} more</span>
+      {/if}
+
+      <!-- Quick-react: thumbs-up shortcut when the user hasn't already
+           reacted with :+1:. Full emoji picker is a future enhancement. -->
+      {#if !hasOwnThumbsUp}
+        {@const thumbsEmojiUrl = resolveEmojiUrl(':+1:')}
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-slate-500 opacity-60 transition hover:bg-slate-800 hover:text-slate-200 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+          title="React with thumbs-up"
+          disabled={thumbsPending}
+          onclick={() => toggleReact(entity, ':+1:', false)}
+        >
+          {#if thumbsEmojiUrl}
+            <img src={thumbsEmojiUrl} alt=":+1:" loading="lazy" class="size-3" />
+          {:else}
+            <span class="font-mono text-[8px]">+1</span>
+          {/if}
+        </button>
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet richText(b: ContentBlock, baseColor: string)}
@@ -1900,7 +2066,12 @@
           {@render contentBlocks(r.contentBlocks, r.authorIsStaff)}
         </div>
       {/if}
-      {@render reactionsList(r.reactions, r.votesCount)}
+      {@render engagementBar(
+        { entityType: 'forum_thread_reply', entityId: r.id },
+        r.votesCount,
+        r.hasVoted,
+        r.reactions,
+      )}
       {#if expanded && hasInlineChildren}
         <ul class="mt-2 flex flex-col gap-1">
           {#each r.replies as child (child.id)}
@@ -2051,7 +2222,12 @@
               {@render contentBlocks(detail.contentBlocks, detail.authorIsStaff)}
             {/if}
           </div>
-          {@render reactionsList(detail.reactions, detail.votesCount)}
+          {@render engagementBar(
+            { entityType: 'forum_thread', entityId: detail.id },
+            detail.votesCount,
+            detail.hasVoted,
+            detail.reactions,
+          )}
         </article>
 
         <!-- Replies — first 25 top-level replies. Deeper nesting links
