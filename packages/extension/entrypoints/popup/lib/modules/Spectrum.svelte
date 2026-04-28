@@ -23,6 +23,7 @@
     MessageCircle,
     Pin,
     Reply,
+    Smile,
     UserPlus,
     X,
   } from 'lucide-svelte';
@@ -949,6 +950,53 @@
     }
   }
 
+  // Emoji picker state. We allow only one picker open at a time across
+  // the whole detail view — opening a new one closes any existing.
+  // The key is the engagementKey() of the owning entity so each card
+  // can independently know whether *its* picker is the active one.
+  let pickerOpenForKey = $state<string | null>(null);
+  let pickerSearch = $state<string>('');
+  function openPicker(entity: EngageEntity) {
+    pickerOpenForKey = engagementKey(entity, 'picker');
+    pickerSearch = '';
+  }
+  function closePicker() {
+    pickerOpenForKey = null;
+    pickerSearch = '';
+  }
+  // Document-level click handler so a click anywhere outside the picker
+  // closes it. Bound only while a picker is open to avoid the cost of
+  // a global listener for every popup mount.
+  $effect(() => {
+    if (pickerOpenForKey == null) return;
+    function onDocClick(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('[data-emoji-picker]') && !target?.closest('[data-emoji-trigger]')) {
+        closePicker();
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') closePicker();
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
+
+  // Filtered emoji list for the picker grid. Sorted by shortname so the
+  // order is stable across renders. Cap at 200 to keep the popover
+  // performant on communities with huge emoji catalogs.
+  const pickerEmojis = $derived.by<Array<{ name: string; url: string }>>(() => {
+    const q = pickerSearch.trim().toLowerCase();
+    const all = Array.from(emojiMap.entries()).map(([name, url]) => ({ name, url }));
+    const filtered = q ? all.filter((e) => e.name.toLowerCase().includes(q)) : all;
+    filtered.sort((a, b) => a.name.localeCompare(b.name));
+    return filtered.slice(0, 200);
+  });
+
   async function toggleReact(entity: EngageEntity, reactionType: string, userReacted: boolean) {
     const key = engagementKey(entity, `react:${reactionType}`);
     if (pendingEngagement.has(key)) return;
@@ -1824,10 +1872,9 @@
   )}
     {@const voteKey = engagementKey(entity, 'vote')}
     {@const votePending = pendingEngagement.has(voteKey)}
-    {@const hasOwnThumbsUp = reactions.some((r) => r.type === ':+1:' && r.userReacted)}
-    {@const thumbsKey = engagementKey(entity, 'react::+1:')}
-    {@const thumbsPending = pendingEngagement.has(thumbsKey)}
-    <div class="mt-1.5 flex flex-wrap items-center gap-1">
+    {@const pickerKey = engagementKey(entity, 'picker')}
+    {@const pickerOpen = pickerOpenForKey === pickerKey}
+    <div class="relative mt-1.5 flex flex-wrap items-center gap-1">
       <!-- Vote toggle. Filled state when the user has voted. Always
            rendered (even at count 0) so the user has a target to click.
            Disabled while a pending request is in flight to keep the
@@ -1877,23 +1924,87 @@
         <span class="text-[9px] italic text-slate-500">+{reactions.length - 6} more</span>
       {/if}
 
-      <!-- Quick-react: thumbs-up shortcut when the user hasn't already
-           reacted with :+1:. Full emoji picker is a future enhancement. -->
-      {#if !hasOwnThumbsUp}
-        {@const thumbsEmojiUrl = resolveEmojiUrl(':+1:')}
-        <button
-          type="button"
-          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-slate-500 opacity-60 transition hover:bg-slate-800 hover:text-slate-200 hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
-          title="React with thumbs-up"
-          disabled={thumbsPending}
-          onclick={() => toggleReact(entity, ':+1:', false)}
+      <!-- Add-reaction trigger. Opens a popover with the full community
+           emoji catalog (cached on first sign-in). The trigger lives on
+           every engagementBar — there's no first-class concept of
+           "quick-react" anymore; the user picks whatever they want. -->
+      <button
+        type="button"
+        data-emoji-trigger
+        class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-slate-500 opacity-60 transition hover:bg-slate-800 hover:text-slate-200 hover:opacity-100 {pickerOpen
+          ? 'bg-slate-800 text-slate-200 opacity-100'
+          : ''}"
+        title="Add reaction"
+        aria-label="Add reaction"
+        aria-haspopup="dialog"
+        aria-expanded={pickerOpen}
+        onclick={(e) => {
+          e.stopPropagation();
+          if (pickerOpen) closePicker();
+          else openPicker(entity);
+        }}
+      >
+        <Smile class="size-3" />
+      </button>
+
+      {#if pickerOpen}
+        <!-- Popover: positioned absolute below the trigger row. The
+             whole row is `relative` so this stays anchored. Width clamps
+             to the popup viewport — Spectrum communities can have 200+
+             custom emojis and a 16-col grid is plenty. -->
+        <div
+          data-emoji-picker
+          class="absolute top-full left-0 z-30 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-2 shadow-xl"
+          role="dialog"
+          aria-label="Reaction emoji picker"
         >
-          {#if thumbsEmojiUrl}
-            <img src={thumbsEmojiUrl} alt=":+1:" loading="lazy" class="size-3" />
+          <input
+            type="search"
+            bind:value={pickerSearch}
+            placeholder="Search emojis…"
+            class="mb-2 w-full rounded bg-slate-950 px-2 py-1 text-[11px] text-slate-200 ring-1 ring-slate-800 focus:outline-none focus:ring-violet-500"
+            autocomplete="off"
+            autocorrect="off"
+            spellcheck="false"
+          />
+          {#if emojiMap.size === 0}
+            <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
+              Emoji catalog still loading…
+            </p>
+          {:else if pickerEmojis.length === 0}
+            <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
+              No emojis match "{pickerSearch}"
+            </p>
           {:else}
-            <span class="font-mono text-[8px]">+1</span>
+            <div class="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto pr-1">
+              {#each pickerEmojis as e (e.name)}
+                {@const eKey = engagementKey(entity, `react::${e.name}:`)}
+                {@const ePending = pendingEngagement.has(eKey)}
+                {@const userReactedHere = reactions.some(
+                  (r) => r.type === `:${e.name}:` && r.userReacted,
+                )}
+                <button
+                  type="button"
+                  class="flex aspect-square items-center justify-center rounded p-1 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30 {userReactedHere
+                    ? 'bg-violet-500/25 ring-1 ring-violet-400/60'
+                    : ''}"
+                  title=":{e.name}:"
+                  disabled={ePending}
+                  onclick={() => {
+                    void toggleReact(entity, `:${e.name}:`, userReactedHere);
+                    closePicker();
+                  }}
+                >
+                  <img src={e.url} alt={e.name} loading="lazy" class="size-4" />
+                </button>
+              {/each}
+            </div>
+            <p class="mt-1 text-[9px] italic text-slate-600">
+              {pickerEmojis.length} emoji{pickerEmojis.length === 1 ? '' : 's'}
+              {pickerSearch ? `· filter "${pickerSearch}"` : ''}
+            </p>
           {/if}
-        </button>
+        </div>
       {/if}
     </div>
   {/snippet}
