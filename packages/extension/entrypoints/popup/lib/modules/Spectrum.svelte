@@ -715,6 +715,102 @@
     if (!bookmarksLoaded) loadBookmarks();
   }
 
+  /** Navigate to a thread from anywhere (DevTracker / Trending /
+   *  Bookmarks / Notifications) by switching to the Forums tab and
+   *  drilling all the way to the thread detail. The Thread carries
+   *  the channel ref so we can populate community + channel ids
+   *  without a URL parse. */
+  function navigateToThread(t: Thread) {
+    // Resolve communityId from the channel's communitySlug. SC channels
+    // hardcode 'SC'; org channels carry their own slug. communityIdBySlug
+    // falls back to 1 (SC) if the community isn't loaded yet.
+    const commId = communities.find((c) => c.slug === t.channel.communitySlug)?.id ?? 1;
+    forumCommunityP.value = commId;
+    forumChannelP.value = t.channel.id;
+    tabP.value = 'forums';
+    if (!communitiesLoaded) loadCommunities();
+    if (!forumGroupsLoaded || forumGroupsForCommunity !== commId) loadForumGroups();
+    selectThread(t);
+  }
+
+  /** Parse a Spectrum URL (e.g. a bookmark href, notification link, or
+   *  comment-link payload) and navigate the popup's tab+drill state to
+   *  the matching view. Returns true on success — the caller should
+   *  prevent the default link behaviour. Returns false for URLs we
+   *  can't render in-app (citizen pages, support tickets, etc.); the
+   *  caller falls back to opening externally. Middle/ctrl/shift clicks
+   *  are handled at the call site by skipping this entirely. */
+  function navigateToSpectrumUrl(url: string): boolean {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
+    if (parsed.hostname !== 'robertsspaceindustries.com') return false;
+    const path = parsed.pathname;
+    // /spectrum/community/<commSlug>/forum/<chanId>/thread/<threadSlug>
+    const threadM = path.match(/^\/spectrum\/community\/([^/]+)\/forum\/(\d+)\/thread\/([^/?#]+)/);
+    if (threadM) {
+      const commSlug = threadM[1]!;
+      const chanId = parseInt(threadM[2]!, 10);
+      const slug = threadM[3]!;
+      const commId = communities.find((c) => c.slug === commSlug)?.id ?? 1;
+      forumCommunityP.value = commId;
+      forumChannelP.value = chanId;
+      forumThreadP.value = slug;
+      threadDetail = null;
+      threadDetailForSlug = null;
+      threadDetailError = null;
+      expandedReplies = new Set();
+      tabP.value = 'forums';
+      if (!communitiesLoaded) loadCommunities();
+      if (!forumGroupsLoaded || forumGroupsForCommunity !== commId) loadForumGroups();
+      loadThreadDetail(slug);
+      if (!bookmarksLoaded) loadBookmarks();
+      return true;
+    }
+    // /spectrum/community/<commSlug>/forum/<chanId>
+    const chanM = path.match(/^\/spectrum\/community\/([^/]+)\/forum\/(\d+)\/?$/);
+    if (chanM) {
+      const commSlug = chanM[1]!;
+      const chanId = parseInt(chanM[2]!, 10);
+      const commId = communities.find((c) => c.slug === commSlug)?.id ?? 1;
+      forumCommunityP.value = commId;
+      forumChannelP.value = chanId;
+      forumThreadP.value = null;
+      threadDetail = null;
+      threadDetailForSlug = null;
+      threadDetailError = null;
+      tabP.value = 'forums';
+      if (!communitiesLoaded) loadCommunities();
+      if (!forumGroupsLoaded || forumGroupsForCommunity !== commId) loadForumGroups();
+      loadForumThreads(chanId);
+      return true;
+    }
+    // /spectrum/community/<commSlug>/lobby/<lobbyId>
+    const lobM = path.match(/^\/spectrum\/community\/[^/]+\/lobby\/(\d+)/);
+    if (lobM) {
+      const lobbyId = parseInt(lobM[1]!, 10);
+      dmLobbyP.value = lobbyId;
+      tabP.value = 'dms';
+      if (!lobbiesLoaded) loadLobbies();
+      if (lobbyMessagesForLobby !== lobbyId) loadLobbyMessages(lobbyId);
+      return true;
+    }
+    // Citizens, support tickets, gallery, etc. — keep external.
+    return false;
+  }
+
+  /** Click handler for `<a>` elements that points to a Spectrum URL.
+   *  Preserves browser-native middle-click / Ctrl-click / Cmd-click /
+   *  Shift-click behaviour for users who want a new tab; intercepts
+   *  plain left-click to navigate in-app. */
+  function handleSpectrumLinkClick(e: MouseEvent, url: string): void {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    if (navigateToSpectrumUrl(url)) e.preventDefault();
+  }
+
   /** True when the currently-displayed thread is in the user's
    *  bookmarks list. Drives the bookmark toggle button in the thread
    *  detail header. Falls back to false if bookmarks haven't loaded —
@@ -1634,12 +1730,23 @@
           {@render threadCardBody(t, stripe)}
         </button>
       {:else}
+        <!-- DevTracker / Trending / Bookmarks fallback path: render an
+             anchor so the URL is visible in the status bar and middle-
+             click / ctrl-click open in a new browser tab. Plain left-
+             click is intercepted to drill into the thread inside the
+             popup (navigateToThread switches to the Forums tab and
+             populates community + channel + slug state). -->
         <a
           href={t.url}
           target="_blank"
           rel="noopener noreferrer"
           class={cls}
           style="border-left: 3px solid {leftStripe}; {cardStyle}"
+          onclick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            navigateToThread(t);
+          }}
         >
           {@render threadCardBody(t, stripe)}
         </a>
@@ -1880,7 +1987,17 @@
           target="_blank"
           rel="noopener noreferrer"
           class="flex gap-2.5 p-2"
-          onclick={() => markNotifRead(n)}
+          onclick={(e) => {
+            // Mark-read fires regardless of how the user opens the notif —
+            // plain click navigates in-app, modified click opens a new
+            // browser tab. Both should clear the unread dot.
+            void markNotifRead(n);
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            // Try in-app navigation; fall back to default browser
+            // open for citizen pages, support tickets, friend requests,
+            // and anything else navigateToSpectrumUrl doesn't recognize.
+            if (navigateToSpectrumUrl(href)) e.preventDefault();
+          }}
           onauxclick={(e) => { if (e.button === 1) markNotifRead(n); }}
         >
           {@render avatar(avatarUrl(n.authorAvatar), n.authorDisplayName, n.authorNickname, 'size-9')}
@@ -1964,6 +2081,7 @@
           target="_blank"
           rel="noopener noreferrer"
           class="min-w-0 flex-1"
+          onclick={(e) => handleSpectrumLinkClick(e, b.url)}
         >
           <div class="mb-0.5 flex items-center gap-1.5">
             <span class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300">
