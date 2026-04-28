@@ -287,12 +287,98 @@ export const STANDARD_EMOJI_SHORTCODES: Record<string, string> = {
   email: '\u{1F4E7}',
 };
 
+// CLDR descriptive aliases for the same Unicode characters above.
+// Spectrum's reaction type vocabulary uses both forms interchangeably
+// — Slack-style short names (`star_struck`) AND the long Unicode CLDR
+// names (`grinning_face_with_star_eyes`). Hover any emoji on the
+// desktop site and the tooltip shows both. We populate the same map
+// with both keys so a single lookup hits regardless of which the
+// reaction payload happens to carry.
+const CLDR_ALIASES: Record<string, string> = {
+  grinning_face_with_star_eyes: STANDARD_EMOJI_SHORTCODES.star_struck!,
+  person_facepalming: STANDARD_EMOJI_SHORTCODES.face_palm!,
+  woman_facepalming: '\u{1F926}\u{200D}\u{2640}\u{FE0F}',
+  man_facepalming: '\u{1F926}\u{200D}\u{2642}\u{FE0F}',
+  thumbs_up: STANDARD_EMOJI_SHORTCODES['+1']!,
+  thumbs_down: STANDARD_EMOJI_SHORTCODES['-1']!,
+  red_heart: STANDARD_EMOJI_SHORTCODES.heart!,
+  smiling_face_with_heart_eyes: STANDARD_EMOJI_SHORTCODES.heart_eyes!,
+  smiling_face_with_smiling_eyes: STANDARD_EMOJI_SHORTCODES.blush!,
+  face_with_tears_of_joy: STANDARD_EMOJI_SHORTCODES.joy!,
+  rolling_on_the_floor_laughing: STANDARD_EMOJI_SHORTCODES.rofl!,
+  smiling_face_with_open_mouth_and_smiling_eyes: STANDARD_EMOJI_SHORTCODES.smile!,
+  grinning_face_with_smiling_eyes: STANDARD_EMOJI_SHORTCODES.grin!,
+  grinning_face_with_big_eyes: STANDARD_EMOJI_SHORTCODES.smiley!,
+  grinning_squinting_face: STANDARD_EMOJI_SHORTCODES.laughing!,
+  beaming_face_with_smiling_eyes: STANDARD_EMOJI_SHORTCODES.grin!,
+  loudly_crying_face: STANDARD_EMOJI_SHORTCODES.sob!,
+  crying_face: STANDARD_EMOJI_SHORTCODES.cry!,
+  face_screaming_in_fear: STANDARD_EMOJI_SHORTCODES.scream!,
+  pouting_face: STANDARD_EMOJI_SHORTCODES.rage!,
+  angry_face: STANDARD_EMOJI_SHORTCODES.angry!,
+  thinking_face: STANDARD_EMOJI_SHORTCODES.thinking!,
+  smirking_face: STANDARD_EMOJI_SHORTCODES.smirk!,
+  face_with_rolling_eyes: STANDARD_EMOJI_SHORTCODES.roll_eyes!,
+  expressionless_face: STANDARD_EMOJI_SHORTCODES.expressionless!,
+  neutral_face: STANDARD_EMOJI_SHORTCODES.neutral_face!,
+  flushed_face: STANDARD_EMOJI_SHORTCODES.flushed!,
+  hushed_face: STANDARD_EMOJI_SHORTCODES.hushed!,
+  astonished_face: STANDARD_EMOJI_SHORTCODES.astonished!,
+  exploding_head: STANDARD_EMOJI_SHORTCODES.exploding_head!,
+  partying_face: STANDARD_EMOJI_SHORTCODES.partying_face!,
+  fire: STANDARD_EMOJI_SHORTCODES.fire!,
+  hundred_points: STANDARD_EMOJI_SHORTCODES['100']!,
+  party_popper: STANDARD_EMOJI_SHORTCODES.tada!,
+  clapping_hands: STANDARD_EMOJI_SHORTCODES.clap!,
+  folded_hands: STANDARD_EMOJI_SHORTCODES.pray!,
+  flexed_biceps: STANDARD_EMOJI_SHORTCODES.muscle!,
+  ok_hand_sign: STANDARD_EMOJI_SHORTCODES.ok_hand!,
+  waving_hand: STANDARD_EMOJI_SHORTCODES.wave!,
+  raising_hands: STANDARD_EMOJI_SHORTCODES.raised_hands!,
+  eyes: STANDARD_EMOJI_SHORTCODES.eyes!,
+  brain: STANDARD_EMOJI_SHORTCODES.brain!,
+  skull: STANDARD_EMOJI_SHORTCODES.skull!,
+  ghost: STANDARD_EMOJI_SHORTCODES.ghost!,
+  alien: STANDARD_EMOJI_SHORTCODES.alien!,
+  alien_monster: STANDARD_EMOJI_SHORTCODES.alien_monster!,
+  robot_face: STANDARD_EMOJI_SHORTCODES.robot!,
+  pile_of_poo: STANDARD_EMOJI_SHORTCODES.poop!,
+  rocket: STANDARD_EMOJI_SHORTCODES.rocket!,
+  ship: STANDARD_EMOJI_SHORTCODES.ship!,
+  flying_saucer: STANDARD_EMOJI_SHORTCODES.flying_saucer!,
+  glowing_star: STANDARD_EMOJI_SHORTCODES.star2!,
+  high_voltage: STANDARD_EMOJI_SHORTCODES.zap!,
+  collision: STANDARD_EMOJI_SHORTCODES.boom!,
+  bomb: STANDARD_EMOJI_SHORTCODES.bomb!,
+  trophy: STANDARD_EMOJI_SHORTCODES.trophy!,
+  '1st_place_medal': STANDARD_EMOJI_SHORTCODES.first_place!,
+  // Disability emojis — Spectrum surfaces these via the long name.
+  person_with_white_cane: STANDARD_EMOJI_SHORTCODES.person_with_probing_cane!,
+  man_with_white_cane: STANDARD_EMOJI_SHORTCODES.man_with_probing_cane!,
+  woman_with_white_cane: STANDARD_EMOJI_SHORTCODES.woman_with_probing_cane!,
+};
+
+// Merge into the main lookup. Done at module load so resolve() stays
+// O(1) and the Object spread / merge cost is paid once. Custom community
+// emojis (separate per-community map) still take precedence at the
+// caller layer.
+for (const [k, v] of Object.entries(CLDR_ALIASES)) {
+  if (!STANDARD_EMOJI_SHORTCODES[k]) STANDARD_EMOJI_SHORTCODES[k] = v;
+}
+
 /** Resolve a Spectrum reaction shortcode (`:short_name:` or
  *  `short_name`) to its Unicode character, or null when not in the
  *  default set. Custom community emojis (with media_url) are handled
  *  separately via the per-community emojiMap; this fallback covers
- *  Spectrum's built-in catalog. */
+ *  Spectrum's built-in catalog. Tries the shortcode as-is, then with
+ *  hyphens swapped to underscores (Slack/iamcal style → gemoji style)
+ *  so `:star-struck:` and `:star_struck:` both resolve from a single
+ *  underscore-keyed table. */
 export function resolveStandardEmoji(shortcode: string): string | null {
   const stripped = shortcode.replace(/^:|:$/g, '');
-  return STANDARD_EMOJI_SHORTCODES[stripped] ?? null;
+  return (
+    STANDARD_EMOJI_SHORTCODES[stripped] ??
+    STANDARD_EMOJI_SHORTCODES[stripped.replace(/-/g, '_')] ??
+    null
+  );
 }
