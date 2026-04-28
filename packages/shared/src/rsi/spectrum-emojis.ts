@@ -366,19 +366,67 @@ for (const [k, v] of Object.entries(CLDR_ALIASES)) {
   if (!STANDARD_EMOJI_SHORTCODES[k]) STANDARD_EMOJI_SHORTCODES[k] = v;
 }
 
+// Top ~50 most-likely-to-be-reacted-with country flags. Only seeded
+// here so they appear in the picker grid when the user browses;
+// arbitrary 2-letter ISO codes still resolve via flagFromCountryCode
+// in resolveStandardEmoji (so :fr:, :za:, :nz: all work without being
+// listed). Hyphen variants (`flag-fr`, `flag_fr`) likewise resolve
+// dynamically.
+const COMMON_FLAG_CODES = [
+  'us', 'gb', 'fr', 'de', 'es', 'it', 'jp', 'kr', 'cn', 'ru',
+  'br', 'ca', 'au', 'mx', 'in', 'nl', 'be', 'ch', 'at', 'ie',
+  'se', 'no', 'dk', 'fi', 'is', 'pl', 'cz', 'pt', 'gr', 'tr',
+  'ua', 'ro', 'hu', 'ar', 'cl', 'co', 'pe', 've', 'za', 'ng',
+  'eg', 'sa', 'ae', 'il', 'th', 'vn', 'sg', 'my', 'id', 'ph',
+  'nz', 'eu',
+];
+for (const code of COMMON_FLAG_CODES) {
+  const flag = flagFromCountryCode(code);
+  if (flag && !STANDARD_EMOJI_SHORTCODES[code]) STANDARD_EMOJI_SHORTCODES[code] = flag;
+}
+
+/** Country-flag emojis are composed of two **regional indicator
+ *  symbols** — each ISO 3166-1 alpha-2 letter maps to one codepoint
+ *  in the U+1F1E6..U+1F1FF block (A=1F1E6, Z=1F1FF). The browser
+ *  combines the pair into a single flag glyph at render time. So
+ *  any 2-letter code resolves dynamically without enumerating all
+ *  ~250 territories.
+ *
+ *  Returns the flag for valid 2-letter ASCII inputs (case-insensitive),
+ *  null otherwise. Note we don't validate that the country exists —
+ *  invalid pairs render as two abstract regional indicators (e.g.
+ *  🇿🇿) which is harmless visual noise; a real lookup table would
+ *  block 80% of edge cases at the cost of 5kB. */
+function flagFromCountryCode(code: string): string | null {
+  if (!/^[a-zA-Z]{2}$/.test(code)) return null;
+  const upper = code.toUpperCase();
+  const a = String.fromCodePoint(0x1F1E6 + (upper.charCodeAt(0) - 65));
+  const b = String.fromCodePoint(0x1F1E6 + (upper.charCodeAt(1) - 65));
+  return a + b;
+}
+
 /** Resolve a Spectrum reaction shortcode (`:short_name:` or
  *  `short_name`) to its Unicode character, or null when not in the
  *  default set. Custom community emojis (with media_url) are handled
  *  separately via the per-community emojiMap; this fallback covers
- *  Spectrum's built-in catalog. Tries the shortcode as-is, then with
- *  hyphens swapped to underscores (Slack/iamcal style → gemoji style)
- *  so `:star-struck:` and `:star_struck:` both resolve from a single
- *  underscore-keyed table. */
+ *  Spectrum's built-in catalog. Lookup chain:
+ *
+ *   1. Exact match in the static map (`star_struck`, `face_palm`, etc.)
+ *   2. Hyphen→underscore (Slack/iamcal `star-struck` → gemoji style)
+ *   3. Bare 2-letter ISO code (`fr`, `us`, `gb`) → composed flag
+ *   4. `flag_xx` / `flag-xx` prefix stripped → composed flag */
 export function resolveStandardEmoji(shortcode: string): string | null {
   const stripped = shortcode.replace(/^:|:$/g, '');
-  return (
-    STANDARD_EMOJI_SHORTCODES[stripped] ??
-    STANDARD_EMOJI_SHORTCODES[stripped.replace(/-/g, '_')] ??
-    null
-  );
+  const direct = STANDARD_EMOJI_SHORTCODES[stripped];
+  if (direct) return direct;
+  const underscored = STANDARD_EMOJI_SHORTCODES[stripped.replace(/-/g, '_')];
+  if (underscored) return underscored;
+  const flagDirect = flagFromCountryCode(stripped);
+  if (flagDirect) return flagDirect;
+  const flagPrefixed = stripped.replace(/^flag[-_]/, '');
+  if (flagPrefixed !== stripped) {
+    const f = flagFromCountryCode(flagPrefixed);
+    if (f) return f;
+  }
+  return null;
 }
