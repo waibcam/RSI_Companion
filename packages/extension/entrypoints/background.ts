@@ -2193,16 +2193,12 @@ async function getSpectrumCsrfToken(): Promise<string | undefined> {
 async function handleSpectrumBookmarkAdd(message: {
   entityId: number;
   entityType: string;
-  name?: string;
 }) {
   const token = await Rsi.readRsiToken();
   if (!token) throw new Error('not signed in');
-  const csrfToken = await getSpectrumCsrfToken();
   await Rsi.addSpectrumBookmark(token, {
     entityId: message.entityId,
     entityType: message.entityType,
-    name: message.name,
-    csrfToken,
   });
   // Refresh + reprime cache so the popup paints the new state without
   // a separate roundtrip — same pattern as bookmarkRemove.
@@ -2217,11 +2213,9 @@ async function handleSpectrumBookmarkRemove(message: {
 }) {
   const token = await Rsi.readRsiToken();
   if (!token) throw new Error('not signed in');
-  const csrfToken = await getSpectrumCsrfToken();
   await Rsi.removeSpectrumBookmark(token, {
     entityId: message.entityId,
     entityType: message.entityType,
-    csrfToken,
   });
   // Refetch the list so the popup can paint the new state without a
   // follow-up message round trip. Re-prime the cache while we're at it.
@@ -3049,7 +3043,6 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
           data: await handleSpectrumBookmarkAdd({
             entityId: message.entityId,
             entityType: message.entityType,
-            name: message.name,
           }),
         };
       case 'spectrum.bookmarkRemove':

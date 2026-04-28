@@ -446,10 +446,9 @@ export interface SpectrumBookmarksResponsePayload {
 export interface SpectrumBookmarkAddRequest {
   type: 'spectrum.bookmarkAdd';
   entityId: number;
+  /** Spectrum entity tag — `forum_thread` for OPs, `forum_channel` for
+   *  whole channels, `message_lobby` for DMs (when we surface that). */
   entityType: string;
-  /** Optional user-supplied label; the server falls back to the
-   *  entity's canonical name when omitted. */
-  name?: string;
 }
 export interface SpectrumBookmarkAddResponsePayload {
   /** Refreshed list — saves the popup a follow-up fetch. */

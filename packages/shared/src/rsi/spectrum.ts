@@ -1443,23 +1443,20 @@ export async function fetchSpectrumBookmarks(token: string): Promise<SpectrumBoo
 
 export async function addSpectrumBookmark(
   token: string,
-  args: { entityId: number; entityType: string; name?: string; csrfToken?: string },
+  args: { entityId: number; entityType: string },
 ): Promise<void> {
-  // Body uses snake_case keys (entity_id / entity_type) — confirmed by
-  // grepping the SPA bundle for the actual addBookmark wire format.
-  // Earlier camelCase attempts (entityId/entityType) silently authenticated
-  // but failed validation, returning ErrNotAuthenticated.
-  const response = await spectrumPost(
-    token,
-    '/api/spectrum/v2/bookmark/add',
-    {
-      entity_id: String(args.entityId),
-      entity_type: args.entityType,
-      ...(args.name ? { name: args.name } : {}),
-    },
-    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
-  );
-  assertRsiOk(response, 'v2/bookmark/add');
+  // Switched from /v2/bookmark/add to the legacy /bookmark/add path —
+  // a HAR capture (April 2026) showed the v1 endpoint accepts the same
+  // {entity_type, entity_id} body without requiring an X-CSRF-TOKEN
+  // header. v2 still works but needs CSRF priming, which adds a hidden
+  // dependency on having an open robertsspaceindustries.com tab. The v1
+  // path is consistent with the vote/reaction/subscribe endpoints we
+  // also call without CSRF, so we standardize on it.
+  const response = await spectrumPost(token, '/api/spectrum/bookmark/add', {
+    entity_id: String(args.entityId),
+    entity_type: args.entityType,
+  });
+  assertRsiOk(response, 'bookmark/add');
   const raw = (await response.json()) as unknown;
   const parsed = BookmarkMutationResponse.safeParse(raw);
   if (!parsed.success || parsed.data.success !== 1) {
@@ -1470,18 +1467,13 @@ export async function addSpectrumBookmark(
 
 export async function removeSpectrumBookmark(
   token: string,
-  args: { entityId: number; entityType: string; csrfToken?: string },
+  args: { entityId: number; entityType: string },
 ): Promise<void> {
-  const response = await spectrumPost(
-    token,
-    '/api/spectrum/v2/bookmark/remove',
-    {
-      entity_id: String(args.entityId),
-      entity_type: args.entityType,
-    },
-    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
-  );
-  assertRsiOk(response, 'v2/bookmark/remove');
+  const response = await spectrumPost(token, '/api/spectrum/bookmark/remove', {
+    entity_id: String(args.entityId),
+    entity_type: args.entityType,
+  });
+  assertRsiOk(response, 'bookmark/remove');
   const raw = (await response.json()) as unknown;
   const parsed = BookmarkMutationResponse.safeParse(raw);
   if (!parsed.success || parsed.data.success !== 1) {

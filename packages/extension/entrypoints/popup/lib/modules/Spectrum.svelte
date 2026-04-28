@@ -725,6 +725,13 @@
     if (id == null) return false;
     return bookmarks.some((b) => b.entityType === 'forum_thread' && b.entityId === id);
   });
+  /** Same idea for the channel header: scan the bookmarks list for an
+   *  entry matching the currently-selected forum channel id. */
+  const channelIsBookmarked = $derived.by<boolean>(() => {
+    const id = forumChannelP.value;
+    if (id == null) return false;
+    return bookmarks.some((b) => b.entityType === 'forum_channel' && b.entityId === id);
+  });
 
   async function toggleThreadBookmark() {
     const t = threadDetail;
@@ -743,6 +750,34 @@
             type: 'spectrum.bookmarkAdd',
             entityId: t.id,
             entityType: 'forum_thread',
+          });
+      bookmarks = res.bookmarks;
+    } catch (e) {
+      bookmarksError = errorMessage(e);
+    } finally {
+      const next = new Set(bookmarkRemoving);
+      next.delete(key);
+      bookmarkRemoving = next;
+    }
+  }
+
+  async function toggleChannelBookmark() {
+    const id = forumChannelP.value;
+    if (id == null) return;
+    const key = `forum_channel:${id}`;
+    if (bookmarkRemoving.has(key)) return;
+    bookmarkRemoving = new Set([...bookmarkRemoving, key]);
+    try {
+      const res = channelIsBookmarked
+        ? await sendRsiMessage({
+            type: 'spectrum.bookmarkRemove',
+            entityId: id,
+            entityType: 'forum_channel',
+          })
+        : await sendRsiMessage({
+            type: 'spectrum.bookmarkAdd',
+            entityId: id,
+            entityType: 'forum_channel',
           });
       bookmarks = res.bookmarks;
     } catch (e) {
@@ -2719,6 +2754,28 @@
             {#if ch}
               {@const subscribed = ch.notificationSubscription !== 'disabled'}
               {@const subPending = pendingSubscribe.has(`forum_channel:${ch.id}`)}
+              {@const channelBmKey = `forum_channel:${ch.id}`}
+              {@const channelBmPending = bookmarkRemoving.has(channelBmKey)}
+              <button
+                type="button"
+                onclick={toggleChannelBookmark}
+                disabled={channelBmPending}
+                class="shrink-0 rounded-md p-1 transition disabled:cursor-not-allowed disabled:opacity-40 {channelIsBookmarked
+                  ? 'bg-pink-950/40 text-pink-300 hover:bg-pink-900/40'
+                  : 'text-slate-500 hover:bg-slate-800 hover:text-pink-300'}"
+                title={channelIsBookmarked ? 'Remove channel bookmark' : 'Bookmark this channel'}
+                aria-label={channelIsBookmarked
+                  ? 'Remove channel bookmark'
+                  : 'Bookmark this channel'}
+              >
+                {#if channelBmPending}
+                  <Loader2 class="size-4 animate-spin" />
+                {:else if channelIsBookmarked}
+                  <BookmarkX class="size-4" />
+                {:else}
+                  <BookmarkPlus class="size-4" />
+                {/if}
+              </button>
               <button
                 type="button"
                 onclick={() => toggleChannelSubscription(ch.id)}
