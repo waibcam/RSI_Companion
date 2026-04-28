@@ -1728,3 +1728,37 @@ export async function markSpectrumNotificationsRead(token: string): Promise<void
   });
   assertRsiOk(response, 'notification/read-all');
 }
+
+// Single-notification mutations. Body shape `{notification_id: <numeric id>}`
+// follows the snake_case convention v2 mutations use (entity_id/entity_type
+// in v2/bookmark/add). The endpoint paths come from the SPA bundle's
+// notification/* string table — see docs/spectrum-api.md ✓ path-confirmed.
+//
+// Synthetic ids built client-side (`private-…`, `friend-…`) have no
+// server-side equivalent, so callers must filter those out before
+// invoking these helpers; sending them would 404.
+export async function markSpectrumNotificationRead(
+  token: string,
+  args: { notificationId: string; csrfToken?: string },
+): Promise<void> {
+  const response = await spectrumPost(
+    token,
+    '/api/spectrum/notification/read',
+    { notification_id: args.notificationId },
+    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
+  );
+  assertRsiOk(response, 'notification/read');
+}
+
+export async function removeSpectrumNotification(
+  token: string,
+  args: { notificationId: string; csrfToken?: string },
+): Promise<void> {
+  const response = await spectrumPost(
+    token,
+    '/api/spectrum/notification/remove',
+    { notification_id: args.notificationId },
+    args.csrfToken ? { 'X-CSRF-TOKEN': args.csrfToken } : {},
+  );
+  assertRsiOk(response, 'notification/remove');
+}

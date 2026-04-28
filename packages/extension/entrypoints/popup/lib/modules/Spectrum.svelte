@@ -24,6 +24,7 @@
     Pin,
     Reply,
     UserPlus,
+    X,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import SignInPrompt from '../components/SignInPrompt.svelte';
@@ -830,6 +831,53 @@
     }
   }
 
+  // Per-notification optimistic mutations. We flip the local state first so
+  // the UI is instant, then fire-and-await the BG message — if it fails we
+  // roll back. The per-id `Set` guard prevents a flurry of clicks on the
+  // same card from firing duplicate POSTs while one is in flight (the X
+  // button on bookmark removal uses the same pattern).
+  let notifMarkingRead = $state<Set<string>>(new Set());
+  let notifRemoving = $state<Set<string>>(new Set());
+
+  async function markNotifRead(n: Notification) {
+    if (n.read) return;
+    if (notifMarkingRead.has(n.id)) return;
+    notifMarkingRead = new Set([...notifMarkingRead, n.id]);
+    // Optimistic flip.
+    notifs = notifs.map((x) => (x.id === n.id ? { ...x, read: true } : x));
+    try {
+      await sendRsiMessage({ type: 'spectrum.notifMarkRead', notificationId: n.id });
+    } catch (e) {
+      // Roll back: server rejected, restore unread so the user can retry.
+      notifs = notifs.map((x) => (x.id === n.id ? { ...x, read: false } : x));
+      notifsError = errorMessage(e);
+    } finally {
+      const next = new Set(notifMarkingRead);
+      next.delete(n.id);
+      notifMarkingRead = next;
+    }
+  }
+
+  async function removeNotif(n: Notification) {
+    if (notifRemoving.has(n.id)) return;
+    notifRemoving = new Set([...notifRemoving, n.id]);
+    const before = notifs;
+    // Optimistic remove.
+    notifs = notifs.filter((x) => x.id !== n.id);
+    try {
+      await sendRsiMessage({ type: 'spectrum.notifRemove', notificationId: n.id });
+    } catch (e) {
+      // Restore: the failed card slots back into its original position
+      // by recovering the snapshot list.
+      notifs = before;
+      notifsError = errorMessage(e);
+    } finally {
+      const next = new Set(notifRemoving);
+      next.delete(n.id);
+      notifRemoving = next;
+    }
+  }
+
   function switchTab(next: Tab) {
     tabP.value = next;
     if (signedIn === false) return;
@@ -1446,33 +1494,54 @@
     {@const kind = notifKind(n.type)}
     {@const KindIcon = kind.icon}
     {@const href = n.url ?? (n.authorNickname ? `${RSI_BASE_URL}/citizens/${n.authorNickname}` : '#')}
+    {@const removing = notifRemoving.has(n.id)}
     <li class="virt-item">
-      <a
-        {href}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="group flex gap-2.5 rounded-md p-2 ring-1 transition {!n.read
+      <div
+        class="group relative rounded-md ring-1 transition {!n.read
           ? 'bg-violet-950/30 ring-violet-900/60 hover:ring-violet-500'
           : 'bg-slate-900/40 ring-slate-800 hover:ring-violet-700'}"
         style:border-left="3px solid {!n.read ? TAB_META.notifications.stripeHex : 'transparent'}"
+        style:opacity={removing ? 0.4 : 1}
       >
-        {@render avatar(avatarUrl(n.authorAvatar), n.authorDisplayName, n.authorNickname, 'size-9')}
-        <div class="min-w-0 flex-1">
-          <div class="mb-0.5 flex items-center gap-1.5">
-            <span
-              class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300"
-            >
-              <KindIcon class="size-2.5" />
-              {kind.label}
-            </span>
-            {#if !n.read}
-              <span class="size-1.5 rounded-full bg-violet-400" aria-label="unread"></span>
-            {/if}
+        <a
+          {href}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="flex gap-2.5 p-2"
+          onclick={() => markNotifRead(n)}
+          onauxclick={(e) => { if (e.button === 1) markNotifRead(n); }}
+        >
+          {@render avatar(avatarUrl(n.authorAvatar), n.authorDisplayName, n.authorNickname, 'size-9')}
+          <div class="min-w-0 flex-1">
+            <div class="mb-0.5 flex items-center gap-1.5">
+              <span
+                class="flex items-center gap-1 rounded bg-slate-800/80 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-300"
+              >
+                <KindIcon class="size-2.5" />
+                {kind.label}
+              </span>
+              {#if !n.read}
+                <span class="size-1.5 rounded-full bg-violet-400" aria-label="unread"></span>
+              {/if}
+            </div>
+            <p class="line-clamp-2 text-xs text-slate-100 group-hover:text-violet-200 pr-6">{n.text}</p>
+            <p class="mt-0.5 text-[10px] text-slate-500" title={tsTooltip(n.timeCreated)}>{timeAgo(n.timeCreated)}</p>
           </div>
-          <p class="line-clamp-2 text-xs text-slate-100 group-hover:text-violet-200">{n.text}</p>
-          <p class="mt-0.5 text-[10px] text-slate-500" title={tsTooltip(n.timeCreated)}>{timeAgo(n.timeCreated)}</p>
-        </div>
-      </a>
+        </a>
+        <!-- Dismiss (X) button. Lives outside the <a> so its click doesn't
+             count as a navigation; opacity-0/group-hover:opacity-100 keeps
+             it out of the way until the user mouses onto the card. -->
+        <button
+          type="button"
+          class="absolute top-1 right-1 flex size-5 items-center justify-center rounded-md text-slate-500 opacity-0 transition hover:bg-slate-800 hover:text-slate-200 focus:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+          title="Dismiss"
+          aria-label="Dismiss notification"
+          disabled={removing}
+          onclick={(e) => { e.preventDefault(); e.stopPropagation(); removeNotif(n); }}
+        >
+          <X class="size-3" />
+        </button>
+      </div>
     </li>
   {/snippet}
 

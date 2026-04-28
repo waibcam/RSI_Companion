@@ -301,6 +301,24 @@ export interface SpectrumMarkReadResponsePayload {
   ok: true;
 }
 
+export interface SpectrumNotifMarkReadRequest {
+  type: 'spectrum.notifMarkRead';
+  /** Native server notification id. Synthetic client-side ids
+   *  (`private-…`, `friend-…`) are rejected up-front by the BG handler. */
+  notificationId: string;
+}
+export interface SpectrumNotifMarkReadResponsePayload {
+  ok: true;
+}
+
+export interface SpectrumNotifRemoveRequest {
+  type: 'spectrum.notifRemove';
+  notificationId: string;
+}
+export interface SpectrumNotifRemoveResponsePayload {
+  ok: true;
+}
+
 export interface SpectrumLobbiesRequest {
   type: 'spectrum.lobbies';
   force?: boolean;
@@ -1060,6 +1078,8 @@ export type RsiMessage =
   | SpectrumTrendingRequest
   | SpectrumNotificationsRequest
   | SpectrumMarkReadRequest
+  | SpectrumNotifMarkReadRequest
+  | SpectrumNotifRemoveRequest
   | SpectrumLobbiesRequest
   | SpectrumLobbyMessagesRequest
   | SpectrumSearchRequest
@@ -1134,6 +1154,8 @@ interface ResponseMap {
   'spectrum.trending': SpectrumTrendingResponsePayload;
   'spectrum.notifications': SpectrumNotificationsResponsePayload;
   'spectrum.markRead': SpectrumMarkReadResponsePayload;
+  'spectrum.notifMarkRead': SpectrumNotifMarkReadResponsePayload;
+  'spectrum.notifRemove': SpectrumNotifRemoveResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
   'spectrum.search': SpectrumSearchResponsePayload;

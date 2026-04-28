@@ -2221,6 +2221,52 @@ async function handleSpectrumBookmarkRemove(message: {
   return { bookmarks };
 }
 
+// Per-notification mutations. The popup builds three flavors of id:
+//   - `<numeric>`        — native server notification (forum reply, vote, etc.)
+//   - `private-<n>-…`    — synthetic, derived from private_lobbies in identify
+//   - `friend-<n>-…`     — synthetic, derived from friend_requests in identify
+// Only the native flavor has a /notification/read or /remove counterpart on
+// the server; the synthetics already roll up server-side state from other
+// places in the identify payload, so the local optimistic update is enough.
+function isSyntheticNotificationId(id: string): boolean {
+  return id.startsWith('private-') || id.startsWith('friend-');
+}
+
+async function handleSpectrumNotifMarkRead(message: { notificationId: string }) {
+  if (isSyntheticNotificationId(message.notificationId)) {
+    // Nothing to POST — just evict the cache so the next identify-driven
+    // fetch repaints the read flag if the underlying state has actually
+    // changed.
+    await chrome.storage.local.remove(CACHE_PREFIX + 'spectrum:notifications');
+    return { ok: true as const };
+  }
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  const csrfToken = await getSpectrumCsrfToken();
+  await Rsi.markSpectrumNotificationRead(token, {
+    notificationId: message.notificationId,
+    csrfToken,
+  });
+  await chrome.storage.local.remove(CACHE_PREFIX + 'spectrum:notifications');
+  return { ok: true as const };
+}
+
+async function handleSpectrumNotifRemove(message: { notificationId: string }) {
+  if (isSyntheticNotificationId(message.notificationId)) {
+    await chrome.storage.local.remove(CACHE_PREFIX + 'spectrum:notifications');
+    return { ok: true as const };
+  }
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  const csrfToken = await getSpectrumCsrfToken();
+  await Rsi.removeSpectrumNotification(token, {
+    notificationId: message.notificationId,
+    csrfToken,
+  });
+  await chrome.storage.local.remove(CACHE_PREFIX + 'spectrum:notifications');
+  return { ok: true as const };
+}
+
 async function handleSpectrumCommunities(force: boolean) {
   const token = await Rsi.readRsiToken();
   if (!token) {
@@ -2824,6 +2870,16 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleSpectrumNotifications(message.force ?? false) };
       case 'spectrum.markRead':
         return { ok: true, data: await handleSpectrumMarkRead() };
+      case 'spectrum.notifMarkRead':
+        return {
+          ok: true,
+          data: await handleSpectrumNotifMarkRead({ notificationId: message.notificationId }),
+        };
+      case 'spectrum.notifRemove':
+        return {
+          ok: true,
+          data: await handleSpectrumNotifRemove({ notificationId: message.notificationId }),
+        };
       case 'spectrum.lobbies':
         return { ok: true, data: await handleSpectrumLobbies(message.force ?? false) };
       case 'spectrum.lobbyMessages':
