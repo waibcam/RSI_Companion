@@ -112,7 +112,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v4: messages gained authorBadges so org icons appear inline.
   // v5: messages gained `reactions` so the per-message react chips +
   // picker render correctly from cache hits.
-  'spectrum:lobbyMessages': 5,
+  // v6: badge `icon` URLs are now absolutified (Spectrum returns
+  // relative `/media/...` paths that 404 in the popup origin); old
+  // entries hold the broken relative URLs.
+  'spectrum:lobbyMessages': 6,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
   'spectrum:emojis': 1,
@@ -131,8 +134,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // + replies + reactions gained user-state flags (`hasVoted` and
   // `userReacted`) so the vote/react buttons can render their pressed
   // state from cache hits. v9: detail gained `notificationSubscription`
-  // for the per-thread bell toggle.
-  'spectrum:threadDetail': 9,
+  // for the per-thread bell toggle. v10: badge `icon` URLs now
+  // absolutified — old entries hold broken `/media/...` relative paths.
+  'spectrum:threadDetail': 10,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on

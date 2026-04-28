@@ -986,6 +986,32 @@ function normalizeContentBlocks(
   return out;
 }
 
+/** Spectrum returns badge image paths as **relative** URLs (e.g.
+ *  `/media/u8wafwwjz9vabr/heap_thumb/WACKO-Logo.png`). On the live
+ *  site those resolve against `robertsspaceindustries.com` — but in
+ *  the extension popup the document origin is `chrome-extension://…`
+ *  so the `<img>` 404s. Absolutify here once, on the extraction
+ *  boundary, so every consumer (forum + chat + future surfaces) sees
+ *  the right URL without re-doing the same fix. URLs that are
+ *  already absolute pass through untouched. */
+function absolutifyMediaUrl(u: string | null | undefined): string {
+  if (!u) return '';
+  if (u.startsWith('/')) return `${RSI_BASE_URL}${u}`;
+  return u;
+}
+
+function normalizeBadges(
+  raw: ReadonlyArray<z.infer<typeof RawMemberBadge>> | null | undefined,
+): SpectrumMemberBadge[] {
+  return (raw ?? [])
+    .filter((b) => b.icon)
+    .map((b) => ({
+      name: b.name,
+      icon: absolutifyMediaUrl(b.icon),
+      url: b.url ?? undefined,
+    }));
+}
+
 function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undefined) {
   return {
     nickname: m?.nickname ?? '',
@@ -994,9 +1020,7 @@ function normalizeThreadMember(m: z.infer<typeof RawThreadMember> | null | undef
     /** True for CIG staff (member.isGM === true) — mirrors the
      *  gold tint Spectrum's website uses on staff posts. */
     isStaff: !!m?.isGM,
-    badges: (m?.meta?.badges ?? [])
-      .filter((b) => b.icon)
-      .map((b) => ({ name: b.name, icon: b.icon, url: b.url ?? undefined })),
+    badges: normalizeBadges(m?.meta?.badges),
   };
 }
 
@@ -1348,9 +1372,7 @@ export async function fetchSpectrumLobbyMessages(
       authorDisplayName: author.displayName,
       authorAvatar: author.avatar,
       authorIsStaff: author.isStaff,
-      authorBadges: (m.member?.meta?.badges ?? [])
-        .filter((b) => b.icon)
-        .map((b) => ({ name: b.name, icon: b.icon, url: b.url ?? undefined })),
+      authorBadges: normalizeBadges(m.member?.meta?.badges),
       contentBlocks,
       mediaId: m.media_id,
       isHighlighted: Number(m.highlight_role_id ?? 0) > 0,
