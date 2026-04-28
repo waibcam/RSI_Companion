@@ -3077,7 +3077,33 @@ export default defineBackground(() => {
       sendResponse({ ok: false, error: 'Invalid message' });
       return false;
     }
-    handleMessage(message as RsiMessage).then(sendResponse);
+    const msgType = (message as { type: string }).type;
+    // Defensive catch: handleMessage has its own try/catch around the
+    // switch but anything that escapes it (a synchronous throw before
+    // the try-block is set up, an unhandled rejection in dedupe(),
+    // a chrome.* API throwing on Firefox MV2 we missed) would leave
+    // the message channel open until the popup gives up — that's the
+    // "No response from background worker" we kept seeing on FF.
+    let responded = false;
+    const respond = (res: unknown) => {
+      if (responded) return;
+      responded = true;
+      try {
+        sendResponse(res);
+      } catch (e) {
+        // sendResponse can throw on Firefox MV2 if the channel was
+        // already closed (e.g. popup unmounted before we resolved).
+        // Nothing we can do at that point — surface in BG logs only.
+        log.warn('msg', `sendResponse for ${msgType} failed`, e);
+      }
+    };
+    handleMessage(message as RsiMessage)
+      .then(respond)
+      .catch((e) => {
+        const error = e instanceof Error ? e.message : String(e);
+        log.error('msg', `${msgType} threw before/after handleMessage`, e);
+        respond({ ok: false, error });
+      });
     return true;
   });
 
