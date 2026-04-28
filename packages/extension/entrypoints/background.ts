@@ -2464,13 +2464,26 @@ async function collectSpectrumIds(token: string): Promise<string[]> {
   // Each feed is wrapped in its own try/catch: if the DMs fetch transiently
   // 500s we still want the DevTracker count to update. Failing the whole
   // collector would zero the badge for the session.
+  //
+  // RsiNotAuthenticatedError gets a special path: the rsi_token cookie is
+  // present (so pollNotifications didn't short-circuit) but the server has
+  // already invalidated the session. All three feeds will fail the same way,
+  // so we bail on the first hit instead of logging three warnings per tick.
+  // The next auth.identity tick will flip signedIn=false and pollNotifications
+  // will then take the empty-counts shortcut.
   const out: string[] = [];
+
+  const guard = (e: unknown, label: string): boolean => {
+    if (e instanceof Rsi.RsiNotAuthenticatedError) return true;
+    log.warn('notify', `collectSpectrumIds: ${label} failed`, e);
+    return false;
+  };
 
   try {
     const threads = await Rsi.fetchHighlightedThreads(token);
     for (const t of threads) out.push(`thread-${t.id}`);
   } catch (e) {
-    log.warn('notify', 'collectSpectrumIds: highlighted threads failed', e);
+    if (guard(e, 'highlighted threads')) return out;
   }
 
   try {
@@ -2479,7 +2492,7 @@ async function collectSpectrumIds(token: string): Promise<string[]> {
       if (l.newMessages > 0) out.push(`dm-${l.id}-${l.lastMessageAt}`);
     }
   } catch (e) {
-    log.warn('notify', 'collectSpectrumIds: lobbies failed', e);
+    if (guard(e, 'lobbies')) return out;
   }
 
   try {
@@ -2493,7 +2506,7 @@ async function collectSpectrumIds(token: string): Promise<string[]> {
       out.push(`notif-${n.id}`);
     }
   } catch (e) {
-    log.warn('notify', 'collectSpectrumIds: notifications failed', e);
+    if (guard(e, 'notifications')) return out;
   }
 
   return out;
