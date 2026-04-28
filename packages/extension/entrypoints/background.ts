@@ -128,8 +128,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // authorBadges so org icons appear next to author name. v8: detail
   // + replies + reactions gained user-state flags (`hasVoted` and
   // `userReacted`) so the vote/react buttons can render their pressed
-  // state from cache hits.
-  'spectrum:threadDetail': 8,
+  // state from cache hits. v9: detail gained `notificationSubscription`
+  // for the per-thread bell toggle.
+  'spectrum:threadDetail': 9,
   // v2: groups + threads cache keys gained the communityId prefix in
   // Phase 3 so SC and org communities can coexist in the cache without
   // colliding. v1 entries (no community prefix) become orphans on
@@ -140,7 +141,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // forum data when called from an authenticated session, and v2
   // returned empty in the extension's auth context. Bumped to
   // invalidate the still-empty entries from v3.
-  'spectrum:forumGroups': 4,
+  // v5: channels now carry `notificationSubscription` so the bell
+  // toggle on the channel header can render the right pressed state
+  // straight from cache.
+  'spectrum:forumGroups': 5,
   // v3: forum threads list got the same isPinned + authorIsStaff bump.
   // v4: forum threads list gained votesCount/repliesCount/viewsCount.
   // v5: forum threads list gained mediaPreviewUrl for inline thumbnails.
@@ -2291,6 +2295,37 @@ async function handleSpectrumVote(message: {
   return { ok: true as const };
 }
 
+async function handleSpectrumSubscribe(message: {
+  entityType: 'forum_thread' | 'forum_channel' | 'message_lobby';
+  entityId: number;
+  level: 'all' | 'disabled' | 'mentions' | 'highlights';
+}) {
+  const token = await Rsi.readRsiToken();
+  if (!token) throw new Error('not signed in');
+  await Rsi.subscribeSpectrumEntity(token, {
+    entityType: message.entityType,
+    entityId: message.entityId,
+    type: message.level,
+  });
+  // Channel-level subscriptions live in the identify payload, which our
+  // forum-groups cache mirrors. Thread-level lives in threadDetail.
+  // Evict whichever cache the mutated entity lives in so the next read
+  // re-syncs against the server.
+  if (message.entityType === 'forum_channel') {
+    const allKeys = await listStorageKeys();
+    const targets = allKeys.filter((k) =>
+      k.startsWith(`${CACHE_PREFIX}spectrum:forumGroups:`),
+    );
+    if (targets.length > 0) await chrome.storage.local.remove(targets);
+    // identify itself is the source of truth — reset its cache too so
+    // the next auth.identity sees the new subscription level.
+    await Rsi.invalidateIdentifyCache();
+  } else if (message.entityType === 'forum_thread') {
+    await evictSpectrumThreadCaches();
+  }
+  return { ok: true as const };
+}
+
 async function handleSpectrumReact(message: {
   entityType: 'forum_thread' | 'forum_thread_reply';
   entityId: number;
@@ -2955,6 +2990,15 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
             entityId: message.entityId,
             reactionType: message.reactionType,
             action: message.action,
+          }),
+        };
+      case 'spectrum.subscribe':
+        return {
+          ok: true,
+          data: await handleSpectrumSubscribe({
+            entityType: message.entityType,
+            entityId: message.entityId,
+            level: message.level,
           }),
         };
       case 'spectrum.lobbies':

@@ -138,6 +138,12 @@ export interface SpectrumForumChannelInfo extends SpectrumChannel {
   threadsCount: number;
   groupId: number;
   groupName: string;
+  /** Current user's notification subscription level for this channel.
+   *  'all' = watching every new thread, 'disabled' = off. Server may
+   *  also return 'mentions' / 'highlights' on legacy channels — we
+   *  keep the field as a free string so the toggle UI can render
+   *  any non-'disabled' value as "subscribed". */
+  notificationSubscription: string;
 }
 
 export interface SpectrumForumGroup {
@@ -179,6 +185,7 @@ export async function fetchSpectrumForumGroups(
       threadsCount: ch.threads_count ?? 0,
       groupId: g.id,
       groupName: g.name,
+      notificationSubscription: ch.notification_subscription ?? 'disabled',
     })),
   }));
 }
@@ -423,6 +430,12 @@ export async function fetchSpectrumOrgForumGroups(
       threadsCount: ch.threads_count,
       groupId: g.id,
       groupName: g.name,
+      // v2/forum/channel/list also carries the user's notification
+      // level when the response is for an authenticated viewer. Default
+      // to 'disabled' if the field is missing on legacy responses.
+      notificationSubscription:
+        (ch as unknown as { notification_subscription?: string }).notification_subscription ??
+        'disabled',
     })),
   }));
 }
@@ -732,6 +745,13 @@ const RawThreadDetail = z
     votes: RawVotes.nullable().optional(),
     reactions: z.array(RawReactionEntry).default([]),
     replies: z.array(RawThreadReply).default([]),
+    // Per-thread notification level for the current user. Same vocab
+    // as channels: 'all' / 'disabled' / 'mentions' / 'highlights'.
+    notification_subscription: z
+      .string()
+      .nullable()
+      .default('disabled')
+      .transform((v) => v ?? 'disabled'),
   })
   .passthrough();
 
@@ -833,6 +853,11 @@ export interface SpectrumThreadDetail {
   hasVoted: boolean;
   reactions: SpectrumReaction[];
   contentBlocks: SpectrumContentBlock[];
+  /** Current user's notification subscription level for this thread.
+   *  'all' / 'disabled' / 'mentions' / 'highlights'. Same vocab as
+   *  forum channels — the bell toggle treats anything non-'disabled'
+   *  as "subscribed". */
+  notificationSubscription: string;
   repliesCount: number;
   viewsCount: number;
   /** First 25 top-level replies (the rest live behind
@@ -1010,6 +1035,7 @@ export async function fetchSpectrumThreadDetail(
     authorIsStaff: author.isStaff,
     authorBadges: author.badges,
     contentBlocks: normalizeContentBlocks(t.content_blocks),
+    notificationSubscription: t.notification_subscription ?? 'disabled',
     repliesCount: t.replies_count,
     viewsCount: t.views_count,
     votesCount: t.votes?.count ?? 0,
@@ -1827,6 +1853,43 @@ export async function voteSpectrumEntity(
   if (!parsed.success || parsed.data.success !== 1) {
     const code = parsed.success ? parsed.data.code : 'parse error';
     throw new Error(`vote/${args.action} returned ${code}`);
+  }
+}
+
+// Subscribe / unsubscribe for notifications. The HAR shows a single
+// endpoint with a `type` field that doubles as the verb:
+//
+//   POST /api/spectrum/notification/subscribe
+//        {"entity_type":"forum_channel","entity_id":"3","type":"all"}
+//        {"entity_type":"forum_channel","entity_id":"3","type":"disabled"}
+//
+// Same shape works for forum_thread (subscribe to a single thread for
+// reply notifications). Other levels exist on legacy threads
+// ('mentions' / 'highlights') but the desktop UI only exposes the
+// binary all/disabled toggle so we mirror that.
+
+export type SpectrumSubscribeEntity = 'forum_thread' | 'forum_channel' | 'message_lobby';
+export type SpectrumSubscribeType = 'all' | 'disabled' | 'mentions' | 'highlights';
+
+export async function subscribeSpectrumEntity(
+  token: string,
+  args: {
+    entityType: SpectrumSubscribeEntity;
+    entityId: number;
+    type: SpectrumSubscribeType;
+  },
+): Promise<void> {
+  const response = await spectrumPost(token, '/api/spectrum/notification/subscribe', {
+    entity_type: args.entityType,
+    entity_id: String(args.entityId),
+    type: args.type,
+  });
+  assertRsiOk(response, 'notification/subscribe');
+  const raw = (await response.json()) as unknown;
+  const parsed = BookmarkMutationResponse.safeParse(raw);
+  if (!parsed.success || parsed.data.success !== 1) {
+    const code = parsed.success ? parsed.data.code : 'parse error';
+    throw new Error(`notification/subscribe returned ${code}`);
   }
 }
 

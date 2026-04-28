@@ -150,6 +150,15 @@ const Channel = z.object({
     .default('')
     .transform((v) => v ?? ''),
   threads_count: z.coerce.number().int().default(0),
+  // Per-channel notification level for the current user. Server
+  // returns 'all' when watching, 'disabled' when off; older versions
+  // can also return 'mentions' / 'highlights'. Optional because not
+  // every identify shape has shipped this field for org channels.
+  notification_subscription: z
+    .string()
+    .nullable()
+    .default('disabled')
+    .transform((v) => v ?? 'disabled'),
 });
 
 const ChannelGroup = z.object({

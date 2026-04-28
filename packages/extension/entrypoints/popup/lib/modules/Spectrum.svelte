@@ -5,6 +5,7 @@
     ArrowLeft,
     AtSign,
     Bell,
+    BellOff,
     Bookmark,
     BookmarkPlus,
     BookmarkX,
@@ -1043,6 +1044,77 @@
     }
   }
 
+  // Subscribe / unsubscribe toggles. Reused by the channel header bell
+  // (forum_channel) and the thread detail bell (forum_thread). Both
+  // optimistically flip the local subscription level, fire the BG
+  // message, and roll back on reject.
+  let pendingSubscribe = $state<Set<string>>(new Set());
+
+  async function toggleChannelSubscription(channelId: number) {
+    const key = `forum_channel:${channelId}`;
+    if (pendingSubscribe.has(channelId.toString())) return;
+    // Find the current level across groups so we know which way to flip.
+    let current: string = 'disabled';
+    for (const g of forumGroups) {
+      for (const ch of g.channels) {
+        if (ch.id === channelId) {
+          current = ch.notificationSubscription;
+          break;
+        }
+      }
+    }
+    const nextLevel: 'all' | 'disabled' = current === 'disabled' ? 'all' : 'disabled';
+    pendingSubscribe = new Set([...pendingSubscribe, key]);
+    const before = forumGroups;
+    forumGroups = forumGroups.map((g) => ({
+      ...g,
+      channels: g.channels.map((ch) =>
+        ch.id === channelId ? { ...ch, notificationSubscription: nextLevel } : ch,
+      ),
+    }));
+    try {
+      await sendRsiMessage({
+        type: 'spectrum.subscribe',
+        entityType: 'forum_channel',
+        entityId: channelId,
+        level: nextLevel,
+      });
+    } catch (e) {
+      forumGroups = before;
+      forumGroupsError = errorMessage(e);
+    } finally {
+      const next = new Set(pendingSubscribe);
+      next.delete(key);
+      pendingSubscribe = next;
+    }
+  }
+
+  async function toggleThreadSubscription(threadId: number) {
+    const key = `forum_thread:${threadId}`;
+    if (pendingSubscribe.has(key)) return;
+    if (!threadDetail || threadDetail.id !== threadId) return;
+    const current = threadDetail.notificationSubscription;
+    const nextLevel: 'all' | 'disabled' = current === 'disabled' ? 'all' : 'disabled';
+    pendingSubscribe = new Set([...pendingSubscribe, key]);
+    const before = threadDetail;
+    threadDetail = { ...threadDetail, notificationSubscription: nextLevel };
+    try {
+      await sendRsiMessage({
+        type: 'spectrum.subscribe',
+        entityType: 'forum_thread',
+        entityId: threadId,
+        level: nextLevel,
+      });
+    } catch (e) {
+      threadDetail = before;
+      threadDetailError = errorMessage(e);
+    } finally {
+      const next = new Set(pendingSubscribe);
+      next.delete(key);
+      pendingSubscribe = next;
+    }
+  }
+
   function switchTab(next: Tab) {
     tabP.value = next;
     if (signedIn === false) return;
@@ -1864,6 +1936,30 @@
     {/if}
   {/snippet}
 
+  {#snippet threadSubscribeBell(d: ThreadDetail)}
+    {@const subscribed = d.notificationSubscription !== 'disabled'}
+    {@const subPending = pendingSubscribe.has(`forum_thread:${d.id}`)}
+    <button
+      type="button"
+      onclick={() => toggleThreadSubscription(d.id)}
+      disabled={subPending}
+      class="shrink-0 rounded-md p-1 transition disabled:cursor-not-allowed disabled:opacity-50 {subscribed
+        ? 'text-amber-300 hover:bg-amber-500/15'
+        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}"
+      title={subscribed
+        ? 'Subscribed — click to disable reply notifications'
+        : 'Subscribe — get notified of new replies'}
+      aria-label={subscribed ? 'Unsubscribe from thread' : 'Subscribe to thread'}
+      aria-pressed={subscribed}
+    >
+      {#if subscribed}
+        <Bell class="size-4" />
+      {:else}
+        <BellOff class="size-4" />
+      {/if}
+    </button>
+  {/snippet}
+
   {#snippet engagementBar(
     entity: EngageEntity,
     voteCount: number,
@@ -2325,6 +2421,7 @@
                 {#if detail.viewsCount > 0} · {detail.viewsCount.toLocaleString()} views{/if}
               </p>
             </div>
+            {@render threadSubscribeBell(detail)}
           </div>
           <div class="mt-2 flex flex-col gap-1.5">
             {#if detail.isErased}
@@ -2619,6 +2716,29 @@
                 <p class="mt-0.5 line-clamp-1 text-[10px] text-slate-500">{ch.description}</p>
               {/if}
             </div>
+            {#if ch}
+              {@const subscribed = ch.notificationSubscription !== 'disabled'}
+              {@const subPending = pendingSubscribe.has(`forum_channel:${ch.id}`)}
+              <button
+                type="button"
+                onclick={() => toggleChannelSubscription(ch.id)}
+                disabled={subPending}
+                class="shrink-0 rounded-md p-1 transition disabled:cursor-not-allowed disabled:opacity-50 {subscribed
+                  ? 'text-amber-300 hover:bg-amber-500/15'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}"
+                title={subscribed
+                  ? 'Subscribed — click to disable notifications'
+                  : 'Subscribe — get notified of new threads'}
+                aria-label={subscribed ? 'Unsubscribe from channel' : 'Subscribe to channel'}
+                aria-pressed={subscribed}
+              >
+                {#if subscribed}
+                  <Bell class="size-4" />
+                {:else}
+                  <BellOff class="size-4" />
+                {/if}
+              </button>
+            {/if}
             <div class="flex shrink-0 rounded-md border border-slate-800 bg-slate-900 p-0.5 text-[10px]">
               {#each FORUM_SORTS as s (s.value)}
                 <button

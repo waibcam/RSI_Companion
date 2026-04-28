@@ -341,6 +341,19 @@ export interface SpectrumReactResponsePayload {
   ok: true;
 }
 
+export interface SpectrumSubscribeRequest {
+  type: 'spectrum.subscribe';
+  entityType: 'forum_thread' | 'forum_channel' | 'message_lobby';
+  entityId: number;
+  /** 'all' = watch every new post; 'disabled' = no notifications.
+   *  Legacy threads can also accept 'mentions' / 'highlights' but the
+   *  desktop UI only exposes all/disabled. */
+  level: 'all' | 'disabled' | 'mentions' | 'highlights';
+}
+export interface SpectrumSubscribeResponsePayload {
+  ok: true;
+}
+
 export interface SpectrumLobbiesRequest {
   type: 'spectrum.lobbies';
   force?: boolean;
@@ -1104,6 +1117,7 @@ export type RsiMessage =
   | SpectrumNotifRemoveRequest
   | SpectrumVoteRequest
   | SpectrumReactRequest
+  | SpectrumSubscribeRequest
   | SpectrumLobbiesRequest
   | SpectrumLobbyMessagesRequest
   | SpectrumSearchRequest
@@ -1182,6 +1196,7 @@ interface ResponseMap {
   'spectrum.notifRemove': SpectrumNotifRemoveResponsePayload;
   'spectrum.vote': SpectrumVoteResponsePayload;
   'spectrum.react': SpectrumReactResponsePayload;
+  'spectrum.subscribe': SpectrumSubscribeResponsePayload;
   'spectrum.lobbies': SpectrumLobbiesResponsePayload;
   'spectrum.lobbyMessages': SpectrumLobbyMessagesResponsePayload;
   'spectrum.search': SpectrumSearchResponsePayload;
