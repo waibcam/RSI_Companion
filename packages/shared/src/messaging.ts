@@ -1197,10 +1197,29 @@ export type RsiMessageResult<M extends RsiMessage> =
   | { ok: true; data: RsiResponse<M> }
   | { ok: false; error: string; signedIn?: boolean };
 
+// Firefox MV2 quirk: `chrome.runtime.sendMessage(msg)` (no callback) does NOT
+// reliably return a Promise on every Firefox version — Mozilla supports the
+// callback signature on the `chrome.*` namespace and only guarantees a
+// Promise on `browser.*`. When `await` resolves the non-Promise result, it
+// settles to `undefined` immediately and the popup throws "No response from
+// background worker" before the BG ever replies. Picking the
+// Promise-native namespace at runtime fixes it. WXT's auto-polyfill only
+// rewrites `chrome` to `browser` in the background bundle, not in the
+// popup, so we polyfill ourselves here.
+type RuntimeNS = Pick<typeof chrome.runtime, 'sendMessage'>;
+function getRuntime(): RuntimeNS {
+  const g = globalThis as unknown as {
+    browser?: { runtime?: { id?: string } & RuntimeNS };
+    chrome?: { runtime: RuntimeNS };
+  };
+  if (g.browser?.runtime?.id) return g.browser.runtime;
+  return chrome.runtime;
+}
+
 export async function sendRsiMessage<M extends RsiMessage>(
   message: M,
 ): Promise<RsiResponse<M>> {
-  const res = (await chrome.runtime.sendMessage(message)) as RsiMessageResult<M>;
+  const res = (await getRuntime().sendMessage(message)) as RsiMessageResult<M>;
   if (!res) throw new Error('No response from background worker');
   if (!res.ok) {
     const err = new Error(res.error) as Error & { signedIn?: boolean };
