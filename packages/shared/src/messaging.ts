@@ -331,7 +331,9 @@ export interface SpectrumVoteResponsePayload {
 
 export interface SpectrumReactRequest {
   type: 'spectrum.react';
-  entityType: 'forum_thread' | 'forum_thread_reply';
+  /** `message` covers DM/chat reactions; the two forum types cover
+   *  thread-level + reply-level forum reactions. */
+  entityType: 'forum_thread' | 'forum_thread_reply' | 'message';
   entityId: number;
   /** Shortcode form, e.g. ':+1:' or ':heart:'. */
   reactionType: string;

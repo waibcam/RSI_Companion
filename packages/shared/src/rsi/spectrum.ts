@@ -457,7 +457,12 @@ export async function fetchSpectrumForumChannelThreads(
 // Sort options accepted by /forum/channel/threads. Only 'hot' is exercised
 // by the DevTracker/Trending tabs, but the Forums tab (Phase 2) lets users
 // pick any of these — RSI's desktop SPA uses the same set.
-export type SpectrumSort = 'hot' | 'top' | 'new' | 'last_activity' | 'trending';
+// Sort vocabulary captured live from the desktop SPA's sort selector
+// (April 2026 HAR). Note the inconsistent casing: `last-activity` uses
+// a hyphen, `newest` is spelled-out. Earlier guesses (`top`, `new`,
+// `last_activity`) silently returned empty results because the server
+// requires exact-match strings.
+export type SpectrumSort = 'hot' | 'votes' | 'newest' | 'last-activity';
 
 export interface FetchChannelThreadsOptions {
   sort?: SpectrumSort;
@@ -1242,6 +1247,10 @@ const RawMessage = z
     media_id: z.string().default(''),
     highlight_role_id: z.coerce.number().int().nullable().optional(),
     member: RawMessageMember.nullable().optional(),
+    // Same RawReactionEntry shape as forum reactions — entity_type just
+    // shifts to 'message' on the wire. Includes the per-entry `voted`
+    // flag so we can render the user's pressed state on each chip.
+    reactions: z.array(RawReactionEntry).default([]),
   })
   .passthrough();
 
@@ -1286,6 +1295,9 @@ export interface SpectrumMessage {
   /** Server-side staff highlight (admins, mods); the desktop UI tints
    *  these messages. */
   isHighlighted: boolean;
+  /** Emoji reactions on this message. Same shape as thread/reply
+   *  reactions — entity_type 'message' on the wire. */
+  reactions: SpectrumReaction[];
 }
 
 /** Page of messages in a lobby. The API returns messages
@@ -1342,6 +1354,13 @@ export async function fetchSpectrumLobbyMessages(
       contentBlocks,
       mediaId: m.media_id,
       isHighlighted: Number(m.highlight_role_id ?? 0) > 0,
+      reactions: (m.reactions ?? [])
+        .filter((r) => !!r.type)
+        .map((r) => ({
+          type: r.type,
+          count: r.count,
+          userReacted: (r.voted ?? 0) > 0,
+        })),
     };
   });
 }
@@ -1829,7 +1848,12 @@ export async function removeSpectrumNotification(
 // reactions (out of scope for this commit). The /remove path is the
 // symmetric inverse, same body.
 
+// Vote applies only to forum entities (DM messages don't have an
+// upvote concept on the desktop UI). Reaction works on those plus
+// `message` for chat reactions — confirmed by a HAR capture of the
+// thumbs-up button on a DM message.
 export type SpectrumVoteEntity = 'forum_thread' | 'forum_thread_reply';
+export type SpectrumReactEntity = SpectrumVoteEntity | 'message';
 
 export async function voteSpectrumEntity(
   token: string,
@@ -1888,7 +1912,7 @@ export async function subscribeSpectrumEntity(
 export async function reactSpectrumEntity(
   token: string,
   args: {
-    entityType: SpectrumVoteEntity;
+    entityType: SpectrumReactEntity;
     entityId: number;
     /** Spectrum shortcode form, e.g. ':+1:', ':heart:' — must match the
      *  community emoji table the SPA uses. */

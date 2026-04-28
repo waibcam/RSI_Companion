@@ -110,7 +110,9 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v2: every message gained `authorIsStaff` for the CIG gold tint.
   // v3: messages gained content_state segments (rich-text rendering).
   // v4: messages gained authorBadges so org icons appear inline.
-  'spectrum:lobbyMessages': 4,
+  // v5: messages gained `reactions` so the per-message react chips +
+  // picker render correctly from cache hits.
+  'spectrum:lobbyMessages': 5,
   'spectrum:communities': 1,
   'spectrum:bookmarks': 1,
   'spectrum:emojis': 1,
@@ -2321,7 +2323,7 @@ async function handleSpectrumSubscribe(message: {
 }
 
 async function handleSpectrumReact(message: {
-  entityType: 'forum_thread' | 'forum_thread_reply';
+  entityType: 'forum_thread' | 'forum_thread_reply' | 'message';
   entityId: number;
   reactionType: string;
   action: 'add' | 'remove';
@@ -2334,7 +2336,18 @@ async function handleSpectrumReact(message: {
     reactionType: message.reactionType,
     action: message.action,
   });
-  await evictSpectrumThreadCaches();
+  // Forum reactions live on threads/replies → evict thread caches.
+  // DM-message reactions live in the lobby messages cache → evict
+  // lobbyMessages instead. Clearing both is harmless on misclassify.
+  if (message.entityType === 'message') {
+    const allKeys = await listStorageKeys();
+    const targets = allKeys.filter((k) =>
+      k.startsWith(`${CACHE_PREFIX}spectrum:lobbyMessages:`),
+    );
+    if (targets.length > 0) await chrome.storage.local.remove(targets);
+  } else {
+    await evictSpectrumThreadCaches();
+  }
   return { ok: true as const };
 }
 

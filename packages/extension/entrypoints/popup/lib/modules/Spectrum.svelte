@@ -114,9 +114,9 @@
   );
   const FORUM_SORTS: ReadonlyArray<{ value: ForumSort; label: string }> = [
     { value: 'hot', label: 'Hot' },
-    { value: 'new', label: 'New' },
-    { value: 'top', label: 'Top' },
-    { value: 'last_activity', label: 'Active' },
+    { value: 'newest', label: 'New' },
+    { value: 'votes', label: 'Top' },
+    { value: 'last-activity', label: 'Active' },
   ];
   const isForumSort = (v: unknown): v is ForumSort =>
     typeof v === 'string' && FORUM_SORTS.some((s) => s.value === v);
@@ -920,7 +920,10 @@
   // locally first, then fire the BG message — rollback restores the
   // original detail on failure. The pendingEngagement set guards against
   // double-clicks on the same entity (vote spam, reaction toggle storms).
-  type EngageEntity = { entityType: 'forum_thread' | 'forum_thread_reply'; entityId: number };
+  type EngageEntity = {
+    entityType: 'forum_thread' | 'forum_thread_reply' | 'message';
+    entityId: number;
+  };
   let pendingEngagement = $state<Set<string>>(new Set());
 
   function engagementKey(e: EngageEntity, suffix = ''): string {
@@ -958,6 +961,10 @@
   }
 
   async function toggleVote(entity: EngageEntity, hasVoted: boolean) {
+    // Voting is forum-only — chat messages don't have an upvote concept.
+    // EngageEntity is widened to include 'message' for the shared
+    // toggleReact path; guard here to keep TS narrow for the BG message.
+    if (entity.entityType === 'message') return;
     const key = engagementKey(entity, 'vote');
     if (pendingEngagement.has(key)) return;
     const action: 'add' | 'remove' = hasVoted ? 'remove' : 'add';
@@ -1033,34 +1040,58 @@
     return filtered.slice(0, 200);
   });
 
+  // Compute the next reaction list given a user toggle. Shared by the
+  // thread-tree and message-array paths so the prune-to-zero / first-time
+  // add logic stays in one place.
+  function applyReactionToggle(
+    reactions: Rsi.SpectrumReaction[],
+    reactionType: string,
+    userReacted: boolean,
+  ): Rsi.SpectrumReaction[] {
+    const delta = userReacted ? -1 : 1;
+    const existing = reactions.find((r) => r.type === reactionType);
+    if (existing) {
+      const newCount = Math.max(0, existing.count + delta);
+      if (newCount === 0) {
+        // Prune to zero — keeping a 0-count chip would be visual noise.
+        return reactions.filter((r) => r.type !== reactionType);
+      }
+      return reactions.map((r) =>
+        r.type === reactionType
+          ? { type: r.type, count: newCount, userReacted: !userReacted }
+          : r,
+      );
+    }
+    // First-time add: create the chip.
+    return [...reactions, { type: reactionType, count: 1, userReacted: true }];
+  }
+
   async function toggleReact(entity: EngageEntity, reactionType: string, userReacted: boolean) {
     const key = engagementKey(entity, `react:${reactionType}`);
     if (pendingEngagement.has(key)) return;
     const action: 'add' | 'remove' = userReacted ? 'remove' : 'add';
-    const delta = userReacted ? -1 : 1;
     pendingEngagement = new Set([...pendingEngagement, key]);
-    const before = threadDetail;
-    threadDetail = mutateThreadTree(threadDetail, entity, (n) => {
-      const existing = n.reactions.find((r) => r.type === reactionType);
-      let reactions: Rsi.SpectrumReaction[];
-      if (existing) {
-        const newCount = Math.max(0, existing.count + delta);
-        if (newCount === 0) {
-          // Prune to zero — keeping a 0-count chip would be visual noise.
-          reactions = n.reactions.filter((r) => r.type !== reactionType);
-        } else {
-          reactions = n.reactions.map((r) =>
-            r.type === reactionType
-              ? { type: r.type, count: newCount, userReacted: !userReacted }
-              : r,
-          );
-        }
-      } else {
-        // First-time add: create the chip.
-        reactions = [...n.reactions, { type: reactionType, count: 1, userReacted: true }];
-      }
-      return { ...n, reactions };
-    });
+
+    // Snapshot the right state slice for rollback. Messages live in
+    // `lobbyMessages` (the DM tab), forum entities in `threadDetail`.
+    const beforeThread = threadDetail;
+    const beforeMessages = lobbyMessages;
+    let scope: 'thread' | 'message';
+    if (entity.entityType === 'message') {
+      scope = 'message';
+      lobbyMessages = lobbyMessages.map((m) =>
+        m.id === entity.entityId
+          ? { ...m, reactions: applyReactionToggle(m.reactions, reactionType, userReacted) }
+          : m,
+      );
+    } else {
+      scope = 'thread';
+      threadDetail = mutateThreadTree(threadDetail, entity, (n) => ({
+        ...n,
+        reactions: applyReactionToggle(n.reactions, reactionType, userReacted),
+      }));
+    }
+
     try {
       await sendRsiMessage({
         type: 'spectrum.react',
@@ -1070,8 +1101,13 @@
         action,
       });
     } catch (e) {
-      threadDetail = before;
-      threadDetailError = errorMessage(e);
+      if (scope === 'message') {
+        lobbyMessages = beforeMessages;
+        lobbyMessagesError = errorMessage(e);
+      } else {
+        threadDetail = beforeThread;
+        threadDetailError = errorMessage(e);
+      }
     } finally {
       const next = new Set(pendingEngagement);
       next.delete(key);
@@ -1669,7 +1705,7 @@
          treatment since both signals mean "this came from staff". -->
     {@const goldAccent = m.authorIsStaff || m.isHighlighted}
     <li
-      class="rounded-md p-2 ring-1 {goldAccent
+      class="group rounded-md p-2 ring-1 {goldAccent
         ? 'ring-[rgba(191,167,57,0.4)]'
         : 'bg-slate-900/40 ring-slate-800'}"
       style:background-color={goldAccent ? 'rgba(191, 167, 57, 0.12)' : ''}
@@ -1697,7 +1733,71 @@
       <div class="flex flex-col gap-1">
         {@render contentBlocks(m.contentBlocks, goldAccent)}
       </div>
+      {@render messageReactionBar(m)}
     </li>
+  {/snippet}
+
+  {#snippet messageReactionBar(m: Message)}
+    {@const entity: EngageEntity = { entityType: 'message', entityId: m.id }}
+    {@const pickerKey = engagementKey(entity, 'picker')}
+    {@const pickerOpen = pickerOpenForKey === pickerKey}
+    <div class="relative mt-1 flex flex-wrap items-center gap-1">
+      <!-- Existing reaction chips: same toggle UX as forum entities. -->
+      {#each m.reactions.slice(0, 6) as r (r.type)}
+        {@const emojiUrl = resolveEmojiUrl(r.type)}
+        {@const reactKey = engagementKey(entity, `react:${r.type}`)}
+        {@const reactPending = pendingEngagement.has(reactKey)}
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium transition disabled:cursor-not-allowed disabled:opacity-50 {r.userReacted
+            ? 'bg-violet-500/25 text-violet-200 ring-1 ring-violet-400/60 hover:bg-violet-500/35'
+            : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700/80 hover:text-slate-100'}"
+          title={r.userReacted
+            ? `Remove your reaction · ${r.type}`
+            : `React with ${r.type} · ${r.count} reaction${r.count === 1 ? '' : 's'}`}
+          disabled={reactPending}
+          onclick={() => toggleReact(entity, r.type, r.userReacted)}
+        >
+          {#if emojiUrl}
+            <img src={emojiUrl} alt={r.type} loading="lazy" class="size-3" />
+          {:else}
+            <span class="font-mono text-[8px] text-slate-400">{r.type}</span>
+          {/if}
+          {formatStat(r.count)}
+        </button>
+      {/each}
+      {#if m.reactions.length > 6}
+        <span class="text-[9px] italic text-slate-500">+{m.reactions.length - 6} more</span>
+      {/if}
+
+      <!-- Add-reaction trigger. Same picker as forums. The button is
+           more discreet on a chat row (no chips when no reactions yet)
+           so it only appears on hover or when a reaction already exists. -->
+      <button
+        type="button"
+        data-emoji-trigger
+        class="flex items-center rounded px-1 py-0.5 text-slate-500 transition hover:bg-slate-800 hover:text-slate-200 {m.reactions.length === 0
+          ? 'opacity-0 group-hover:opacity-60 hover:!opacity-100'
+          : 'opacity-60 hover:opacity-100'} {pickerOpen
+          ? '!opacity-100 bg-slate-800 text-slate-200'
+          : ''}"
+        title="Add reaction"
+        aria-label="Add reaction"
+        aria-haspopup="dialog"
+        aria-expanded={pickerOpen}
+        onclick={(e) => {
+          e.stopPropagation();
+          if (pickerOpen) closePicker();
+          else openPicker(entity);
+        }}
+      >
+        <Smile class="size-3" />
+      </button>
+
+      {#if pickerOpen}
+        {@render emojiPickerPanel(entity, m.reactions)}
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet lobbyMessagesView()}
@@ -2079,63 +2179,67 @@
       </button>
 
       {#if pickerOpen}
-        <!-- Popover: positioned absolute below the trigger row. The
-             whole row is `relative` so this stays anchored. Width clamps
-             to the popup viewport — Spectrum communities can have 200+
-             custom emojis and a 16-col grid is plenty. -->
-        <div
-          data-emoji-picker
-          class="absolute top-full left-0 z-30 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-2 shadow-xl"
-          role="dialog"
-          aria-label="Reaction emoji picker"
-        >
-          <input
-            type="search"
-            bind:value={pickerSearch}
-            placeholder="Search emojis…"
-            class="mb-2 w-full rounded bg-slate-950 px-2 py-1 text-[11px] text-slate-200 ring-1 ring-slate-800 focus:outline-none focus:ring-violet-500"
-            autocomplete="off"
-            autocorrect="off"
-            spellcheck="false"
-          />
-          {#if emojiMap.size === 0}
-            <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
-              Emoji catalog still loading…
-            </p>
-          {:else if pickerEmojis.length === 0}
-            <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
-              No emojis match "{pickerSearch}"
-            </p>
-          {:else}
-            <div class="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto pr-1">
-              {#each pickerEmojis as e (e.name)}
-                {@const eKey = engagementKey(entity, `react::${e.name}:`)}
-                {@const ePending = pendingEngagement.has(eKey)}
-                {@const userReactedHere = reactions.some(
-                  (r) => r.type === `:${e.name}:` && r.userReacted,
-                )}
-                <button
-                  type="button"
-                  class="flex aspect-square items-center justify-center rounded p-1 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30 {userReactedHere
-                    ? 'bg-violet-500/25 ring-1 ring-violet-400/60'
-                    : ''}"
-                  title=":{e.name}:"
-                  disabled={ePending}
-                  onclick={() => {
-                    void toggleReact(entity, `:${e.name}:`, userReactedHere);
-                    closePicker();
-                  }}
-                >
-                  <img src={e.url} alt={e.name} loading="lazy" class="size-4" />
-                </button>
-              {/each}
-            </div>
-            <p class="mt-1 text-[9px] italic text-slate-600">
-              {pickerEmojis.length} emoji{pickerEmojis.length === 1 ? '' : 's'}
-              {pickerSearch ? `· filter "${pickerSearch}"` : ''}
-            </p>
-          {/if}
+        {@render emojiPickerPanel(entity, reactions)}
+      {/if}
+    </div>
+  {/snippet}
+
+  {#snippet emojiPickerPanel(entity: EngageEntity, reactions: Rsi.SpectrumReaction[])}
+    <!-- Popover: positioned absolute below the trigger row. The
+         whole row is `relative` so this stays anchored. Width clamps
+         to the popup viewport — Spectrum communities can have 200+
+         custom emojis and an 8-col grid is plenty. -->
+    <div
+      data-emoji-picker
+      class="absolute top-full left-0 z-30 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-2 shadow-xl"
+      role="dialog"
+      aria-label="Reaction emoji picker"
+    >
+      <input
+        type="search"
+        bind:value={pickerSearch}
+        placeholder="Search emojis…"
+        class="mb-2 w-full rounded bg-slate-950 px-2 py-1 text-[11px] text-slate-200 ring-1 ring-slate-800 focus:outline-none focus:ring-violet-500"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck="false"
+      />
+      {#if emojiMap.size === 0}
+        <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
+          Emoji catalog still loading…
+        </p>
+      {:else if pickerEmojis.length === 0}
+        <p class="px-1 py-2 text-center text-[10px] italic text-slate-500">
+          No emojis match "{pickerSearch}"
+        </p>
+      {:else}
+        <div class="grid max-h-48 grid-cols-8 gap-0.5 overflow-y-auto pr-1">
+          {#each pickerEmojis as e (e.name)}
+            {@const eKey = engagementKey(entity, `react::${e.name}:`)}
+            {@const ePending = pendingEngagement.has(eKey)}
+            {@const userReactedHere = reactions.some(
+              (r) => r.type === `:${e.name}:` && r.userReacted,
+            )}
+            <button
+              type="button"
+              class="flex aspect-square items-center justify-center rounded p-1 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30 {userReactedHere
+                ? 'bg-violet-500/25 ring-1 ring-violet-400/60'
+                : ''}"
+              title=":{e.name}:"
+              disabled={ePending}
+              onclick={() => {
+                void toggleReact(entity, `:${e.name}:`, userReactedHere);
+                closePicker();
+              }}
+            >
+              <img src={e.url} alt={e.name} loading="lazy" class="size-4" />
+            </button>
+          {/each}
         </div>
+        <p class="mt-1 text-[9px] italic text-slate-600">
+          {pickerEmojis.length} emoji{pickerEmojis.length === 1 ? '' : 's'}
+          {pickerSearch ? `· filter "${pickerSearch}"` : ''}
+        </p>
       {/if}
     </div>
   {/snippet}
