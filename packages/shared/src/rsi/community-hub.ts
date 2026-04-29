@@ -18,7 +18,17 @@ const Account = z
     displayName: z.string().default(''),
     nickname: z.string().default(''),
     thumbnailUrl: z.string().nullable().optional(),
-    live: z.boolean().default(false),
+    // RSI started returning `null` for `live` on followedPostsFromSSR
+    // accounts (observed 2026-04-29 on a 1.3.0 install via @WhisperDark
+    // — every Live tile in the user's feed had account.live === null
+    // and zod rejected the whole shape, breaking the entire Community
+    // Hub tab). Nullable + coerced default keeps the downstream
+    // `authorIsLive` boolean honest without fighting the server.
+    live: z
+      .boolean()
+      .nullable()
+      .default(false)
+      .transform((v) => v ?? false),
   })
   .passthrough();
 
