@@ -669,11 +669,18 @@ async function handleContactsSendByNickname(nickname: string) {
   return { sent: true };
 }
 
-// Sync LIVE → PTU. Fans out up to N friend requests against the PTU
-// spectrum API; uses a small concurrency window to keep the wall-clock
-// reasonable without DDOSing the endpoint (5 parallel searches + sends
-// runs ~50 contacts in under 10s in practice).
-const PTU_SYNC_CONCURRENCY = 5;
+// Sync LIVE → PTU. Sequential with a small inter-request delay —
+// the friend-request and autocomplete endpoints are throttled per-IP
+// (ErrThrottleLimit fires after a handful of rapid requests), so
+// burning concurrency only burns quota without improving wall-clock.
+// Reported by @DeusMaximus in #43 with run-2 numbers showing 64
+// throttled requests bucketed as ERROR. 300 ms keeps a 100-friend
+// list under a minute on the 5-10% of users who actually have that
+// many missing PTU contacts.
+const PTU_SYNC_DELAY_MS = 300;
+// One retry on ErrThrottleLimit with a longer backoff than the base
+// delay so we step out of whatever burst window the server is in.
+const PTU_SYNC_RETRY_BACKOFF_MS = 1500;
 
 async function handleContactsSyncToPtu(): Promise<
   ContactsSyncToPtuResponsePayload
@@ -723,40 +730,62 @@ async function handleContactsSyncToPtu(): Promise<
     }
   }
 
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
   // Step 3 — for each LIVE friend missing on PTU, autocomplete the
   // nickname on PTU to resolve its member id, then fire the friend
-  // request. Bounded concurrency so a 100-friend list doesn't launch
-  // 200 simultaneous requests.
+  // request. Branch on the response code so transient throttles get
+  // retried, already-pending requests get bucketed as alreadyPending
+  // (not ERROR), and only genuine failures surface as errors.
+  async function attempt(p: Pending): Promise<ContactsSyncToPtuEntry> {
+    const hits = await Rsi.searchPtuMembers(p.nickname);
+    const needle = p.nickname.toLowerCase();
+    const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
+    if (!exact) return { ...p, status: 'notFound' };
+    await Rsi.sendPtuFriendRequest(exact.id);
+    return { ...p, status: 'added' };
+  }
+
+  function classifyError(p: Pending, e: unknown): ContactsSyncToPtuEntry {
+    if (e instanceof Rsi.RsiSpectrumActionError) {
+      // Server already has an outgoing request for this member — count
+      // it as alreadyPending (the pre-classification missed it because
+      // the incoming `outgoing[]` was empty due to the r.members[]
+      // shape on PTU; #43 root cause #4).
+      if (e.code === 'ErrExistingPendingFriendRequest') {
+        return { ...p, status: 'alreadyPending' };
+      }
+      return { ...p, status: 'error', error: `${e.code}: ${e.message}` };
+    }
+    return { ...p, status: 'error', error: (e as Error).message ?? 'unknown' };
+  }
+
   async function addOne(p: Pending): Promise<ContactsSyncToPtuEntry> {
     try {
-      const hits = await Rsi.searchPtuMembers(p.nickname);
-      const needle = p.nickname.toLowerCase();
-      const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
-      if (!exact) return { ...p, status: 'notFound' };
-      await Rsi.sendPtuFriendRequest(exact.id);
-      return { ...p, status: 'added' };
+      return await attempt(p);
     } catch (e) {
-      return { ...p, status: 'error', error: (e as Error).message ?? 'unknown' };
+      // One retry on per-IP throttle. The endpoint is happy to take the
+      // same request again after we step out of the burst window.
+      if (e instanceof Rsi.RsiSpectrumActionError && e.code === 'ErrThrottleLimit') {
+        await sleep(PTU_SYNC_RETRY_BACKOFF_MS);
+        try {
+          return await attempt(p);
+        } catch (e2) {
+          return classifyError(p, e2);
+        }
+      }
+      return classifyError(p, e);
     }
   }
 
-  // Simple fixed-pool concurrency — pull work off a shared queue index.
-  let cursor = 0;
-  const workers: Promise<void>[] = [];
+  // Sequential — each call waits PTU_SYNC_DELAY_MS after the previous
+  // one (skipped on the first iteration). Drops worst-case throttle
+  // hits to near zero on a single user's normal-sized friend list.
   const addedEntries: ContactsSyncToPtuEntry[] = [];
-  for (let i = 0; i < Math.min(PTU_SYNC_CONCURRENCY, toAdd.length); i++) {
-    workers.push(
-      (async () => {
-        while (true) {
-          const next = cursor++;
-          if (next >= toAdd.length) return;
-          const entry = await addOne(toAdd[next]!);
-          addedEntries.push(entry);
-        }
-      })(),
-    );
+  for (let i = 0; i < toAdd.length; i++) {
+    if (i > 0) await sleep(PTU_SYNC_DELAY_MS);
+    addedEntries.push(await addOne(toAdd[i]!));
   }
-  await Promise.all(workers);
   entries.push(...addedEntries);
 
   // Step 4 — counts for the UI summary card. Sort entries by status →

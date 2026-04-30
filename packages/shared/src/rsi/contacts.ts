@@ -44,9 +44,44 @@ export const ContactsBundle = z.object({
 });
 export type ContactsBundle = z.infer<typeof ContactsBundle>;
 
+/** Resolve the counterparty member on a friend_request entry. RSI
+ *  populates either `r.member` (legacy / incoming-on-LIVE) or
+ *  `r.members[]` (newer shape / outgoing-on-PTU) depending on the
+ *  endpoint and direction. We try the singular field first, then scan
+ *  the array for the first member that isn't us. Returning null means
+ *  the entry is unusable (no counterparty to display) and the caller
+ *  should skip it.
+ *
+ *  Reported by @DeusMaximus in #43: PTU's outgoing friend_requests
+ *  populated only `r.members[]`, so the previous `r.member`-only code
+ *  silently dropped every outgoing request, which then made the
+ *  Sync LIVE → PTU pre-classification miss already-pending entries.
+ *  Those got re-sent and the server returned ErrExistingPendingFriendRequest,
+ *  which the workflow bucketed as plain ERROR. */
+type FriendMemberish = {
+  id?: number;
+  nickname?: string;
+  displayname?: string | null;
+  avatar?: string | null;
+};
+function pickCounterparty(
+  r: {
+    member?: FriendMemberish | null;
+    members?: ReadonlyArray<FriendMemberish> | null;
+  },
+  myId: number,
+): FriendMemberish | null {
+  if (r.member?.nickname) return r.member;
+  for (const m of r.members ?? []) {
+    if (m.nickname && (m.id ?? 0) !== myId) return m;
+  }
+  return null;
+}
+
 export async function fetchContactsBundle(): Promise<ContactsBundle> {
   const data = await identifyFull();
   if (!data) throw new RsiNotAuthenticatedError();
+  const myId = data.member?.id ?? 0;
 
   const contacts: Contact[] = [];
   for (const f of data.friends ?? []) {
@@ -64,7 +99,7 @@ export async function fetchContactsBundle(): Promise<ContactsBundle> {
   const incoming: ContactRequest[] = [];
   const outgoing: ContactRequest[] = [];
   for (const r of data.friend_requests ?? []) {
-    const member = r.member;
+    const member = pickCounterparty(r, myId);
     if (!member?.nickname) continue;
     const req: ContactRequest = {
       id: r.id,
@@ -113,6 +148,8 @@ const RawAutocompleteMember = z.object({
 
 const MemberAutocompleteResponse = z.object({
   success: z.number().int(),
+  code: z.string().nullable().optional(),
+  msg: z.string().nullable().optional(),
   data: z
     .object({
       members: z.array(RawAutocompleteMember).nullable().optional(),
@@ -154,7 +191,21 @@ export async function searchMembers(query: string): Promise<MemberHit[]> {
     console.warn('[contacts] member autocomplete: unexpected shape', parsed.error.issues);
     return [];
   }
-  if (parsed.data.success !== 1) return [];
+  if (parsed.data.success !== 1) {
+    // Distinguish per-IP throttling from "no results" so callers (like
+    // the PTU sync workflow) can back off and retry instead of treating
+    // a transient failure as a hard "user not found". Other non-success
+    // codes still resolve to [] for backward-compat with the autocomplete
+    // box, which has no useful UI for distinguishing them.
+    if (parsed.data.code === 'ErrThrottleLimit') {
+      throw new RsiSpectrumActionError(
+        '/api/spectrum/search/member/autocomplete',
+        'ErrThrottleLimit',
+        parsed.data.msg ?? 'throttled',
+      );
+    }
+    return [];
+  }
   return (parsed.data.data?.members ?? []).map((m) => ({
     id: m.id,
     nickname: m.nickname,
@@ -164,17 +215,45 @@ export async function searchMembers(query: string): Promise<MemberHit[]> {
 }
 
 // --- actions -------------------------------------------------------------
+//
+// Spectrum returns a uniform { success, code, msg, data } envelope on
+// every action endpoint. We surface `code` as a first-class field on the
+// error class so callers can branch on machine-readable values
+// (`ErrThrottleLimit`, `ErrExistingPendingFriendRequest`, …) instead of
+// regexing the human-readable `msg`. Reported by @DeusMaximus in #43
+// after the Sync LIVE → PTU workflow misclassified throttled and
+// already-pending requests as plain ERROR because both came back as
+// generic `Error(msg)`.
 
 const SuccessResponse = z.object({
   success: z.number().int(),
-  msg: z.string().optional(),
+  code: z.string().nullable().optional(),
+  msg: z.string().nullable().optional(),
 });
+
+export class RsiSpectrumActionError extends Error {
+  readonly code: string;
+  readonly path: string;
+  constructor(path: string, code: string, msg: string) {
+    super(msg || `${path}: ${code}`);
+    this.name = 'RsiSpectrumActionError';
+    this.code = code;
+    this.path = path;
+  }
+}
 
 async function spectrumAction(path: string, body: unknown): Promise<void> {
   const raw = await spectrumPost<unknown>(path, body);
   const parsed = SuccessResponse.safeParse(raw);
-  if (!parsed.success || parsed.data.success !== 1) {
-    throw new Error(parsed.success ? parsed.data.msg || `${path} failed` : 'invalid response');
+  if (!parsed.success) {
+    throw new RsiSpectrumActionError(path, 'ErrInvalidResponse', 'invalid response');
+  }
+  if (parsed.data.success !== 1) {
+    throw new RsiSpectrumActionError(
+      path,
+      parsed.data.code ?? 'ErrUnknown',
+      parsed.data.msg ?? `${path} failed`,
+    );
   }
 }
 
@@ -225,14 +304,22 @@ async function ptuSpectrumPost<T>(path: string, body: unknown): Promise<T> {
 async function ptuSpectrumAction(path: string, body: unknown): Promise<void> {
   const raw = await ptuSpectrumPost<unknown>(path, body);
   const parsed = SuccessResponse.safeParse(raw);
-  if (!parsed.success || parsed.data.success !== 1) {
-    throw new Error(parsed.success ? parsed.data.msg || `${path} failed` : 'invalid response');
+  if (!parsed.success) {
+    throw new RsiSpectrumActionError(`PTU ${path}`, 'ErrInvalidResponse', 'invalid response');
+  }
+  if (parsed.data.success !== 1) {
+    throw new RsiSpectrumActionError(
+      `PTU ${path}`,
+      parsed.data.code ?? 'ErrUnknown',
+      parsed.data.msg ?? `${path} failed`,
+    );
   }
 }
 
 export async function fetchPtuContactsBundle(): Promise<ContactsBundle> {
   const data = await identifyPtu();
   if (!data) throw new RsiNotAuthenticatedError();
+  const myId = data.member?.id ?? 0;
 
   const contacts: Contact[] = [];
   for (const f of data.friends ?? []) {
@@ -247,7 +334,7 @@ export async function fetchPtuContactsBundle(): Promise<ContactsBundle> {
   const incoming: ContactRequest[] = [];
   const outgoing: ContactRequest[] = [];
   for (const r of data.friend_requests ?? []) {
-    const member = r.member;
+    const member = pickCounterparty(r, myId);
     if (!member?.nickname) continue;
     const req: ContactRequest = {
       id: r.id,
@@ -277,7 +364,16 @@ export async function searchPtuMembers(query: string): Promise<MemberHit[]> {
     console.warn('[contacts/ptu] member autocomplete: unexpected shape', parsed.error.issues);
     return [];
   }
-  if (parsed.data.success !== 1) return [];
+  if (parsed.data.success !== 1) {
+    if (parsed.data.code === 'ErrThrottleLimit') {
+      throw new RsiSpectrumActionError(
+        'PTU /api/spectrum/search/member/autocomplete',
+        'ErrThrottleLimit',
+        parsed.data.msg ?? 'throttled',
+      );
+    }
+    return [];
+  }
   return (parsed.data.data?.members ?? []).map((m) => ({
     id: m.id,
     nickname: m.nickname,
