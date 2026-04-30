@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.3.3",
+    "released_at": 1777582800,
+    "notes": "{\"info\":[\"Hotfix on top of v1.3.2 — fixes the 'still asks to sign in even though I am signed in' bug that broke the Edge Add-ons certification review and that several users hit on every browser. Thanks Dakota for the report and Microsoft's reviewer for the precise repro steps.\"],\"features\":[\"Auth: handleIdentity now sanity-checks the cached signed-out state against the live cookie before serving from cache. The cookie listener wipes auth:identity on sign-in/sign-out, but its async wipe could lose the race with a popup opening immediately after the cookie change — the storage read landed before the wipe completed and the popup painted a stale 'signed out' state for the next 30 minutes (TTL.identity). On a fresh install where the user signs in then opens the extension within a few ms, this was the worst-case path: extension was unusable until the user clicked Settings → Diagnostics → Force identity check. Cache now self-heals: if the cached entry says signed-out but a Rsi-Token cookie is sitting right there, we refetch instead of trusting the cache.\",\"Popup: bumped default height from 520 to 530 px. One extra row of breathing space on first install / Reset; existing custom heights are preserved.\"]}"
+  },
+  {
     "version": "1.3.2",
     "released_at": 1777572000,
     "notes": "{\"info\":[\"Hotfix on top of v1.3.1 — Contacts → Find member search returned 'No citizens found' for every query because RSI wrapped the autocomplete response in a paginated envelope. Thanks @DeusMaximus for the report and the wire dump in #42.\"],\"features\":[\"Contacts: member autocomplete schema now reads members from data.members (the new envelope) instead of data directly. Both the LIVE search box and the 'Sync LIVE → PTU' member resolver are fixed.\",\"Contacts: silent zod failures on the member-search path now log a warning with the parse issues to the background console. Future RSI shape drift (and we already have one on Community Hub and one here in two weeks) will surface immediately instead of looking like a UI bug.\"]}"

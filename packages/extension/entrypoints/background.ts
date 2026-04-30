@@ -369,12 +369,42 @@ async function handleIdentity(force: boolean) {
   if (!force) {
     const cached = await cacheGet<{ identity: Rsi.RsiIdentity | null; fetchedAt: number }>(key);
     if (cached) {
-      return {
-        identity: cached.identity,
-        signedIn: cached.identity !== null,
-        fetchedAt: cached.fetchedAt,
-        fromCache: true,
-      };
+      // Self-heal against cookie ↔ cache drift. The cookie listener
+      // wipes this entry on sign-in / sign-out, but its
+      // wipeAuthDependentCache() is async — if the popup opens within a
+      // few ms of the cookie change (typical on a fresh install where
+      // the user signs in then immediately opens the extension), the
+      // storage read lands before the wipe completes and we paint a
+      // stale "signed out" state for the rest of TTL.identity (30 min)
+      // even though a valid Rsi-Token cookie is sitting right there.
+      // Symptom: the Sign-In prompt that won't go away, exactly the
+      // failure mode that broke the Edge cert review on 1.3.x.
+      //
+      // readRsiToken() has a 5 s in-memory memo so this stays cheap on
+      // hot paths; the chrome.cookies.get() it falls back to costs <1 ms.
+      // We only second-guess the "signed out" direction — a stale
+      // "signed in" cache eventually corrects when the user actually
+      // tries something that hits the API.
+      if (cached.identity === null) {
+        const tokenNow = await Rsi.readRsiToken();
+        if (tokenNow) {
+          // Drift detected — fall through to a fresh fetch.
+        } else {
+          return {
+            identity: cached.identity,
+            signedIn: false,
+            fetchedAt: cached.fetchedAt,
+            fromCache: true,
+          };
+        }
+      } else {
+        return {
+          identity: cached.identity,
+          signedIn: true,
+          fetchedAt: cached.fetchedAt,
+          fromCache: true,
+        };
+      }
     }
   }
   return dedupe(key, async () => {
