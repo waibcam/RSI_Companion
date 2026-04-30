@@ -96,17 +96,27 @@ export const MemberHit = z.object({
 });
 export type MemberHit = z.infer<typeof MemberHit>;
 
+// Wire shape for /api/spectrum/search/member/autocomplete.
+//
+// Pre-2026-04: `data` was the array of members directly.
+// Current     : `data` is a paginated envelope and the array lives at
+//               `data.members`. The envelope also carries `hits`
+//               (Elasticsearch raw), `page`, `pagesize`, `pages_total`
+//               that we don't surface. Reported by @DeusMaximus
+//               in #42 with a sanitised dump.
+const RawAutocompleteMember = z.object({
+  id: z.coerce.number().int(),
+  nickname: z.string(),
+  displayname: z.string().nullable().optional(),
+  avatar: z.string().nullable().optional(),
+});
+
 const MemberAutocompleteResponse = z.object({
   success: z.number().int(),
   data: z
-    .array(
-      z.object({
-        id: z.coerce.number().int(),
-        nickname: z.string(),
-        displayname: z.string().nullable().optional(),
-        avatar: z.string().nullable().optional(),
-      }),
-    )
+    .object({
+      members: z.array(RawAutocompleteMember).nullable().optional(),
+    })
     .nullable()
     .optional(),
 });
@@ -136,8 +146,16 @@ export async function searchMembers(query: string): Promise<MemberHit[]> {
     text,
   });
   const parsed = MemberAutocompleteResponse.safeParse(raw);
-  if (!parsed.success || parsed.data.success !== 1) return [];
-  return (parsed.data.data ?? []).map((m) => ({
+  if (!parsed.success) {
+    // Surface schema drift to the BG console so future RSI shape changes
+    // don't silently empty the search box like the data-array→envelope
+    // shift did between 1.2.x and 1.3.x.
+    // eslint-disable-next-line no-console
+    console.warn('[contacts] member autocomplete: unexpected shape', parsed.error.issues);
+    return [];
+  }
+  if (parsed.data.success !== 1) return [];
+  return (parsed.data.data?.members ?? []).map((m) => ({
     id: m.id,
     nickname: m.nickname,
     displayname: m.displayname ?? '',
@@ -254,8 +272,13 @@ export async function searchPtuMembers(query: string): Promise<MemberHit[]> {
     text,
   });
   const parsed = MemberAutocompleteResponse.safeParse(raw);
-  if (!parsed.success || parsed.data.success !== 1) return [];
-  return (parsed.data.data ?? []).map((m) => ({
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console
+    console.warn('[contacts/ptu] member autocomplete: unexpected shape', parsed.error.issues);
+    return [];
+  }
+  if (parsed.data.success !== 1) return [];
+  return (parsed.data.data?.members ?? []).map((m) => ({
     id: m.id,
     nickname: m.nickname,
     displayname: m.displayname ?? '',

@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.3.2",
+    "released_at": 1777572000,
+    "notes": "{\"info\":[\"Hotfix on top of v1.3.1 — Contacts → Find member search returned 'No citizens found' for every query because RSI wrapped the autocomplete response in a paginated envelope. Thanks @DeusMaximus for the report and the wire dump in #42.\"],\"features\":[\"Contacts: member autocomplete schema now reads members from data.members (the new envelope) instead of data directly. Both the LIVE search box and the 'Sync LIVE → PTU' member resolver are fixed.\",\"Contacts: silent zod failures on the member-search path now log a warning with the parse issues to the background console. Future RSI shape drift (and we already have one on Community Hub and one here in two weeks) will surface immediately instead of looking like a UI bug.\"]}"
+  },
+  {
     "version": "1.3.1",
     "released_at": 1777485600,
     "notes": "{\"info\":[\"Hotfix on top of v1.3.0 — Community Hub tab refused to load on every install because RSI started returning null for the per-post account.live flag in their SSR payload. Thanks @WhisperDark for the report and screenshot.\"],\"features\":[\"Community Hub: zod schema for followedPostsFromSSR[].account.live now accepts null and coerces it to false at the extraction boundary. The whole tab (Home + Live + Discover + Gameplay + Tutorial + Events) was failing the parse because of this single field, even though Live was the only strip that actually consumed it.\"]}"
