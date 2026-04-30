@@ -350,12 +350,32 @@
 
   let currentZoom = $state(1);
 
+  // Firefox MV2 quirk (same family as the chrome.runtime.sendMessage
+  // fix in 1.3.0): `chrome.tabs.getCurrent()` / `getZoom()` / `setZoom()`
+  // are not reliably Promise-native on Firefox. Calling them without a
+  // callback returns undefined synchronously — `await undefined`
+  // resolves to undefined immediately (so the +/- buttons silently
+  // failed because tab was undefined), and the .then() in the
+  // onZoomChange handler threw a TypeError on Ctrl+scroll. Reported
+  // by @Hadjimels in #44 with the verbatim console error. WXT's
+  // auto-polyfill rewrites the BG bundle but not the popup, so we
+  // pick the Promise-native namespace at runtime here.
+  type TabsNS = Pick<typeof chrome.tabs, 'getCurrent' | 'getZoom' | 'setZoom'>;
+  function getTabsApi(): TabsNS {
+    const g = globalThis as unknown as {
+      browser?: { runtime?: { id?: string }; tabs: TabsNS };
+    };
+    if (g.browser?.runtime?.id) return g.browser.tabs;
+    return chrome.tabs;
+  }
+
   async function readZoom(): Promise<void> {
     if (!isTabMode) return;
     try {
-      const tab = await chrome.tabs.getCurrent();
+      const tabs = getTabsApi();
+      const tab = await tabs.getCurrent();
       if (!tab?.id) return;
-      currentZoom = await chrome.tabs.getZoom(tab.id);
+      currentZoom = await tabs.getZoom(tab.id);
     } catch (e) {
       log.warn('settings', 'tabs.getZoom failed', e);
     }
@@ -364,10 +384,11 @@
   async function applyZoom(factor: number): Promise<void> {
     if (!isTabMode) return;
     try {
-      const tab = await chrome.tabs.getCurrent();
+      const tabs = getTabsApi();
+      const tab = await tabs.getCurrent();
       if (!tab?.id) return;
       const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, factor));
-      await chrome.tabs.setZoom(tab.id, clamped);
+      await tabs.setZoom(tab.id, clamped);
       currentZoom = clamped;
     } catch (e) {
       log.warn('settings', 'tabs.setZoom failed', e);
@@ -391,9 +412,10 @@
     if (!isTabMode) return;
     void readZoom();
     const onZoomChange = (info: chrome.tabs.OnZoomChangeInfo) => {
-      void chrome.tabs.getCurrent().then((tab) => {
+      void (async () => {
+        const tab = await getTabsApi().getCurrent();
         if (tab?.id === info.tabId) currentZoom = info.newZoomFactor;
-      });
+      })();
     };
     chrome.tabs.onZoomChange.addListener(onZoomChange);
     return () => chrome.tabs.onZoomChange.removeListener(onZoomChange);
