@@ -166,7 +166,7 @@ export const POPUP_SIZE_LIMITS = {
   minHeight: 400,
   maxHeight: 590,
   defaultWidth: 760,
-  defaultHeight: 520,
+  defaultHeight: 530,
 } as const;
 
 function clampPopupWidth(v: number): number {

@@ -62,7 +62,7 @@
 <!-- Tab-mode density tweaks (the `tab:` Tailwind variant fires only
      when App.svelte is in `?mode=tab`): wider sidebar, more vertical
      padding per row, slightly larger icons + text. Popup mode stays
-     tight because it has to fit 14 modules in a 520px height budget.
+     tight because it has to fit 14 modules in a 530px height budget.
      Reported on GH #29 by @epoptic — on 4K displays the popup-tuned
      density felt cramped in tab mode. -->
 <nav
