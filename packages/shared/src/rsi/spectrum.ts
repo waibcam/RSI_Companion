@@ -3,6 +3,7 @@
 // Requires x-rsi-token AND x-tavern-id headers for authenticated user context.
 
 import { z } from 'zod';
+import { parseHTML } from 'linkedom';
 import { RSI_BASE_URL } from '../constants.js';
 import { fetchWithTimeout } from '../net.js';
 import { assertRsiOk, identifyFull, RsiNotAuthenticatedError, type IdentifyData } from './auth.js';
@@ -533,6 +534,165 @@ export async function fetchHighlightedThreads(token: string): Promise<SpectrumTh
   const results = await Promise.all(channels.map((ch) => fetchChannelThreads(token, ch)));
   const flat = results.flat();
   return flat.sort((a, b) => b.timeCreated - a.timeCreated);
+}
+
+// --- DevTracker (mirrors robertsspaceindustries.com/community/devtracker) ----
+//
+// The DevTracker tab now scrapes RSI's actual /community/devtracker page
+// instead of fanning out across a curated subset of forum channels. The
+// previous approach (fetchHighlightedThreads) only covered groups 1+2
+// (Official + Concierge) with `highlight_role_id === 2`, which missed:
+//   - CIG replies inside community threads (Patch Notes lives mostly as
+//     replies, not new threads — reported by @Hadjimels in #45)
+//   - Channels outside the Official/Concierge groups (Focus Testing,
+//     Feedback, Ask The Devs, …)
+//
+// /community/devtracker is a Rails-style server-rendered HTML page (not
+// Next.js — no __NEXT_DATA__ blob). Each devpost is a single anchor:
+//
+//   <a href="/spectrum/community/SC/forum/<chanId>/thread/<slug>/<replyId>"
+//      class="devpost">
+//     <img src="<avatar>" />
+//     <div class="poster"><div class="nickname">…CIG</div></div>
+//     <div class="date"><span class="time">6 hours ago</span></div>
+//     <div class="topic">
+//       <span class="category">Patch Notes</span>
+//       <span class="thread">[Wave 3] Star Citizen Alpha 4.8 PTU …</span>
+//     </div>
+//     <p class="details">Single weapon elim has been updated…</p>
+//   </a>
+//
+// Each entry links to a specific reply, not to the thread head — same as
+// what the desktop site shows. We map them to SpectrumThread for downstream
+// reuse (the existing UI rendering paths all work). Counts (votes /
+// replies / views) come back as 0 because the HTML doesn't expose them;
+// the threadCard snippet hides 0-count chips so this looks clean.
+
+/** Parse RSI's relative time labels ("6 hours ago", "yesterday") to a
+ *  Unix-ms timestamp using the current `now` as anchor. Imperfect — the
+ *  page doesn't ship absolute timestamps — but accurate to whatever
+ *  granularity RSI rounds to. We re-fetch on a short TTL anyway. */
+function parseRelativeTimeAgo(s: string, now: number = Date.now()): number {
+  const t = s.trim().toLowerCase();
+  if (!t || t === 'just now' || t === 'moments ago') return now;
+  if (t === 'yesterday') return now - 86_400_000;
+  const m = t.match(/^(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/);
+  if (!m) return now;
+  const n = parseInt(m[1]!, 10);
+  const unit = m[2]!;
+  const ms =
+    unit === 'second'
+      ? 1_000
+      : unit === 'minute'
+        ? 60_000
+        : unit === 'hour'
+          ? 3_600_000
+          : unit === 'day'
+            ? 86_400_000
+            : unit === 'week'
+              ? 7 * 86_400_000
+              : unit === 'month'
+                ? 30 * 86_400_000
+                : 365 * 86_400_000; // 'year'
+  return now - n * ms;
+}
+
+export async function fetchDevTrackerPosts(): Promise<SpectrumThread[]> {
+  const data = await identifyFull();
+  if (!data) throw new RsiNotAuthenticatedError();
+  const community = (data.communities ?? []).find((c) => c.id === 1);
+  if (!community) return [];
+
+  // Build a channel-id → SpectrumChannel map so each scraped entry can
+  // pick up the channel's slug + colour from identify (the HTML only
+  // exposes the human "category" text). Channels not in identify (rare
+  // — e.g. an org-only channel CIG happens to post in) fall back to a
+  // neutral grey stripe with the category text as the visible name.
+  const channelById = new Map<number, SpectrumChannel>();
+  for (const group of community.forum_channel_groups) {
+    for (const ch of group.channels) {
+      channelById.set(ch.id, {
+        id: ch.id,
+        name: ch.name,
+        color: ch.color,
+        slug: ch.slug,
+        communitySlug: community.slug,
+      });
+    }
+  }
+
+  const response = await fetchWithTimeout(`${RSI_BASE_URL}/en/community/devtracker`, {
+    credentials: 'include',
+    headers: { Accept: 'text/html,application/xhtml+xml' },
+  });
+  if (!response.ok) throw new Error(`devtracker returned ${response.status}`);
+  const html = await response.text();
+  const { document } = parseHTML(html);
+  const links = document.querySelectorAll('a.devpost');
+  const fetchedAt = Date.now();
+  const out: SpectrumThread[] = [];
+
+  for (const link of Array.from(links)) {
+    const href = link.getAttribute('href') ?? '';
+    // /spectrum/community/SC/forum/<chanId>/thread/<slug>/<replyId?>
+    const m = href.match(
+      /^\/spectrum\/community\/([^/]+)\/forum\/(\d+)\/thread\/([^/?#]+)(?:\/(\d+))?/,
+    );
+    if (!m) continue;
+    const communitySlug = m[1]!;
+    const chanId = parseInt(m[2]!, 10);
+    const slug = m[3]!;
+    const replyId = m[4] ? parseInt(m[4], 10) : 0;
+
+    const categoryText =
+      link.querySelector('.category')?.textContent?.trim() ?? '';
+    const channel = channelById.get(chanId) ?? {
+      id: chanId,
+      name: categoryText,
+      color: '',
+      slug: '',
+      communitySlug,
+    };
+
+    const subject = link.querySelector('.topic .thread')?.textContent?.trim() ?? '';
+    const handle = link.querySelector('.nickname')?.textContent?.trim() ?? '';
+    const display =
+      link.querySelector('.handle')?.textContent?.trim() || handle;
+    const avatar = link.querySelector('img')?.getAttribute('src') ?? null;
+    const timeText = link.querySelector('.time')?.textContent?.trim() ?? '';
+    const timeCreated = parseRelativeTimeAgo(timeText, fetchedAt);
+
+    out.push({
+      // Use the reply id when present so dedup keys are stable across
+      // refreshes; fall back to channel:slug if RSI ever drops the
+      // reply suffix on a thread-head devpost.
+      id: replyId || chanId * 1_000_000,
+      slug,
+      subject,
+      timeCreated,
+      channel,
+      authorNickname: handle,
+      authorDisplayName: display,
+      authorAvatar: avatar,
+      // Every devtracker entry is a CIG post by definition — drives
+      // the gold tint on the card.
+      authorIsStaff: true,
+      isNew: false,
+      isPinned: false,
+      // The HTML doesn't expose engagement counts. The threadCard
+      // snippet hides 0-count chips so this renders cleanly.
+      votesCount: 0,
+      hasVoted: false,
+      repliesCount: 0,
+      viewsCount: 0,
+      mediaPreviewUrl: null,
+      url: `${RSI_BASE_URL}${href}`,
+    });
+  }
+  // RSI already returns the list newest-first; preserve it (don't
+  // re-sort by timeCreated since multiple entries within the same
+  // "X hours ago" bucket would otherwise reshuffle).
+  return out;
 }
 
 // "Trending" = the same channels Activity covers, but we drop the CIG-highlight

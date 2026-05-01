@@ -103,7 +103,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v3: SpectrumThread gained votesCount + repliesCount + viewsCount
   // so the threadCard footer can show post engagement at a glance.
   // v4: SpectrumThread gained mediaPreviewUrl for inline thumbnails.
-  'spectrum:threads': 4,
+  // v5: source switched from fetchHighlightedThreads (forum API,
+  // top-level threads only) to fetchDevTrackerPosts (HTML scrape of
+  // /community/devtracker — includes CIG replies + all categories).
+  // The id field now carries the reply id, the URL ends with /<replyId>.
+  'spectrum:threads': 5,
   'spectrum:trending': 4,
   'spectrum:notifications': 1,
   'spectrum:lobbies': 1,
@@ -2059,7 +2063,13 @@ async function handleSpectrumThreads(force: boolean) {
     }
   }
   return dedupe(key, async () => {
-    const threads = await Rsi.fetchHighlightedThreads(token);
+    // DevTracker now scrapes RSI's /community/devtracker page (same source
+    // the desktop site renders) — covers Patch Notes, Focus Testing,
+    // Feedback, Announcements, Ask The Devs, plus CIG replies inside
+    // community threads. The previous fetchHighlightedThreads only
+    // covered top-level threads in groups 1+2 with highlight_role_id===2,
+    // which missed everything except outright announcements (#45).
+    const threads = await Rsi.fetchDevTrackerPosts();
     const fetchedAt = Date.now();
     await cacheSet(key, { threads, fetchedAt }, TTL.spectrum);
     return { threads, signedIn: true as const, fetchedAt, fromCache: false };
