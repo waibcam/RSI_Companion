@@ -156,6 +156,9 @@
           syncing = false;
           syncProgress = null;
           syncPort = null;
+          // BG just reconciled the retry queue — refresh our copy so
+          // the pending-retries card reflects the new state.
+          void loadRetries();
           break;
         }
         case 'cancelled': {
@@ -211,6 +214,88 @@
       // Port already disconnected — onDisconnect will clean up state.
     }
   }
+
+  // Persistent retry queue. The BG keeps a list of `notFound` contacts
+  // from the most recent sync runs and re-attempts them every 12 h
+  // for 7 days; the user can see the queue here and cancel entries
+  // they don't want pending.
+  let retriesList = $state<
+    Array<{
+      nickname: string;
+      displayName: string;
+      avatar: string;
+      addedAt: number;
+      lastAttemptAt: number;
+      attemptCount: number;
+    }>
+  >([]);
+  let retriesWindowMs = $state(0);
+  let retriesIntervalMin = $state(0);
+  let retriesLoading = $state(false);
+  let retryCancelling = $state<Set<string>>(new Set());
+
+  async function loadRetries() {
+    retriesLoading = true;
+    try {
+      const res = await sendRsiMessage({ type: 'contacts.retries.list' });
+      retriesList = res.retries;
+      retriesWindowMs = res.windowMs;
+      retriesIntervalMin = res.intervalMin;
+    } catch (e) {
+      // Non-fatal — the main sync UI still works.
+      console.warn('[contacts] load retries failed', e);
+    } finally {
+      retriesLoading = false;
+    }
+  }
+
+  async function cancelRetry(nickname: string | null) {
+    const key = nickname ?? '__all__';
+    retryCancelling = new Set([...retryCancelling, key]);
+    try {
+      const res = await sendRsiMessage({
+        type: 'contacts.retries.cancel',
+        ...(nickname ? { nickname } : {}),
+      });
+      if (nickname) {
+        retriesList = retriesList.filter((r) => r.nickname !== nickname);
+      } else {
+        retriesList = [];
+      }
+      // Reconcile against the BG truth in case of races.
+      if (res.remaining !== retriesList.length) await loadRetries();
+    } catch (e) {
+      console.warn('[contacts] cancel retry failed', e);
+    } finally {
+      const next = new Set(retryCancelling);
+      next.delete(key);
+      retryCancelling = next;
+    }
+  }
+
+  /** Format a Unix-ms timestamp as a relative "Xh ago" / "in Xd" hint
+   *  with the absolute date in the title attribute. Kept inline (not
+   *  shared with the cache panel's helper) because Contacts doesn't
+   *  import from Settings. Cheap to maintain — ~8 lines duplicated. */
+  function relativeAgo(ts: number): string {
+    if (ts === 0) return 'never';
+    const diff = Date.now() - ts;
+    if (diff < 60_000) return 'just now';
+    if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+    return `${Math.round(diff / 86_400_000)}d ago`;
+  }
+  function relativeIn(ts: number): string {
+    const diff = ts - Date.now();
+    if (diff <= 0) return 'now';
+    if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m`;
+    if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h`;
+    return `${Math.round(diff / 86_400_000)}d`;
+  }
+
+  $effect(() => {
+    void loadRetries();
+  });
 
   // Pre-built Tailwind class strings per status — Tailwind's JIT scanner
   // can only extract statically-written classes, so dynamic templates
@@ -730,6 +815,85 @@
               — the extension reads each site's session cookie independently.
             </p>
           </div>
+
+          <!-- Pending retry queue. Shown only when there's something
+               in the queue. Each `notFound` from a sync run lands here
+               and the BG re-attempts every 12 h for 7 days; resolved
+               entries (added / alreadyFriend / alreadyPending on a
+               later sync) auto-evict. The user can cancel individual
+               rows or wipe the queue from this card. -->
+          {#if retriesList.length > 0}
+            {@const intervalH = Math.round(retriesIntervalMin / 60)}
+            {@const windowD = Math.round(retriesWindowMs / 86_400_000)}
+            <div class="rounded-md border border-amber-900/60 bg-amber-950/20 p-3 text-xs">
+              <div class="mb-2 flex items-baseline justify-between gap-2">
+                <p class="flex items-center gap-1 font-semibold text-amber-200">
+                  <Clock class="size-3.5" /> Pending retries ({retriesList.length})
+                </p>
+                <button
+                  type="button"
+                  onclick={() => cancelRetry(null)}
+                  disabled={retryCancelling.has('__all__')}
+                  class="text-[10px] text-slate-400 transition hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {retryCancelling.has('__all__') ? 'Cancelling…' : 'Cancel all'}
+                </button>
+              </div>
+              <p class="mb-2 text-[10px] leading-snug text-amber-300/70">
+                These contacts didn't have a PTU profile when you last
+                synced. The extension automatically re-attempts every
+                {intervalH} h for the next {windowD} days — they'll move
+                to your PTU friend requests as soon as their profile
+                appears.
+              </p>
+              <ul class="divide-y divide-amber-900/40 rounded border border-amber-900/40 bg-slate-950/40">
+                {#each retriesList as r (r.nickname)}
+                  {@const expiresAt = r.addedAt + retriesWindowMs}
+                  <li class="flex items-center gap-2 px-2 py-1">
+                    {#if r.avatar}
+                      <img
+                        src={r.avatar}
+                        alt=""
+                        loading="lazy"
+                        class="size-5 shrink-0 rounded-full ring-1 ring-slate-800"
+                      />
+                    {:else}
+                      <div class="flex size-5 shrink-0 items-center justify-center rounded-full bg-slate-800">
+                        <UserRound class="size-3 text-slate-500" />
+                      </div>
+                    {/if}
+                    <span class="flex-1 truncate text-[11px] text-slate-300">
+                      {r.displayName}
+                      <span class="text-slate-600">@{r.nickname}</span>
+                    </span>
+                    <span
+                      class="text-[10px] text-slate-500"
+                      title="Last attempt: {r.lastAttemptAt === 0
+                        ? 'never (queued, will retry on next 12h tick)'
+                        : new Date(r.lastAttemptAt).toLocaleString()}"
+                    >
+                      {r.attemptCount} {r.attemptCount === 1 ? 'try' : 'tries'} ·
+                      gives up in {relativeIn(expiresAt)}
+                    </span>
+                    <button
+                      type="button"
+                      onclick={() => cancelRetry(r.nickname)}
+                      disabled={retryCancelling.has(r.nickname)}
+                      class="rounded p-0.5 text-slate-600 transition hover:bg-slate-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Stop retrying {r.nickname}"
+                      aria-label="Stop retrying {r.nickname}"
+                    >
+                      {#if retryCancelling.has(r.nickname)}
+                        <Loader2 class="size-3 animate-spin" />
+                      {:else}
+                        <X class="size-3" />
+                      {/if}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
 
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2">

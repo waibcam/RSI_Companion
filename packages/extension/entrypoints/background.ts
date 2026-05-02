@@ -27,10 +27,16 @@ import {
   fetchWithTimeout,
   log,
   CONTACTS_SYNC_TO_PTU_PORT,
+  PTU_SYNC_RETRY_ALARM,
+  PTU_SYNC_RETRY_INTERVAL_MIN,
+  PTU_SYNC_RETRY_STORAGE_KEY,
+  PTU_SYNC_RETRY_WINDOW_MS,
+  reconcilePtuRetryQueue,
   type ContactsSyncToPtuEntry,
   type ContactsSyncToPtuResponsePayload,
   type ContactsSyncToPtuStreamCommand,
   type ContactsSyncToPtuStreamEvent,
+  type PtuSyncPendingRetry,
   type RsiMessage,
   type RsiMessageResult,
 } from '@rsi-companion/shared';
@@ -1010,7 +1016,172 @@ async function runContactsSyncToPtu(
     notFound: entries.filter((e) => e.status === 'notFound').length,
     error: entries.filter((e) => e.status === 'error').length,
   };
+
+  // Reconcile against the persistent retry queue. notFound entries get
+  // queued for periodic re-attempt over the next 7 days; resolved
+  // entries (added / alreadyFriend / alreadyPending) get evicted from
+  // the queue if they were in it from a prior sync. Errors leave the
+  // queue alone — they're typically transient and we don't want to
+  // either stop trying or restart the 7-day clock.
+  try {
+    const existing = await readPtuRetries();
+    const next = reconcilePtuRetryQueue(existing, entries, Date.now());
+    if (next.length !== existing.length || hasRetriesChanged(existing, next)) {
+      await writePtuRetries(next);
+    }
+  } catch (e) {
+    log.warn('ptu-retry', 'reconciliation after sync failed', e);
+  }
+
   return { signedIn, entries, counts };
+}
+
+// --- Pending retry queue (LIVE → PTU) -----------------------------------
+//
+// Persists across SW sleeps via chrome.storage.local. Reconciled with
+// every Sync run (above) and ticked by the PTU_SYNC_RETRY_ALARM (below).
+
+async function readPtuRetries(): Promise<PtuSyncPendingRetry[]> {
+  const res = await chrome.storage.local.get(PTU_SYNC_RETRY_STORAGE_KEY);
+  const raw = res[PTU_SYNC_RETRY_STORAGE_KEY];
+  return Array.isArray(raw) ? (raw as PtuSyncPendingRetry[]) : [];
+}
+
+async function writePtuRetries(list: PtuSyncPendingRetry[]): Promise<void> {
+  if (list.length === 0) {
+    await chrome.storage.local.remove(PTU_SYNC_RETRY_STORAGE_KEY);
+    return;
+  }
+  await chrome.storage.local.set({ [PTU_SYNC_RETRY_STORAGE_KEY]: list });
+}
+
+/** Quick equality check — only fires when something meaningful would
+ *  change so we don't write storage on a no-op reconcile. */
+function hasRetriesChanged(
+  a: ReadonlyArray<PtuSyncPendingRetry>,
+  b: ReadonlyArray<PtuSyncPendingRetry>,
+): boolean {
+  if (a.length !== b.length) return true;
+  const aKeys = new Set(a.map((e) => e.nickname.toLowerCase()));
+  for (const e of b) if (!aKeys.has(e.nickname.toLowerCase())) return true;
+  return false;
+}
+
+const PTU_RETRY_PACE_MS = 300;
+
+/** Periodic retry tick — fired by the PTU_SYNC_RETRY_ALARM every 12 h.
+ *  Walks the pending queue, drops entries past the 7-day window, and
+ *  retries each survivor exactly once per tick. Successful adds (or
+ *  surprise `ErrExistingPendingFriendRequest` that imply we did
+ *  succeed earlier) get evicted; everything else stays for the next
+ *  tick. */
+async function tickPtuSyncRetries(): Promise<void> {
+  const list = await readPtuRetries();
+  if (list.length === 0) return;
+
+  const liveToken = await Rsi.readRsiToken();
+  const ptuToken = await Rsi.readPtuToken();
+  if (!liveToken || !ptuToken) {
+    log.debug('ptu-retry', 'tick skipped — not signed in on both sides');
+    return;
+  }
+
+  const now = Date.now();
+  const survivors: PtuSyncPendingRetry[] = [];
+  let retried = 0;
+  let succeeded = 0;
+  let dropped = 0;
+
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  for (let i = 0; i < list.length; i++) {
+    const entry = list[i]!;
+    if (now - entry.addedAt > PTU_SYNC_RETRY_WINDOW_MS) {
+      dropped += 1;
+      continue;
+    }
+    if (i > 0) await sleep(PTU_RETRY_PACE_MS);
+    retried += 1;
+    const needle = entry.nickname.toLowerCase();
+    try {
+      const hits = await Rsi.searchPtuMembers(entry.nickname);
+      const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
+      if (!exact) {
+        // Still no PTU profile. Keep + bump the attempt count.
+        survivors.push({
+          ...entry,
+          attemptCount: entry.attemptCount + 1,
+          lastAttemptAt: now,
+        });
+        continue;
+      }
+      try {
+        await Rsi.sendPtuFriendRequest(exact.id);
+        succeeded += 1;
+        // Drop from queue.
+      } catch (e) {
+        if (
+          e instanceof Rsi.RsiSpectrumActionError &&
+          e.code === 'ErrExistingPendingFriendRequest'
+        ) {
+          // Server already has our request — count as success and drop.
+          succeeded += 1;
+        } else {
+          // Genuine error — keep, retry next tick.
+          survivors.push({
+            ...entry,
+            attemptCount: entry.attemptCount + 1,
+            lastAttemptAt: now,
+          });
+        }
+      }
+    } catch (e) {
+      // Search failed (network / throttle / RSI error). Keep + bump.
+      survivors.push({
+        ...entry,
+        attemptCount: entry.attemptCount + 1,
+        lastAttemptAt: now,
+      });
+      log.debug('ptu-retry', `search for ${entry.nickname} failed`, e);
+    }
+  }
+
+  await writePtuRetries(survivors);
+  if (retried > 0 || dropped > 0) {
+    log.info(
+      'ptu-retry',
+      `tick: retried=${retried} succeeded=${succeeded} dropped(7d window)=${dropped} pending=${survivors.length}`,
+    );
+  }
+}
+
+/** Read-only view of the queue for the popup UI. */
+async function handleContactsRetriesList(): Promise<{
+  retries: PtuSyncPendingRetry[];
+  windowMs: number;
+  intervalMin: number;
+}> {
+  return {
+    retries: await readPtuRetries(),
+    windowMs: PTU_SYNC_RETRY_WINDOW_MS,
+    intervalMin: PTU_SYNC_RETRY_INTERVAL_MIN,
+  };
+}
+
+/** Drop a specific entry (when the user clicks the X next to a row in
+ *  the UI) or all of them (no nickname argument = clear queue). */
+async function handleContactsRetriesCancel(args: {
+  nickname?: string;
+}): Promise<{ remaining: number }> {
+  if (!args.nickname) {
+    await writePtuRetries([]);
+    return { remaining: 0 };
+  }
+  const target = args.nickname.toLowerCase();
+  const list = await readPtuRetries();
+  const next = list.filter((e) => e.nickname.toLowerCase() !== target);
+  await writePtuRetries(next);
+  return { remaining: next.length };
 }
 
 // Legacy message-based handler — kept for backward compat in case any
@@ -3652,9 +3823,10 @@ async function handleNotifyMarkSeen(module: Notify.NotifyModule): Promise<Notify
 }
 
 async function ensurePollAlarms(): Promise<void> {
-  const [fast, slow] = await Promise.all([
+  const [fast, slow, ptuRetry] = await Promise.all([
     chrome.alarms.get(FAST_POLL_ALARM),
     chrome.alarms.get(SLOW_POLL_ALARM),
+    chrome.alarms.get(PTU_SYNC_RETRY_ALARM),
   ]);
   const work: Array<Promise<chrome.alarms.Alarm | void>> = [];
   if (!fast) {
@@ -3672,6 +3844,18 @@ async function ensurePollAlarms(): Promise<void> {
       chrome.alarms.create(SLOW_POLL_ALARM, {
         periodInMinutes: SLOW_POLL_MINUTES,
         delayInMinutes: 2,
+      }),
+    );
+  }
+  if (!ptuRetry) {
+    // PTU retry queue tick. Two ticks per day (every 12 h). First
+    // delay is generous (5 min) so a fresh install / SW restart
+    // doesn't immediately fire a retry — gives the user time to do
+    // their first sync before the queue starts ticking.
+    work.push(
+      chrome.alarms.create(PTU_SYNC_RETRY_ALARM, {
+        periodInMinutes: PTU_SYNC_RETRY_INTERVAL_MIN,
+        delayInMinutes: 5,
       }),
     );
   }
@@ -3719,6 +3903,13 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleContactsSendByNickname(message.nickname) };
       case 'contacts.syncToPtu':
         return { ok: true, data: await handleContactsSyncToPtu() };
+      case 'contacts.retries.list':
+        return { ok: true, data: await handleContactsRetriesList() };
+      case 'contacts.retries.cancel':
+        return {
+          ok: true,
+          data: await handleContactsRetriesCancel({ nickname: message.nickname }),
+        };
       case 'orgs.myList':
         return { ok: true, data: await handleOrgsList(message.force ?? false) };
       case 'orgs.invitations':
@@ -4124,6 +4315,10 @@ export default defineBackground(() => {
     } else if (alarm.name === SLOW_POLL_ALARM) {
       pollNotifications('slow').catch((e: unknown) =>
         log.warn('alarm', 'slow poll failed', e),
+      );
+    } else if (alarm.name === PTU_SYNC_RETRY_ALARM) {
+      tickPtuSyncRetries().catch((e: unknown) =>
+        log.warn('alarm', 'ptu retry tick failed', e),
       );
     }
   });

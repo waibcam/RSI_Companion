@@ -202,6 +202,41 @@ export interface ContactsSyncToPtuResponsePayload {
   };
 }
 
+/** List the BG's pending LIVE → PTU retry queue. The queue auto-fills
+ *  with `notFound` entries from each Sync run and ticks every 12 h
+ *  for the next 7 days. Used by the Contacts → Sync tab to render a
+ *  "pending retries" card. */
+export interface ContactsRetriesListRequest {
+  type: 'contacts.retries.list';
+}
+export interface ContactsRetriesListResponsePayload {
+  retries: Array<{
+    nickname: string;
+    displayName: string;
+    avatar: string;
+    addedAt: number;
+    lastAttemptAt: number;
+    attemptCount: number;
+  }>;
+  /** ms — duration after which an entry is dropped from the queue. */
+  windowMs: number;
+  /** minutes — interval between automatic retry ticks. */
+  intervalMin: number;
+}
+
+/** Drop one or all pending retries. Empty `nickname` clears the
+ *  whole queue. Used by the per-row × button and the "Cancel all"
+ *  action on the pending-retries card. */
+export interface ContactsRetriesCancelRequest {
+  type: 'contacts.retries.cancel';
+  /** Lower- or original-cased; the BG matches case-insensitively.
+   *  Omit to clear the entire queue. */
+  nickname?: string;
+}
+export interface ContactsRetriesCancelResponsePayload {
+  remaining: number;
+}
+
 export interface OrgsRequest {
   type: 'orgs.myList';
   force?: boolean;
@@ -1170,6 +1205,8 @@ export type RsiMessage =
   | ContactsActionRequest
   | ContactsSendByNicknameRequest
   | ContactsSyncToPtuRequest
+  | ContactsRetriesListRequest
+  | ContactsRetriesCancelRequest
   | OrgsRequest
   | OrgsInvitationsRequest
   | OrgsApplicationsRequest
@@ -1251,6 +1288,8 @@ interface ResponseMap {
   'contacts.action': ContactsActionResponsePayload;
   'contacts.sendByNickname': ContactsSendByNicknameResponsePayload;
   'contacts.syncToPtu': ContactsSyncToPtuResponsePayload;
+  'contacts.retries.list': ContactsRetriesListResponsePayload;
+  'contacts.retries.cancel': ContactsRetriesCancelResponsePayload;
   'orgs.myList': OrgsResponsePayload;
   'orgs.invitations': OrgsInvitationsResponsePayload;
   'orgs.applications': OrgsApplicationsResponsePayload;
