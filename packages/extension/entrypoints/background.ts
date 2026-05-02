@@ -13,6 +13,7 @@ if (typeof browser !== 'undefined') {
   (globalThis as unknown as { chrome: typeof chrome }).chrome = browser;
 }
 
+import { z } from 'zod';
 import {
   LOANERS,
   BUNDLES,
@@ -328,6 +329,119 @@ async function cacheSet<T>(key: string, value: T, ttlMs: number): Promise<void> 
   await chrome.storage.local.set({ [CACHE_PREFIX + key]: entry });
 }
 
+/** Schema-validated cache read.
+ *
+ *  Catches the class of bugs where two cache writers for the same key
+ *  emit different shapes — historically v1.4.0's collectContactsPendingIds
+ *  seeded `{contacts, fetchedAt}` while handleContactsList persisted
+ *  `{contacts, incoming, outgoing, fetchedAt}`, so a hot-cache hit after
+ *  a poll tick crashed the popup on `incoming.length` (1.4.3 fix). With
+ *  this helper, that path would have returned null instead — the cache
+ *  miss triggers a clean refetch, the popup never sees the malformed
+ *  shape.
+ *
+ *  When the schema rejects the value, we silently evict the broken entry
+ *  and return null — caller treats it as a cache miss. Logged at debug
+ *  so a flood doesn't pollute the user's diagnostics dump but the signal
+ *  is still there for incident triage.
+ */
+async function cacheGetValidated<T>(key: string, schema: z.ZodType<T>): Promise<T | null> {
+  const res = await chrome.storage.local.get(CACHE_PREFIX + key);
+  const entry = res[CACHE_PREFIX + key] as CacheEntry<unknown> | undefined;
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  const parsed = schema.safeParse(entry.value);
+  if (!parsed.success) {
+    log.debug(
+      'cache',
+      `evicting ${key} — schema mismatch: ${parsed.error.issues.map((i) => i.path.join('.') || '<root>').join(', ')}`,
+    );
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  return parsed.data;
+}
+
+/** Top-level shape contracts for the multi-field caches most likely to
+ *  crash the popup if a writer misses a field. Each schema declares the
+ *  required keys at the top level only — array elements / nested shapes
+ *  use `z.unknown()` so we don't pay deep-validation cost on every read
+ *  and don't reject valid-but-enriched payloads.
+ *
+ *  Add a new entry here when introducing a multi-field cache that
+ *  multiple writers can populate (poll path + popup handler is the
+ *  canonical risk pattern). Single-entity caches like
+ *  `{lobbies, fetchedAt}` don't need this — there's only one shape and
+ *  one writer.
+ *
+ *  Reader sites pass the schema to `cacheGetValidated`; on schema
+ *  mismatch the entry gets evicted + a clean cache miss returned, so
+ *  the next refetch lands a correct shape. */
+const CACHE_SCHEMAS = {
+  'contacts:list': z
+    .object({
+      contacts: z.array(z.unknown()),
+      incoming: z.array(z.unknown()),
+      outgoing: z.array(z.unknown()),
+      fetchedAt: z.number(),
+    })
+    .passthrough(),
+  'commlink:list': z
+    .object({
+      articles: z.array(z.unknown()),
+      options: z.unknown(),
+      fetchedAt: z.number(),
+    })
+    .passthrough(),
+  'ships:list': z
+    .object({
+      ships: z.array(z.unknown()),
+      loanerIds: z.array(z.unknown()),
+      ownedCount: z.number(),
+      notFound: z.array(z.unknown()),
+      rawHangarNames: z.array(z.unknown()),
+      fetchedAt: z.number(),
+    })
+    .passthrough(),
+  'stats:summary': z
+    .object({
+      crowdfund: z.unknown(),
+      // referral can be null when the user is signed out; tolerate.
+      referral: z.unknown(),
+      buyBackTokens: z.unknown(),
+      fetchedAt: z.number(),
+    })
+    .passthrough(),
+} as const;
+
+/** Stale-while-revalidate cache read. Always returns the stored value
+ *  if it exists, regardless of TTL — but flags whether it has already
+ *  expired so the caller can decide whether to kick a background
+ *  refresh. Returns null only when the key isn't in storage at all.
+ *
+ *  The caller is responsible for the revalidation: typically wrap a
+ *  refetch in `dedupe(key, …)` so a popup open + a concurrent poll
+ *  don't fire two parallel re-fetches of the same key. Stale entries
+ *  are NOT auto-evicted by this helper — they stay around until the
+ *  caller's revalidation overwrites them, so subsequent stale-OK
+ *  reads get the previous value rather than a forced cache miss.
+ *
+ *  Use this on long-TTL modules (Roadmap 7d, Galactapedia 7-30d,
+ *  Comm-Link / Patch Notes 10min) where instant render beats absolute
+ *  freshness. Avoid on volatile / auth-tied caches (Cart 60s, Identity)
+ *  where serving a stale value can mislead the user. */
+async function cacheGetWithStale<T>(
+  key: string,
+): Promise<{ value: T; isStale: boolean } | null> {
+  const res = await chrome.storage.local.get(CACHE_PREFIX + key);
+  const entry = res[CACHE_PREFIX + key] as CacheEntry<T> | undefined;
+  if (!entry) return null;
+  return { value: entry.value, isStale: entry.expiresAt < Date.now() };
+}
+
 async function runCacheMigration(): Promise<void> {
   const versionKeys = Object.keys(CACHE_NAMESPACE_VERSIONS).map(
     (ns) => CACHE_NAMESPACE_VERSION_PREFIX + ns,
@@ -491,16 +605,12 @@ async function handleCommLinkList(
   ];
   const key = `commlink:list:${keyParts.join(':')}`;
   if (!force) {
-    const cached = await cacheGet<{
-      articles: Rsi.CommLinkArticle[];
-      options: Rsi.CommLinkFormOptions;
-      fetchedAt: number;
-    }>(key);
+    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['commlink:list']);
     if (cached) {
       return {
         page: params.page ?? 1,
-        articles: cached.articles,
-        options: cached.options,
+        articles: cached.articles as Rsi.CommLinkArticle[],
+        options: cached.options as Rsi.CommLinkFormOptions,
         fetchedAt: cached.fetchedAt,
         fromCache: true,
       };
@@ -538,21 +648,19 @@ async function handleShipsList(force: boolean) {
   // we have a valid session cookie to read the hangar.
   const key = signedIn ? 'ships:list' : 'ships:list:public';
   if (!force) {
-    const cached = await cacheGet<{
-      ships: Rsi.Ship[];
-      loanerIds: number[];
-      ownedCount: number;
-      notFound: string[];
-      rawHangarNames: string[];
-      fetchedAt: number;
-    }>(key);
+    // Same shape used by both ships:list (signed-in) and ships:list:public
+    // (anonymous). Schema-validated read covers either key — five required
+    // arrays + ownedCount, lots of opportunity to crash the grid renderer
+    // if a writer ever drops one.
+    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['ships:list']);
     if (cached) {
       return {
-        ...cached,
-        // Old cache entries written before rawHangarNames was added
-        // lack the field. Defaulting here keeps the popup happy on
-        // the first load after an update.
-        rawHangarNames: cached.rawHangarNames ?? [],
+        ships: cached.ships as Rsi.Ship[],
+        loanerIds: cached.loanerIds as number[],
+        ownedCount: cached.ownedCount,
+        notFound: cached.notFound as string[],
+        rawHangarNames: cached.rawHangarNames as string[],
+        fetchedAt: cached.fetchedAt,
         signedIn,
         fromCache: true,
       };
@@ -672,14 +780,22 @@ async function handleContactsList(force: boolean) {
   }
   const key = 'contacts:list';
   if (!force) {
-    const cached = await cacheGet<{
-      contacts: Rsi.Contact[];
-      incoming: Rsi.ContactRequest[];
-      outgoing: Rsi.ContactRequest[];
-      fetchedAt: number;
-    }>(key);
+    // Schema-validated read — defends against the partial-shape crash
+    // we hit in 1.4.x (poll-side writer initially seeded only `contacts`,
+    // missing `incoming`/`outgoing`; popup module crashed on .length of
+    // undefined). If a future writer regresses, the schema rejects the
+    // shape and we return a clean cache miss instead of propagating the
+    // bad value.
+    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['contacts:list']);
     if (cached) {
-      return { ...cached, signedIn: true, fromCache: true };
+      return {
+        contacts: cached.contacts as Rsi.Contact[],
+        incoming: cached.incoming as Rsi.ContactRequest[],
+        outgoing: cached.outgoing as Rsi.ContactRequest[],
+        fetchedAt: cached.fetchedAt,
+        signedIn: true,
+        fromCache: true,
+      };
     }
   }
   return dedupe(key, async () => {
@@ -1090,14 +1206,16 @@ async function handleStatsSummary(force: boolean) {
   const token = await Rsi.readRsiToken();
 
   if (!force) {
-    const cached = await cacheGet<{
-      crowdfund: Rsi.CrowdfundStats;
-      referral: Rsi.ReferralStats | null;
-      buyBackTokens: number | null;
-      fetchedAt: number;
-    }>(key);
+    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['stats:summary']);
     if (cached) {
-      return { ...cached, signedIn: token !== null, fromCache: true };
+      return {
+        crowdfund: cached.crowdfund as Rsi.CrowdfundStats,
+        referral: cached.referral as Rsi.ReferralStats | null,
+        buyBackTokens: cached.buyBackTokens as number | null,
+        fetchedAt: cached.fetchedAt,
+        signedIn: token !== null,
+        fromCache: true,
+      };
     }
   }
 
@@ -1380,17 +1498,37 @@ async function handleGalactapediaTags(force: boolean) {
 const GALACTAPEDIA_INDEX_KEY = 'galactapedia:index:v2';
 
 async function handleGalactapediaIndex(force: boolean) {
+  // Stale-while-revalidate: the A-Z index costs 5-15 sequential GraphQL
+  // pages to rebuild from scratch. A 30-day stale entry is dramatically
+  // better than a multi-second wait at popup open time after the TTL
+  // flips. The actual content drift in 30 days is minimal (a handful of
+  // new articles) — far less harm than the latency of a synchronous
+  // fetch every monthly boundary.
+  async function refetch() {
+    const articles = await Rsi.fetchGalactapediaIndex();
+    const fetchedAt = Date.now();
+    await cacheSet(GALACTAPEDIA_INDEX_KEY, { articles, fetchedAt }, TTL.galactapediaIndex);
+    return { articles, fetchedAt };
+  }
+
   if (!force) {
-    const cached = await cacheGet<{
+    const cached = await cacheGetWithStale<{
       articles: Rsi.GalactapediaArticle[];
       fetchedAt: number;
     }>(GALACTAPEDIA_INDEX_KEY);
-    if (cached) return { ...cached, fromCache: true };
+    if (cached) {
+      if (cached.isStale) {
+        void dedupe(GALACTAPEDIA_INDEX_KEY, refetch).catch((e: unknown) =>
+          log.warn('galactapedia', 'index revalidate failed', e),
+        );
+      }
+      return { ...cached.value, fromCache: true, isStale: cached.isStale };
+    }
   }
-  const articles = await Rsi.fetchGalactapediaIndex();
-  const fetchedAt = Date.now();
-  await cacheSet(GALACTAPEDIA_INDEX_KEY, { articles, fetchedAt }, TTL.galactapediaIndex);
-  return { articles, fetchedAt, fromCache: false };
+  return dedupe(GALACTAPEDIA_INDEX_KEY, async () => {
+    const fresh = await refetch();
+    return { ...fresh, fromCache: false, isStale: false };
+  });
 }
 
 async function handleGalactapediaIndexCached() {
@@ -1524,16 +1662,15 @@ async function handleRoadmapData(force: boolean) {
   // v3 hits the RSI roadmap endpoint directly. The old v2 backend wrapped
   // the same payload and added a `meta` envelope we still return for UI
   // compatibility, but now it's synthesized from the RSI response.
+  //
+  // Uses stale-while-revalidate: roadmap snapshots change weekly-ish at
+  // most so a stale 7-day-old cache is fine to render *now* while we
+  // fetch fresh in the background. The user gets instant content on
+  // every popup open instead of waiting on a multi-second roadmap
+  // fetch every Sunday after the TTL flipped.
   const key = 'roadmap:data';
-  if (!force) {
-    const cached = await cacheGet<{
-      data: Schemas.Backend.RoadmapPayload;
-      meta: Schemas.Backend.RoadmapMeta;
-      fetchedAt: number;
-    }>(key);
-    if (cached) return { ...cached, fromCache: true };
-  }
-  return dedupe(key, async () => {
+
+  async function refetch() {
     const { data, snapshotTs, fetchedAt } = await Rsi.fetchRsiRoadmap();
     const meta: Schemas.Backend.RoadmapMeta = {
       board_id: 1,
@@ -1543,7 +1680,32 @@ async function handleRoadmapData(force: boolean) {
     };
     const payload = { data, meta, fetchedAt };
     await cacheSet(key, payload, TTL.roadmap);
-    return { ...payload, fromCache: false };
+    return payload;
+  }
+
+  if (!force) {
+    const cached = await cacheGetWithStale<{
+      data: Schemas.Backend.RoadmapPayload;
+      meta: Schemas.Backend.RoadmapMeta;
+      fetchedAt: number;
+    }>(key);
+    if (cached) {
+      if (cached.isStale) {
+        // Fire-and-forget revalidation. Dedupe protects against the
+        // popup-mount + background-poll concurrent-stale-read pile-up
+        // — both callers see the same in-flight refetch instead of
+        // two parallel hits to RSI's roadmap endpoint.
+        void dedupe(key, refetch).catch((e: unknown) =>
+          log.warn('roadmap', 'background revalidate failed', e),
+        );
+      }
+      return { ...cached.value, fromCache: true, isStale: cached.isStale };
+    }
+  }
+  // Cold cache (or force=true) — block on the fetch.
+  return dedupe(key, async () => {
+    const payload = await refetch();
+    return { ...payload, fromCache: false, isStale: false };
   });
 }
 

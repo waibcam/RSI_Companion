@@ -877,6 +877,11 @@ export interface GalactapediaIndexResponsePayload {
   articles: GalactapediaArticle[];
   fetchedAt: number;
   fromCache: boolean;
+  /** True when the cache was past its TTL but served anyway under
+   *  stale-while-revalidate. The popup may show a subtle "refreshing"
+   *  hint while the BG refetch lands; the next read will return fresh
+   *  data with isStale=false. */
+  isStale?: boolean;
 }
 
 /** Cache-only read of the A-Z index. Never triggers a crawl — used by the
@@ -935,6 +940,9 @@ export interface RoadmapDataResponsePayload {
   meta: import('./schemas/backend.js').RoadmapMeta;
   fetchedAt: number;
   fromCache: boolean;
+  /** True when the cache was past its TTL but served anyway under
+   *  stale-while-revalidate. */
+  isStale?: boolean;
 }
 
 export interface ProgressTrackerRequest {
