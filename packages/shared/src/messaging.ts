@@ -1000,6 +1000,46 @@ export interface CacheStatsResponsePayload {
     prefix: string;
     entries: number;
     sizeBytes: number;
+    /** Soonest entry.expiresAt across the bucket — when does the next
+     *  TTL flip happen for this namespace. */
+    nextExpiresAt: number | null;
+    /** Oldest writer-set fetchedAt across the bucket. */
+    oldestFetchedAt: number | null;
+    /** Newest writer-set fetchedAt across the bucket. */
+    newestFetchedAt: number | null;
+    /** True when this namespace's reads are validated against a Zod
+     *  schema (cacheGetValidated). */
+    validated: boolean;
+    /** True when this namespace's reads opt into stale-while-revalidate
+     *  (cacheGetWithStale). */
+    swr: boolean;
+  }>;
+  /** chrome.storage.local usage. Default quota is 5 MB without the
+   *  `unlimitedStorage` permission (not requested). */
+  storage: {
+    usedBytes: number;
+    quotaBytes: number;
+  };
+}
+
+/** Per-entry detail for one cache namespace — powers the expandable row
+ *  in Settings → Performance → Cache. Lazy-loaded when the user clicks
+ *  to expand a row, not bundled with the namespace summary. */
+export interface CacheEntriesRequest {
+  type: 'cache.entries';
+  /** Top-level namespace prefix (the segment between `cache:` and the
+   *  first `:`, e.g. `commlink`, `pledge`, `spectrum`). */
+  namespace: string;
+}
+export interface CacheEntriesResponsePayload {
+  namespace: string;
+  entries: Array<{
+    /** Cache key without the `cache:` prefix. */
+    key: string;
+    sizeBytes: number;
+    fetchedAt: number | null;
+    expiresAt: number | null;
+    isExpired: boolean;
   }>;
 }
 
@@ -1187,6 +1227,7 @@ export type RsiMessage =
   | ProgressTrackerRequest
   | CacheClearRequest
   | CacheStatsRequest
+  | CacheEntriesRequest
   | SettingsSessionStatusRequest
   | SettingsLogsRequest
   | SettingsPermissionsRequest
@@ -1267,6 +1308,7 @@ interface ResponseMap {
   'progressTracker.list': ProgressTrackerResponsePayload;
   'cache.clear': CacheClearResponsePayload;
   'cache.stats': CacheStatsResponsePayload;
+  'cache.entries': CacheEntriesResponsePayload;
   'settings.sessionStatus': SettingsSessionStatusResponsePayload;
   'settings.logs': SettingsLogsResponsePayload;
   'settings.permissions': SettingsPermissionsResponsePayload;

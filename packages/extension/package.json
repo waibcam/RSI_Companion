@@ -1,6 +1,6 @@
 {
   "name": "@rsi-companion/extension",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": true,
   "type": "module",
   "description": "RSI Companion browser extension (Chrome/Edge/Firefox) — first stable release after 0.1/0.2 pre-release series",

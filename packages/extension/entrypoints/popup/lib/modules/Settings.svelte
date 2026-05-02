@@ -13,12 +13,21 @@
   // automatic polling — the Settings module is rarely open and users open
   // it specifically to inspect a snapshot.
 
-  import { log, sendRsiMessage } from '@rsi-companion/shared';
+  import {
+    log,
+    sendRsiMessage,
+    type CacheEntriesResponsePayload,
+    type CacheStatsResponsePayload,
+  } from '@rsi-companion/shared';
   import {
     AlertTriangle,
     ArrowDown,
     ArrowUp,
+    ChevronDown,
+    ChevronRight,
+    CircleCheck,
     ClipboardCopy,
+    Clock,
     Database,
     Eye,
     EyeOff,
@@ -28,6 +37,7 @@
     Minus,
     Plus,
     RefreshCw,
+    Repeat,
     RotateCcw,
     Settings as SettingsIcon,
     ShieldCheck,
@@ -63,25 +73,73 @@
 
   // --- Cache section ---------------------------------------------------------
 
-  type CacheStats = {
-    total: { entries: number; sizeBytes: number };
-    namespaces: Array<{ prefix: string; entries: number; sizeBytes: number }>;
-  };
+  type CacheStats = CacheStatsResponsePayload;
+  type CacheEntries = CacheEntriesResponsePayload['entries'];
   let cacheStats = $state<CacheStats | null>(null);
   let cacheError = $state<string | null>(null);
   let cacheLoading = $state(false);
   let clearingPrefix = $state<string | null>(null);
+
+  // Per-namespace expansion: when the user clicks the chevron next to a
+  // namespace row, we lazy-load its individual entries so the user can
+  // see exactly which keys are there, when each was fetched, when each
+  // expires, and how big each is. Caching the loaded entries by
+  // namespace avoids a re-fetch every time the user re-expands the row.
+  let expandedNs = $state<Set<string>>(new Set());
+  let nsEntries = $state<Record<string, CacheEntries>>({});
+  let nsEntriesLoading = $state<Set<string>>(new Set());
 
   async function loadCacheStats() {
     cacheLoading = true;
     cacheError = null;
     try {
       cacheStats = await sendRsiMessage({ type: 'cache.stats' });
+      // Stale entries-per-namespace caches stop matching reality after a
+      // refresh — drop them so re-expansion fetches fresh.
+      nsEntries = {};
     } catch (e) {
       cacheError = errorMessage(e);
     } finally {
       cacheLoading = false;
     }
+  }
+
+  async function toggleNamespace(prefix: string): Promise<void> {
+    if (expandedNs.has(prefix)) {
+      const next = new Set(expandedNs);
+      next.delete(prefix);
+      expandedNs = next;
+      return;
+    }
+    expandedNs = new Set([...expandedNs, prefix]);
+    if (nsEntries[prefix] || nsEntriesLoading.has(prefix)) return;
+    nsEntriesLoading = new Set([...nsEntriesLoading, prefix]);
+    try {
+      const res = await sendRsiMessage({ type: 'cache.entries', namespace: prefix });
+      nsEntries = { ...nsEntries, [prefix]: res.entries };
+    } catch (e) {
+      log.warn('settings', `loading cache entries for ${prefix} failed`, e);
+    } finally {
+      const next = new Set(nsEntriesLoading);
+      next.delete(prefix);
+      nsEntriesLoading = next;
+    }
+  }
+
+  /** Format a Unix-ms timestamp as "Xh ago" / "in Xm" / etc. — relative
+   *  to now, with sign. Falls back to the absolute date when the gap is
+   *  beyond a couple of days. */
+  function relativeTime(ts: number | null): string {
+    if (ts === null) return '—';
+    const diff = ts - Date.now();
+    const abs = Math.abs(diff);
+    const sign = diff < 0 ? '' : 'in ';
+    const past = diff < 0 ? ' ago' : '';
+    if (abs < 60_000) return diff < 0 ? 'just now' : 'imminent';
+    if (abs < 3_600_000) return `${sign}${Math.round(abs / 60_000)}m${past}`;
+    if (abs < 86_400_000) return `${sign}${Math.round(abs / 3_600_000)}h${past}`;
+    if (abs < 7 * 86_400_000) return `${sign}${Math.round(abs / 86_400_000)}d${past}`;
+    return new Date(ts).toLocaleDateString();
   }
 
   async function clearCache(prefix?: string) {
@@ -508,35 +566,191 @@
         </header>
         <p class="mb-2 text-[11px] text-slate-400">
           Cached RSI responses (ship lists, orgs, spectrum, galactapedia, etc.).
-          Clearing is safe — data is re-fetched on demand.
+          Each namespace groups related cache keys — click a row to see
+          per-key detail. Clearing is safe — data is re-fetched on demand.
         </p>
+
+        <!-- Storage quota indicator. chrome.storage.local default cap
+             is 5 MB; once we cross ~80% the bar turns amber, ~95%+
+             rose. Most users sit at <10% so this is informational
+             rather than scary. -->
+        {#if cacheStats}
+          {@const used = cacheStats.storage.usedBytes}
+          {@const quota = cacheStats.storage.quotaBytes}
+          {@const pct = Math.min(100, Math.round((used / quota) * 100))}
+          {@const barColor = pct >= 95 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-400' : 'bg-sky-500'}
+          <div class="mb-2 rounded-md border border-slate-800 bg-slate-950/40 p-2">
+            <div class="mb-1 flex items-baseline justify-between text-[10px]">
+              <span class="font-semibold text-slate-300">Storage usage</span>
+              <span class="font-mono text-slate-500">
+                {formatBytes(used)} / {formatBytes(quota)} ({pct}%)
+              </span>
+            </div>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+              <div
+                class="h-full transition-all {barColor}"
+                style:width="{pct}%"
+              ></div>
+            </div>
+            <p class="mt-1 text-[9px] text-slate-500">
+              chrome.storage.local quota — wraps everything cached + the
+              extension's own state. The default cap is 5 MB (no
+              `unlimitedStorage` permission requested).
+            </p>
+          </div>
+        {/if}
+
         {#if cacheError}
           <div class="mb-2 flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-2 text-[11px] text-rose-200">
             <AlertTriangle class="mt-0.5 size-3.5 shrink-0" />
             <span>{cacheError}</span>
           </div>
         {/if}
+
         {#if cacheStats}
+          <!-- Column headers — labels what each number means so the
+               user doesn't have to guess. The "Entries" column counts
+               distinct cache keys under this namespace; e.g. each
+               page of comm-link or each opened ship detail is one
+               entry. The "Last fetch" column shows when the freshest
+               entry in the namespace was last refreshed. The "Next
+               expiry" column shows when the soonest TTL flip will hit
+               (= when SWR will kick in if enabled, otherwise when the
+               next popup open will block on a refetch). -->
+          <div
+            class="mb-1 flex items-center gap-2 px-2 text-[9px] font-semibold uppercase tracking-wider text-slate-500"
+          >
+            <span class="w-4"></span>
+            <span class="flex-1">Namespace</span>
+            <span class="w-12 text-right" title="Number of distinct cache keys under this namespace">Entries</span>
+            <span class="w-20 text-right" title="Approximate disk size — JSON.stringify length, not exact bytes">Size</span>
+            <span class="w-16 text-right" title="Most recent fetchedAt across this namespace">Last fetch</span>
+            <span class="w-16 text-right" title="Soonest entry.expiresAt — when the next TTL flip hits">Next expiry</span>
+            <span class="w-6"></span>
+          </div>
+
           <ul class="mb-2 divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
             {#each cacheStats.namespaces as ns (ns.prefix)}
-              <li class="flex items-center gap-2 px-2 py-1.5 text-[11px]">
-                <code class="flex-1 font-mono text-slate-300">{ns.prefix}</code>
-                <span class="w-16 text-right text-slate-500">{ns.entries}</span>
-                <span class="w-20 text-right font-mono text-slate-400">{formatBytes(ns.sizeBytes)}</span>
-                <button
-                  type="button"
-                  onclick={() => clearCache(ns.prefix)}
-                  disabled={clearingPrefix !== null}
-                  class="rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Clear {ns.prefix}"
-                  aria-label="Clear {ns.prefix}"
-                >
-                  {#if clearingPrefix === ns.prefix}
-                    <Loader2 class="size-3.5 animate-spin" />
-                  {:else}
-                    <Trash2 class="size-3.5" />
+              {@const expanded = expandedNs.has(ns.prefix)}
+              {@const loading = nsEntriesLoading.has(ns.prefix)}
+              {@const entries = nsEntries[ns.prefix]}
+              <li>
+                <div class="flex items-center gap-2 px-2 py-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onclick={() => toggleNamespace(ns.prefix)}
+                    class="flex size-4 shrink-0 items-center justify-center rounded text-slate-500 transition hover:bg-slate-800 hover:text-slate-200"
+                    title={expanded ? 'Collapse' : 'Show individual entries'}
+                    aria-label={expanded ? 'Collapse' : 'Expand'}
+                  >
+                    {#if expanded}
+                      <ChevronDown class="size-3" />
+                    {:else}
+                      <ChevronRight class="size-3" />
+                    {/if}
+                  </button>
+
+                  <code class="flex-1 truncate font-mono text-slate-300">{ns.prefix}</code>
+
+                  <!-- Capability badges. `validated` = reads go through
+                       cacheGetValidated (Zod) so a shape mismatch is
+                       caught and treated as a cache miss. `SWR` =
+                       reads opt into stale-while-revalidate so an
+                       expired entry is served instantly while fresh
+                       lands in the background. -->
+                  {#if ns.validated}
+                    <span
+                      class="inline-flex items-center gap-0.5 rounded bg-emerald-500/15 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300"
+                      title="Reads validate the shape against a Zod schema; mismatches become cache misses instead of crashes"
+                    >
+                      <CircleCheck class="size-2.5" /> validated
+                    </span>
                   {/if}
-                </button>
+                  {#if ns.swr}
+                    <span
+                      class="inline-flex items-center gap-0.5 rounded bg-violet-500/15 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-violet-300"
+                      title="Stale-while-revalidate — expired entries are served instantly while a background refetch lands fresh data"
+                    >
+                      <Repeat class="size-2.5" /> swr
+                    </span>
+                  {/if}
+
+                  <span class="w-12 text-right text-slate-500">{ns.entries}</span>
+                  <span class="w-20 text-right font-mono text-slate-400">{formatBytes(ns.sizeBytes)}</span>
+                  <span
+                    class="w-16 text-right text-[10px] text-slate-500"
+                    title={ns.newestFetchedAt ? new Date(ns.newestFetchedAt).toLocaleString() : 'no fetchedAt timestamp'}
+                  >
+                    {relativeTime(ns.newestFetchedAt)}
+                  </span>
+                  <span
+                    class="w-16 text-right text-[10px] text-slate-500"
+                    title={ns.nextExpiresAt ? new Date(ns.nextExpiresAt).toLocaleString() : ''}
+                  >
+                    {relativeTime(ns.nextExpiresAt)}
+                  </span>
+                  <button
+                    type="button"
+                    onclick={() => clearCache(ns.prefix)}
+                    disabled={clearingPrefix !== null}
+                    class="shrink-0 rounded p-1 text-slate-500 transition hover:bg-slate-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                    title="Clear {ns.prefix}"
+                    aria-label="Clear {ns.prefix}"
+                  >
+                    {#if clearingPrefix === ns.prefix}
+                      <Loader2 class="size-3.5 animate-spin" />
+                    {:else}
+                      <Trash2 class="size-3.5" />
+                    {/if}
+                  </button>
+                </div>
+
+                {#if expanded}
+                  <div class="border-t border-slate-800 bg-slate-950/60 px-2 py-1.5">
+                    {#if loading}
+                      <div class="flex items-center justify-center py-2 text-[10px] text-slate-500">
+                        <Loader2 class="mr-1 size-3 animate-spin" /> Loading entries…
+                      </div>
+                    {:else if entries && entries.length > 0}
+                      <ul class="flex flex-col gap-0.5">
+                        {#each entries as e (e.key)}
+                          <li
+                            class="flex items-center gap-2 rounded px-1.5 py-1 text-[10px] {e.isExpired
+                              ? 'opacity-60'
+                              : ''}"
+                          >
+                            <Clock
+                              class="size-2.5 shrink-0 {e.isExpired ? 'text-amber-400' : 'text-slate-600'}"
+                            />
+                            <code
+                              class="flex-1 truncate font-mono text-slate-400"
+                              title={e.key}
+                            >
+                              {e.key}
+                            </code>
+                            <span class="w-16 text-right font-mono text-slate-500">
+                              {formatBytes(e.sizeBytes)}
+                            </span>
+                            <span
+                              class="w-16 text-right text-slate-500"
+                              title={e.fetchedAt ? new Date(e.fetchedAt).toLocaleString() : ''}
+                            >
+                              {relativeTime(e.fetchedAt)}
+                            </span>
+                            <span
+                              class="w-16 text-right {e.isExpired ? 'text-amber-400' : 'text-slate-500'}"
+                              title={e.expiresAt ? new Date(e.expiresAt).toLocaleString() : ''}
+                            >
+                              {e.isExpired ? 'expired' : relativeTime(e.expiresAt)}
+                            </span>
+                          </li>
+                        {/each}
+                      </ul>
+                    {:else}
+                      <p class="text-center text-[10px] italic text-slate-500">No entries.</p>
+                    {/if}
+                  </div>
+                {/if}
               </li>
             {:else}
               <li class="px-2 py-3 text-center text-[11px] italic text-slate-500">Cache is empty.</li>

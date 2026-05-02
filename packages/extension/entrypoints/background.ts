@@ -2080,14 +2080,46 @@ async function handleCacheClear(prefix?: string) {
   return { cleared: keys.length };
 }
 
+// Namespaces that opted into the schema-validated read path (see
+// CACHE_SCHEMAS). Surfaced in the diagnostics UI so the user can tell
+// at a glance which caches will detect a shape mismatch vs which still
+// fall through to a raw cache read.
+const VALIDATED_NAMESPACES: ReadonlySet<string> = new Set(
+  Object.keys(CACHE_SCHEMAS).map((k) => k.split(':')[0]!),
+);
+
+// Namespaces wired up to stale-while-revalidate (cacheGetWithStale) —
+// expired entries get served instantly while the BG re-fetches in the
+// background. Hardcoded here so the UI badge stays in sync; if you add
+// SWR to a new handler, register its top-level namespace prefix below.
+const SWR_NAMESPACES: ReadonlySet<string> = new Set([
+  'roadmap',
+  'galactapedia', // covers galactapedia:index:v2 (the costly A-Z crawl)
+]);
+
 async function handleCacheStats() {
   // Group cache entries by their top-level namespace (the segment between
   // `cache:` and the first `:`), counting entries and approximating size
   // via `JSON.stringify(value).length`. Not exact bytes — chrome.storage
   // uses its own serialization — but close enough to drive a "where is
   // my quota going" UI.
+  //
+  // Per-namespace timestamps come from two distinct sources:
+  //   - oldestFetchedAt / newestFetchedAt — the writer's `value.fetchedAt`
+  //     when present (most handlers set it). Tells the user when the
+  //     freshest / staleest entry in this namespace was last fetched.
+  //   - nextExpiresAt — the soonest entry.expiresAt across the bucket.
+  //     Tells the user when the next TTL flip will hit (= when the next
+  //     popup open might block on a refetch, or when SWR will kick in).
   const all = await chrome.storage.local.get(null);
-  const buckets = new Map<string, { entries: number; sizeBytes: number }>();
+  type Bucket = {
+    entries: number;
+    sizeBytes: number;
+    oldestFetchedAt: number | null;
+    newestFetchedAt: number | null;
+    nextExpiresAt: number | null;
+  };
+  const buckets = new Map<string, Bucket>();
   let totalEntries = 0;
   let totalSize = 0;
   for (const [key, value] of Object.entries(all)) {
@@ -2096,20 +2128,105 @@ async function handleCacheStats() {
     const withoutPrefix = key.slice(CACHE_PREFIX.length);
     const ns = withoutPrefix.split(':')[0] ?? 'other';
     const size = JSON.stringify(value).length;
-    const b = buckets.get(ns) ?? { entries: 0, sizeBytes: 0 };
+    const b = buckets.get(ns) ?? {
+      entries: 0,
+      sizeBytes: 0,
+      oldestFetchedAt: null,
+      newestFetchedAt: null,
+      nextExpiresAt: null,
+    };
     b.entries += 1;
     b.sizeBytes += size;
+    // Pull timestamps from the entry envelope — every cache write goes
+    // through cacheSet so `expiresAt` is always present. `fetchedAt`
+    // depends on the caller (most module handlers set it explicitly).
+    const entry = value as { value?: { fetchedAt?: unknown }; expiresAt?: unknown } | null;
+    if (entry?.expiresAt && typeof entry.expiresAt === 'number') {
+      if (b.nextExpiresAt === null || entry.expiresAt < b.nextExpiresAt) {
+        b.nextExpiresAt = entry.expiresAt;
+      }
+    }
+    const fetchedAt = entry?.value?.fetchedAt;
+    if (typeof fetchedAt === 'number') {
+      if (b.oldestFetchedAt === null || fetchedAt < b.oldestFetchedAt) {
+        b.oldestFetchedAt = fetchedAt;
+      }
+      if (b.newestFetchedAt === null || fetchedAt > b.newestFetchedAt) {
+        b.newestFetchedAt = fetchedAt;
+      }
+    }
     buckets.set(ns, b);
     totalEntries += 1;
     totalSize += size;
   }
   const namespaces = [...buckets.entries()]
-    .map(([prefix, v]) => ({ prefix, ...v }))
+    .map(([prefix, v]) => ({
+      prefix,
+      ...v,
+      validated: VALIDATED_NAMESPACES.has(prefix),
+      swr: SWR_NAMESPACES.has(prefix),
+    }))
     .sort((a, b) => b.sizeBytes - a.sizeBytes);
+
+  // Storage quota: chrome.storage.local default is 5 MB without the
+  // `unlimitedStorage` permission. We don't ask for that permission
+  // (it would trigger AMO re-review). Surface usage so the user can
+  // see how close they are to the cap.
+  const QUOTA_BYTES = (chrome.storage.local as { QUOTA_BYTES?: number }).QUOTA_BYTES ?? 5_242_880;
+  const usedBytes = await chrome.storage.local
+    .getBytesInUse(null)
+    .catch(() => totalSize); // FF MV2 sometimes fails on this; fall back to estimate
+
   return {
     total: { entries: totalEntries, sizeBytes: totalSize },
     namespaces,
+    storage: { usedBytes, quotaBytes: QUOTA_BYTES },
   };
+}
+
+/** Per-entry detail for one namespace. Powers the expandable row in
+ *  Settings → Performance → Cache so the user can see exactly which
+ *  cache keys exist, when each was fetched, when each expires, and
+ *  how big each is. Bounded result to avoid huge payloads when a
+ *  namespace has hundreds of entries (e.g. pledge:shipDetail after
+ *  a long browsing session). */
+async function handleCacheEntries(namespace: string) {
+  const all = await chrome.storage.local.get(null);
+  const fullPrefix = `${CACHE_PREFIX}${namespace}`;
+  type EntryDetail = {
+    key: string;
+    sizeBytes: number;
+    fetchedAt: number | null;
+    expiresAt: number | null;
+    isExpired: boolean;
+  };
+  const out: EntryDetail[] = [];
+  const now = Date.now();
+  for (const [k, v] of Object.entries(all)) {
+    if (!k.startsWith(fullPrefix)) continue;
+    if (k.startsWith(CACHE_NAMESPACE_VERSION_PREFIX)) continue;
+    // Match `<prefix>` exactly OR `<prefix>:<rest>` so `commlink` doesn't
+    // accidentally pull `commlinkXyz`-style siblings (none exist today
+    // but the guard is cheap).
+    if (k !== fullPrefix && !k.startsWith(`${fullPrefix}:`)) continue;
+    const entry = v as
+      | { value?: { fetchedAt?: unknown }; expiresAt?: unknown }
+      | null;
+    const expiresAt = typeof entry?.expiresAt === 'number' ? entry.expiresAt : null;
+    const fetchedAt =
+      typeof entry?.value?.fetchedAt === 'number' ? entry.value.fetchedAt : null;
+    out.push({
+      key: k.slice(CACHE_PREFIX.length),
+      sizeBytes: JSON.stringify(v).length,
+      fetchedAt,
+      expiresAt,
+      isExpired: expiresAt !== null && expiresAt < now,
+    });
+  }
+  // Sort by size desc — biggest entries first (typically the most
+  // useful to see when investigating "why is my cache so big").
+  out.sort((a, b) => b.sizeBytes - a.sizeBytes);
+  return { namespace, entries: out };
 }
 
 async function handleSettingsSessionStatus() {
@@ -3736,6 +3853,8 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleCacheClear(message.prefix) };
       case 'cache.stats':
         return { ok: true, data: await handleCacheStats() };
+      case 'cache.entries':
+        return { ok: true, data: await handleCacheEntries(message.namespace) };
       case 'settings.sessionStatus':
         return { ok: true, data: await handleSettingsSessionStatus() };
       case 'settings.logs':
