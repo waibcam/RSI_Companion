@@ -3,6 +3,7 @@
   import type { Component } from 'svelte';
   import Header from './lib/components/Header.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
+  import StatusBanner from './lib/components/StatusBanner.svelte';
   import {
     appState,
     getEffectiveModules,
@@ -175,6 +176,7 @@
     : `width: ${settingsState.popupWidth}px; height: ${settingsState.popupHeight}px;`}
 >
   <Header />
+  <StatusBanner />
 
   <div class="flex flex-1 overflow-hidden">
     <Sidebar />

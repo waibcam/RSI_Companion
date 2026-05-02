@@ -2023,6 +2023,45 @@ function handleSettingsRecordPrefetch(
   return { ok: true as const };
 }
 
+async function handleSettingsRefreshAll(): Promise<{ cleared: number; pollOk: boolean }> {
+  // Hard reset triggered from Settings → Diagnostics → "Refresh all
+  // modules now". Three steps in order:
+  //
+  //   1. Wipe every cache: entry. Reuses handleCacheClear so the
+  //      namespace-version markers (`cache:__v:*`) survive — without
+  //      that, the next module call would re-fire the migration logic
+  //      pointlessly.
+  //   2. Reset the per-module exponential backoff. A degraded module
+  //      gets a fresh chance instead of staying skipped until its
+  //      backoff window expires (could be up to an hour).
+  //   3. Trigger an immediate full-scope poll. Refills the badge counts
+  //      and seeds the freshly-emptied caches in one round trip via
+  //      the cache-write side effects in collectSpectrumIds /
+  //      collectContactsPendingIds.
+  //
+  // The popup typically does a window.location.reload() right after
+  // calling this so every Svelte module re-mounts against the empty
+  // cache (instead of holding onto its in-memory $state).
+  const { cleared } = await handleCacheClear();
+
+  const prev = await notifyStateGet();
+  const next: Notify.NotifyState = {
+    ...prev,
+    backoffs: {},
+    skippedReason: null,
+  };
+  await notifyStateSet(next);
+
+  let pollOk = true;
+  try {
+    await pollNotifications('all');
+  } catch (e) {
+    log.warn('settings', 'refreshAll: poll after clear failed', e);
+    pollOk = false;
+  }
+  return { cleared, pollOk };
+}
+
 async function handleSettingsPrimeCcu(): Promise<{ ok: boolean; error: string | null }> {
   // Force the full upgrade-session bootstrap without having to click the
   // Upgrades tab. Useful for the Settings "Prime CCU now" button, which
@@ -3532,6 +3571,8 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: handleSettingsRecordPrefetch(message) };
       case 'settings.primeCcu':
         return { ok: true, data: await handleSettingsPrimeCcu() };
+      case 'settings.refreshAll':
+        return { ok: true, data: await handleSettingsRefreshAll() };
       case 'status.summary':
         return { ok: true, data: await handleStatusSummary(message.force ?? false) };
       case 'notify.state':

@@ -1070,6 +1070,23 @@ export interface SettingsPrimeCcuResponsePayload {
   error: string | null;
 }
 
+/** Manual hard reset of every module's cache + the polling backoff state.
+ *  Settings → Diagnostics surfaces this as "Refresh all modules now". Wipes
+ *  every cache: entry (popup state, in-flight Promises, etc. survive),
+ *  resets the per-module exponential backoff so a degraded module gets a
+ *  fresh chance, and triggers an immediate poll. The popup UI typically
+ *  follows up with a window.location.reload() so every Svelte module
+ *  re-mounts against the fresh cache. */
+export interface SettingsRefreshAllRequest {
+  type: 'settings.refreshAll';
+}
+export interface SettingsRefreshAllResponsePayload {
+  /** How many cache: entries were removed. */
+  cleared: number;
+  /** Whether the post-clear poll completed successfully. */
+  pollOk: boolean;
+}
+
 export interface StatusSummaryRequest {
   type: 'status.summary';
   force?: boolean;
@@ -1168,6 +1185,7 @@ export type RsiMessage =
   | SettingsPrefetchStatsRequest
   | SettingsRecordPrefetchRequest
   | SettingsPrimeCcuRequest
+  | SettingsRefreshAllRequest
   | StatusSummaryRequest
   | NotifyStateRequest
   | NotifyMarkSeenRequest
@@ -1247,6 +1265,7 @@ interface ResponseMap {
   'settings.prefetchStats': SettingsPrefetchStatsResponsePayload;
   'settings.recordPrefetch': SettingsRecordPrefetchResponsePayload;
   'settings.primeCcu': SettingsPrimeCcuResponsePayload;
+  'settings.refreshAll': SettingsRefreshAllResponsePayload;
   'status.summary': StatusSummaryResponsePayload;
   'notify.state': NotifyStateResponse;
   'notify.markSeen': NotifyMarkSeenResponse;

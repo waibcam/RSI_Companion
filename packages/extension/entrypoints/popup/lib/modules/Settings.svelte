@@ -99,6 +99,29 @@
     }
   }
 
+  // Hard refresh — wipe every cache: entry, reset polling backoff state,
+  // trigger an immediate poll, then reload the popup so every Svelte
+  // module re-mounts against the empty cache. Heavier than a per-module
+  // refresh button but useful when something feels broadly stale (e.g.
+  // RSI just came back from an outage and the per-module TTLs haven't
+  // expired yet, or a degraded module is stuck in backoff and the user
+  // wants to retry it now).
+  let refreshingAll = $state(false);
+  async function refreshAllModules() {
+    if (refreshingAll) return;
+    refreshingAll = true;
+    cacheError = null;
+    try {
+      await sendRsiMessage({ type: 'settings.refreshAll' });
+      // Reload triggers a fresh popup mount → every module re-fetches
+      // (cache miss) and renders against the BG's just-poll-seeded cache.
+      window.location.reload();
+    } catch (e) {
+      cacheError = errorMessage(e);
+      refreshingAll = false;
+    }
+  }
+
   function formatBytes(n: number): string {
     if (n < 1024) return `${n} B`;
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -520,20 +543,35 @@
             {/each}
           </ul>
         {/if}
-        <div class="flex items-center justify-end gap-2">
+        <div class="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onclick={loadCacheStats}
             disabled={cacheLoading}
             class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw class="size-3" /> Refresh
+            <RefreshCw class="size-3" /> Refresh stats
+          </button>
+          <button
+            type="button"
+            onclick={refreshAllModules}
+            disabled={refreshingAll || clearingPrefix !== null}
+            class="inline-flex items-center gap-1 rounded-md bg-sky-500/20 px-2 py-1 text-[11px] font-semibold text-sky-300 ring-1 ring-sky-500/40 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Wipe every module's cache, reset polling backoff, fetch fresh, and reload the popup"
+          >
+            {#if refreshingAll}
+              <Loader2 class="size-3 animate-spin" />
+            {:else}
+              <RefreshCw class="size-3" />
+            {/if}
+            Refresh all modules
           </button>
           <button
             type="button"
             onclick={() => clearCache()}
             disabled={clearingPrefix !== null}
             class="inline-flex items-center gap-1 rounded-md bg-rose-500/20 px-2 py-1 text-[11px] font-semibold text-rose-300 ring-1 ring-rose-500/40 transition hover:bg-rose-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            title="Wipe cache without re-fetching or reloading"
           >
             {#if clearingPrefix === '__all__'}
               <Loader2 class="size-3 animate-spin" />
