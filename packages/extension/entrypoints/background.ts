@@ -370,6 +370,38 @@ async function runCacheMigration(): Promise<void> {
   }
 }
 
+// Proactively delete cache: entries whose `expiresAt` is already in the
+// past. cacheGet drops them lazily on read, but never-read keys (e.g. a
+// commlink page the user paginated to once last week) accumulate disk
+// space indefinitely. This pass runs once at boot, in chunks of 100 keys
+// to avoid a giant chrome.storage.local.get() that would pull every
+// payload (incl. the ~1 MB Galactapedia index) into memory at once.
+//
+// Cheap on a clean install (zero keys) and ~one read+remove batch on a
+// long-lived install. Logs at debug — not interesting to non-devs.
+async function pruneExpiredCacheEntries(): Promise<void> {
+  const allKeys = await listStorageKeys();
+  const cacheKeys = allKeys.filter((k) => k.startsWith(CACHE_PREFIX));
+  if (cacheKeys.length === 0) return;
+  const now = Date.now();
+  const expired: string[] = [];
+  const CHUNK = 100;
+  for (let i = 0; i < cacheKeys.length; i += CHUNK) {
+    const slice = cacheKeys.slice(i, i + CHUNK);
+    const got = await chrome.storage.local.get(slice);
+    for (const [key, value] of Object.entries(got)) {
+      const v = value as { expiresAt?: number } | undefined;
+      if (v && typeof v.expiresAt === 'number' && v.expiresAt < now) {
+        expired.push(key);
+      }
+    }
+  }
+  if (expired.length > 0) {
+    await chrome.storage.local.remove(expired);
+    log.debug('cache', `pruned ${expired.length} expired entries`);
+  }
+}
+
 // --- handlers -------------------------------------------------------------
 
 async function handleIdentity(force: boolean) {
@@ -2669,6 +2701,42 @@ async function updateBadge(state: Notify.NotifyState): Promise<void> {
   }
 }
 
+// Side-effect cache writes from the poll path. The poll already pays the
+// network cost to fetch fresh data — landing it directly in the popup's
+// module cache means the next popup open serves a hot cache from <10 min
+// ago instead of forcing a duplicate fetch on cache miss. Module shape has
+// to match what the popup handler writes for this to work; for shape-
+// mismatched feeds (spectrum:threads / commlink / patchnotes / roadmap)
+// the poll falls back to invalidating the cache so the popup refetches
+// fresh on next open. Both halves wired together = "poll discovers new
+// content → popup sees it instantly without a roundtrip" instead of the
+// previous "poll bumps badge but popup data still stale for ~30 min".
+async function writeSpectrumLobbiesCache(lobbies: Rsi.SpectrumLobby[]): Promise<void> {
+  await cacheSet(
+    'spectrum:lobbies',
+    { lobbies, fetchedAt: Date.now() },
+    TTL.spectrumNotifs,
+  );
+}
+
+async function writeSpectrumNotificationsCache(
+  notifications: Rsi.SpectrumNotification[],
+): Promise<void> {
+  await cacheSet(
+    'spectrum:notifications',
+    { notifications, fetchedAt: Date.now() },
+    TTL.spectrumNotifs,
+  );
+}
+
+async function writeContactsListCache(contacts: Rsi.Contact[]): Promise<void> {
+  await cacheSet(
+    'contacts:list',
+    { contacts, fetchedAt: Date.now() },
+    TTL.contacts,
+  );
+}
+
 async function collectSpectrumIds(token: string): Promise<string[]> {
   // Spectrum's unread badge covers three distinct feeds. We return one prefixed
   // id set that merges them, so the diff-against-seen machinery treats "new
@@ -2715,6 +2783,10 @@ async function collectSpectrumIds(token: string): Promise<string[]> {
     for (const l of lobbies) {
       if (l.newMessages > 0) out.push(`dm-${l.id}-${l.lastMessageAt}`);
     }
+    // Land the poll-fetched data straight in the popup's cache so a fresh
+    // popup open serves it without a duplicate roundtrip. Same shape the
+    // popup handler writes — see writeSpectrumLobbiesCache above.
+    await writeSpectrumLobbiesCache(lobbies);
   } catch (e) {
     if (guard(e, 'lobbies')) return out;
   }
@@ -2729,6 +2801,7 @@ async function collectSpectrumIds(token: string): Promise<string[]> {
       if (n.type === 'private-new-message') continue;
       out.push(`notif-${n.id}`);
     }
+    await writeSpectrumNotificationsCache(notifs);
   } catch (e) {
     if (guard(e, 'notifications')) return out;
   }
@@ -2759,6 +2832,9 @@ async function collectRoadmapIds(): Promise<string[]> {
 
 async function collectContactsPendingIds(): Promise<string[]> {
   const bundle = await Rsi.fetchContactsBundle();
+  // Same data the Contacts module renders — drop it in the cache here so
+  // opening Contacts after a poll doesn't cost an extra roundtrip.
+  await writeContactsListCache(bundle.contacts);
   return bundle.incoming.map((r) => String(r.id));
 }
 
@@ -2830,6 +2906,49 @@ function modulesForScope(scope: PollScope): ReadonlySet<Notify.NotifyModule> {
   return new Set<Notify.NotifyModule>([...FAST_MODULES, ...SLOW_MODULES]);
 }
 
+// Cache prefixes a poll-detected "new content" event should evict in the
+// popup's module cache so the next popup open refetches fresh. Counterpart
+// to the side-effect cache writes in collectSpectrumIds /
+// collectContactsPendingIds: those cover the keys whose shape exactly
+// matches the popup handler's payload; this list covers everything else
+// (different fetcher source, paginated/filtered keys, etc.).
+//
+// Each entry is a list of cache key prefixes. Empty list means the
+// collector already wrote the cache itself (no invalidation needed).
+const INVALIDATE_ON_NEW_PREFIXES: Record<Notify.NotifyModule, string[]> = {
+  // collectSpectrumIds wrote `spectrum:lobbies` and `spectrum:notifications`
+  // directly. The threads + trending feeds have a different source post-
+  // 1.3.7 (scrape of /community/devtracker, not the highlightedThreads
+  // fetch the poll uses) so they need invalidation instead. Bookmarks /
+  // forumThreads / threadDetail aren't poll-driven but a fresh DM signal
+  // implies the user might be checking Spectrum overall — leaving them
+  // intact since they're keyed by user action, not by feed activity.
+  spectrum: ['spectrum:threads', 'spectrum:trending'],
+  contacts: [], // collectContactsPendingIds wrote contacts:list directly
+  'comm-link': ['commlink:list:'],
+  'patch-notes': ['patchnotes:list:'],
+  roadmap: ['roadmap:data', 'progress-tracker:v2'],
+  'release-notes': [], // bundled JSON, no cache layer
+};
+
+async function invalidateCacheForNewItems(module: Notify.NotifyModule): Promise<void> {
+  const prefixes = INVALIDATE_ON_NEW_PREFIXES[module];
+  if (!prefixes || prefixes.length === 0) return;
+  const allKeys = await listStorageKeys();
+  const targets: string[] = [];
+  for (const k of allKeys) {
+    if (!k.startsWith(CACHE_PREFIX)) continue;
+    const bare = k.slice(CACHE_PREFIX.length);
+    for (const p of prefixes) {
+      if (bare === p || bare.startsWith(p)) {
+        targets.push(k);
+        break;
+      }
+    }
+  }
+  if (targets.length > 0) await chrome.storage.local.remove(targets);
+}
+
 async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.NotifyState> {
   // Scope-specific dedup key so a fast tick doesn't steal a slow tick's work.
   // Concurrent same-scope calls still share one Promise.
@@ -2866,6 +2985,17 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
         diffModule(m, collector)
           .then((n) => {
             counts[m] = n;
+            // When the diff surfaced new items, evict the popup's module
+            // cache for keys whose shape we couldn't write directly from
+            // the collector (different fetcher, different filters, …).
+            // Next popup open then sees a cache miss and refetches the
+            // fresh data, instead of painting stale content for the rest
+            // of TTL.identity / TTL.spectrum.
+            if (n > 0) {
+              void invalidateCacheForNewItems(m).catch((err) =>
+                log.warn('notify', `cache invalidation for ${m} failed`, err),
+              );
+            }
           })
           .catch((e: unknown) => {
             lastErrors[m] = e instanceof Error ? e.message : String(e);
@@ -3433,6 +3563,12 @@ export default defineBackground(() => {
     Promise.all([
       runNotifyMigration().catch((e: unknown) => log.warn('migration', 'notify migration failed', e)),
       runCacheMigration().catch((e: unknown) => log.warn('migration', 'cache migration failed', e)),
+      // Boot-time hygiene — drops cache: entries whose TTL already
+      // expired before the SW woke up. Lazy expiry in cacheGet covers
+      // re-read keys but a paginated/abandoned key (commlink page 7
+      // the user visited once last week) never gets re-read and
+      // accumulates disk space forever. Cheap on first run.
+      pruneExpiredCacheEntries().catch((e: unknown) => log.warn('cache', 'prune failed', e)),
     ]).finally(() => {
       ensurePollAlarms().catch((e: unknown) => log.warn('boot', 'ensurePollAlarms failed', e));
     });
