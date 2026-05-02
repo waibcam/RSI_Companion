@@ -27,16 +27,21 @@ import {
   fetchWithTimeout,
   log,
   CONTACTS_SYNC_TO_PTU_PORT,
+  PTU_SYNC_HISTORY_KEY,
+  PTU_SYNC_HISTORY_MAX,
   PTU_SYNC_RETRY_ALARM,
   PTU_SYNC_RETRY_INTERVAL_MIN,
   PTU_SYNC_RETRY_STORAGE_KEY,
+  PTU_SYNC_RETRY_TICK_STATS_KEY,
   PTU_SYNC_RETRY_WINDOW_MS,
   reconcilePtuRetryQueue,
   type ContactsSyncToPtuEntry,
   type ContactsSyncToPtuResponsePayload,
   type ContactsSyncToPtuStreamCommand,
   type ContactsSyncToPtuStreamEvent,
+  type PtuSyncHistoryEntry,
   type PtuSyncPendingRetry,
+  type PtuSyncRetryTickStats,
   type RsiMessage,
   type RsiMessageResult,
 } from '@rsi-companion/shared';
@@ -866,6 +871,11 @@ async function runContactsSyncToPtu(
   emit: SyncEmitter,
   cancel: SyncCancelToken,
 ): Promise<ContactsSyncToPtuResponsePayload> {
+  // Capture the click-to-finish timing so we can record an entry in
+  // the history log. Surface in the UI as "Sync run 2h ago — 6 added,
+  // 1 error".
+  const startedAt = Date.now();
+
   // Step 0 — check both sessions up front so the UI can direct the
   // user to the right sign-in page instead of surfacing a generic
   // "not authenticated" error.
@@ -1033,6 +1043,20 @@ async function runContactsSyncToPtu(
     log.warn('ptu-retry', 'reconciliation after sync failed', e);
   }
 
+  // Append to history (capped at PTU_SYNC_HISTORY_MAX entries). Also
+  // covers the cancel path — `cancel.cancelled === true` on early exit
+  // and the entry counts reflect the partial work that did happen.
+  try {
+    await appendSyncHistory({
+      startedAt,
+      completedAt: Date.now(),
+      cancelled: cancel.cancelled,
+      counts,
+    });
+  } catch (e) {
+    log.warn('ptu-sync-history', 'append failed', e);
+  }
+
   return { signedIn, entries, counts };
 }
 
@@ -1147,6 +1171,13 @@ async function tickPtuSyncRetries(): Promise<void> {
   }
 
   await writePtuRetries(survivors);
+  await writeTickStats({
+    at: Date.now(),
+    retried,
+    succeeded,
+    dropped,
+    remaining: survivors.length,
+  });
   if (retried > 0 || dropped > 0) {
     log.info(
       'ptu-retry',
@@ -1155,16 +1186,43 @@ async function tickPtuSyncRetries(): Promise<void> {
   }
 }
 
-/** Read-only view of the queue for the popup UI. */
+async function readTickStats(): Promise<PtuSyncRetryTickStats | null> {
+  const res = await chrome.storage.local.get(PTU_SYNC_RETRY_TICK_STATS_KEY);
+  const raw = res[PTU_SYNC_RETRY_TICK_STATS_KEY];
+  return (raw as PtuSyncRetryTickStats | undefined) ?? null;
+}
+
+async function writeTickStats(stats: PtuSyncRetryTickStats): Promise<void> {
+  await chrome.storage.local.set({ [PTU_SYNC_RETRY_TICK_STATS_KEY]: stats });
+}
+
+async function readSyncHistory(): Promise<PtuSyncHistoryEntry[]> {
+  const res = await chrome.storage.local.get(PTU_SYNC_HISTORY_KEY);
+  const raw = res[PTU_SYNC_HISTORY_KEY];
+  return Array.isArray(raw) ? (raw as PtuSyncHistoryEntry[]) : [];
+}
+
+async function appendSyncHistory(entry: PtuSyncHistoryEntry): Promise<void> {
+  const list = await readSyncHistory();
+  // Newest at index 0 — drop the tail when over cap.
+  const next = [entry, ...list].slice(0, PTU_SYNC_HISTORY_MAX);
+  await chrome.storage.local.set({ [PTU_SYNC_HISTORY_KEY]: next });
+}
+
+/** Read-only view of the queue + the most recent tick's stats. The
+ *  popup uses lastTick to render "Last retry: Nh ago — M succeeded"
+ *  so the user has a visible signal that the queue is alive. */
 async function handleContactsRetriesList(): Promise<{
   retries: PtuSyncPendingRetry[];
   windowMs: number;
   intervalMin: number;
+  lastTick: PtuSyncRetryTickStats | null;
 }> {
   return {
     retries: await readPtuRetries(),
     windowMs: PTU_SYNC_RETRY_WINDOW_MS,
     intervalMin: PTU_SYNC_RETRY_INTERVAL_MIN,
+    lastTick: await readTickStats(),
   };
 }
 
@@ -1182,6 +1240,119 @@ async function handleContactsRetriesCancel(args: {
   const next = list.filter((e) => e.nickname.toLowerCase() !== target);
   await writePtuRetries(next);
   return { remaining: next.length };
+}
+
+/** Bounded list of recent sync runs for the "Recent syncs" panel. */
+async function handleContactsSyncHistoryList(): Promise<{
+  entries: PtuSyncHistoryEntry[];
+}> {
+  return { entries: await readSyncHistory() };
+}
+
+/** Single-contact retry. Used by the per-error retry button on the
+ *  post-sync result table (and by future per-row retries elsewhere).
+ *  Returns the new entry shape so the popup can replace the row in
+ *  place. Reuses the same throttle-retry / error-classification logic
+ *  the bulk sync uses, just inlined for the single-target case. */
+async function handleContactsRetryOne(args: {
+  nickname: string;
+  displayName: string;
+  avatar: string;
+}): Promise<{ entry: ContactsSyncToPtuEntry }> {
+  const liveToken = await Rsi.readRsiToken();
+  const ptuToken = await Rsi.readPtuToken();
+  if (!liveToken || !ptuToken) {
+    return {
+      entry: {
+        nickname: args.nickname,
+        displayName: args.displayName || args.nickname,
+        avatar: args.avatar,
+        status: 'error',
+        error: 'not signed in on both LIVE and PTU',
+      },
+    };
+  }
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const needle = args.nickname.toLowerCase();
+
+  async function attempt(): Promise<ContactsSyncToPtuEntry> {
+    const hits = await Rsi.searchPtuMembers(args.nickname);
+    const exact = hits.find((h) => h.nickname.toLowerCase() === needle);
+    if (!exact) {
+      return {
+        nickname: args.nickname,
+        displayName: args.displayName || args.nickname,
+        avatar: args.avatar,
+        status: 'notFound',
+      };
+    }
+    await Rsi.sendPtuFriendRequest(exact.id);
+    return {
+      nickname: args.nickname,
+      displayName: args.displayName || args.nickname,
+      avatar: args.avatar,
+      status: 'added',
+    };
+  }
+
+  function classify(e: unknown): ContactsSyncToPtuEntry {
+    if (e instanceof Rsi.RsiSpectrumActionError) {
+      if (e.code === 'ErrExistingPendingFriendRequest') {
+        return {
+          nickname: args.nickname,
+          displayName: args.displayName || args.nickname,
+          avatar: args.avatar,
+          status: 'alreadyPending',
+        };
+      }
+      return {
+        nickname: args.nickname,
+        displayName: args.displayName || args.nickname,
+        avatar: args.avatar,
+        status: 'error',
+        error: `${e.code}: ${e.message}`,
+      };
+    }
+    return {
+      nickname: args.nickname,
+      displayName: args.displayName || args.nickname,
+      avatar: args.avatar,
+      status: 'error',
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
+  let entry: ContactsSyncToPtuEntry;
+  try {
+    entry = await attempt();
+  } catch (e) {
+    if (e instanceof Rsi.RsiSpectrumActionError && e.code === 'ErrThrottleLimit') {
+      await sleep(PTU_SYNC_RETRY_BACKOFF_MS);
+      try {
+        entry = await attempt();
+      } catch (e2) {
+        entry = classify(e2);
+      }
+    } else {
+      entry = classify(e);
+    }
+  }
+
+  // Reconcile a single entry into the queue too — if we just resolved
+  // a notFound that was sitting in the queue, evict it. If a manual
+  // retry from the post-sync result happens to fail again, leave the
+  // queue alone (the periodic ticks will keep trying).
+  try {
+    const existing = await readPtuRetries();
+    const next = reconcilePtuRetryQueue(existing, [entry], Date.now());
+    if (hasRetriesChanged(existing, next) || existing.length !== next.length) {
+      await writePtuRetries(next);
+    }
+  } catch (e) {
+    log.warn('ptu-retry', 'single-entry reconciliation failed', e);
+  }
+
+  return { entry };
 }
 
 // Legacy message-based handler — kept for backward compat in case any
@@ -3909,6 +4080,17 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return {
           ok: true,
           data: await handleContactsRetriesCancel({ nickname: message.nickname }),
+        };
+      case 'contacts.syncHistory.list':
+        return { ok: true, data: await handleContactsSyncHistoryList() };
+      case 'contacts.retryOne':
+        return {
+          ok: true,
+          data: await handleContactsRetryOne({
+            nickname: message.nickname,
+            displayName: message.displayName,
+            avatar: message.avatar,
+          }),
         };
       case 'orgs.myList':
         return { ok: true, data: await handleOrgsList(message.force ?? false) };

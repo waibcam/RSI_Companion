@@ -156,9 +156,10 @@
           syncing = false;
           syncProgress = null;
           syncPort = null;
-          // BG just reconciled the retry queue — refresh our copy so
-          // the pending-retries card reflects the new state.
+          // BG just reconciled the retry queue and pushed a history
+          // entry — refresh both so the popup reflects the new state.
           void loadRetries();
+          void loadHistory();
           break;
         }
         case 'cancelled': {
@@ -180,6 +181,8 @@
           syncing = false;
           syncProgress = null;
           syncPort = null;
+          // BG also pushed a (cancelled) history entry. Refresh.
+          void loadHistory();
           break;
         }
         case 'error': {
@@ -219,20 +222,48 @@
   // from the most recent sync runs and re-attempts them every 12 h
   // for 7 days; the user can see the queue here and cancel entries
   // they don't want pending.
-  let retriesList = $state<
-    Array<{
-      nickname: string;
-      displayName: string;
-      avatar: string;
-      addedAt: number;
-      lastAttemptAt: number;
-      attemptCount: number;
-    }>
-  >([]);
+  type RetryEntry = {
+    nickname: string;
+    displayName: string;
+    avatar: string;
+    addedAt: number;
+    lastAttemptAt: number;
+    attemptCount: number;
+  };
+  type LastTickStats = {
+    at: number;
+    retried: number;
+    succeeded: number;
+    dropped: number;
+    remaining: number;
+  };
+  let retriesList = $state<RetryEntry[]>([]);
   let retriesWindowMs = $state(0);
   let retriesIntervalMin = $state(0);
+  let retriesLastTick = $state<LastTickStats | null>(null);
   let retriesLoading = $state(false);
   let retryCancelling = $state<Set<string>>(new Set());
+
+  // Sync history (last 10 runs). Loaded on Sync tab open + after every
+  // sync completion via loadHistory(). The most recent run is index 0.
+  type HistoryEntry = {
+    startedAt: number;
+    completedAt: number;
+    cancelled: boolean;
+    counts: {
+      added: number;
+      alreadyFriend: number;
+      alreadyPending: number;
+      notFound: number;
+      error: number;
+    };
+  };
+  let syncHistory = $state<HistoryEntry[]>([]);
+
+  // Per-row retry state on the post-sync result table. Keyed by
+  // nickname. While retrying, the row shows a spinner; on completion
+  // we replace the entry in the result list with the new outcome.
+  let retryingRow = $state<Set<string>>(new Set());
 
   async function loadRetries() {
     retriesLoading = true;
@@ -241,11 +272,62 @@
       retriesList = res.retries;
       retriesWindowMs = res.windowMs;
       retriesIntervalMin = res.intervalMin;
+      retriesLastTick = res.lastTick;
     } catch (e) {
       // Non-fatal — the main sync UI still works.
       console.warn('[contacts] load retries failed', e);
     } finally {
       retriesLoading = false;
+    }
+  }
+
+  async function loadHistory() {
+    try {
+      const res = await sendRsiMessage({ type: 'contacts.syncHistory.list' });
+      syncHistory = res.entries;
+    } catch (e) {
+      console.warn('[contacts] load history failed', e);
+    }
+  }
+
+  async function retryRow(entry: SyncEntry): Promise<void> {
+    if (retryingRow.has(entry.nickname)) return;
+    retryingRow = new Set([...retryingRow, entry.nickname]);
+    try {
+      const res = await sendRsiMessage({
+        type: 'contacts.retryOne',
+        nickname: entry.nickname,
+        displayName: entry.displayName,
+        avatar: entry.avatar,
+      });
+      // Replace in place in syncResult.entries so the table updates.
+      if (syncResult?.entries) {
+        const idx = syncResult.entries.findIndex(
+          (e) => e.nickname === entry.nickname,
+        );
+        if (idx >= 0) {
+          const next = syncResult.entries.slice();
+          next[idx] = res.entry;
+          // Recompute counts to match the new entry mix.
+          const counts = {
+            added: next.filter((e) => e.status === 'added').length,
+            alreadyFriend: next.filter((e) => e.status === 'alreadyFriend').length,
+            alreadyPending: next.filter((e) => e.status === 'alreadyPending').length,
+            notFound: next.filter((e) => e.status === 'notFound').length,
+            error: next.filter((e) => e.status === 'error').length,
+          };
+          syncResult = { ...syncResult, entries: next, counts };
+        }
+      }
+      // Queue may have changed (resolved entry evicted, new error
+      // unchanged). Refresh.
+      void loadRetries();
+    } catch (e) {
+      console.warn('[contacts] retry one failed', e);
+    } finally {
+      const next = new Set(retryingRow);
+      next.delete(entry.nickname);
+      retryingRow = next;
     }
   }
 
@@ -295,6 +377,7 @@
 
   $effect(() => {
     void loadRetries();
+    void loadHistory();
   });
 
   // Pre-built Tailwind class strings per status — Tailwind's JIT scanner
@@ -846,6 +929,17 @@
                 to your PTU friend requests as soon as their profile
                 appears.
               </p>
+              {#if retriesLastTick}
+                <p
+                  class="mb-2 text-[10px] text-slate-500"
+                  title={new Date(retriesLastTick.at).toLocaleString()}
+                >
+                  Last tick: {relativeAgo(retriesLastTick.at)} ·
+                  {retriesLastTick.retried} retried,
+                  <span class="text-emerald-400/80">{retriesLastTick.succeeded} succeeded</span>{#if retriesLastTick.dropped > 0},
+                  <span class="text-slate-400">{retriesLastTick.dropped} expired</span>{/if}
+                </p>
+              {/if}
               <ul class="divide-y divide-amber-900/40 rounded border border-amber-900/40 bg-slate-950/40">
                 {#each retriesList as r (r.nickname)}
                   {@const expiresAt = r.addedAt + retriesWindowMs}
@@ -1132,6 +1226,22 @@
                         <SvelteIcon class="size-2.5" />
                         {meta.label}
                       </span>
+                      {#if e.status === 'error'}
+                        <button
+                          type="button"
+                          onclick={() => retryRow(e)}
+                          disabled={retryingRow.has(e.nickname)}
+                          class="rounded p-0.5 text-slate-500 transition hover:bg-slate-800 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+                          title="Retry {e.nickname}"
+                          aria-label="Retry {e.nickname}"
+                        >
+                          {#if retryingRow.has(e.nickname)}
+                            <Loader2 class="size-3 animate-spin" />
+                          {:else}
+                            <RefreshCw class="size-3" />
+                          {/if}
+                        </button>
+                      {/if}
                     </li>
                   {/each}
                 </ul>
@@ -1141,6 +1251,66 @@
                 No LIVE contacts to process — your friend list is empty.
               </p>
             {/if}
+          {/if}
+
+          <!-- Recent syncs history. Bounded list (last 10 runs), kept
+               collapsed by default since most users only care about
+               the latest result. Each row shows when it ran, whether
+               it was cancelled, and the headline counts. -->
+          {#if syncHistory.length > 0}
+            <details class="rounded-md border border-slate-800 bg-slate-900/40 text-xs">
+              <summary
+                class="cursor-pointer list-none px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200"
+              >
+                ▶ Recent syncs ({syncHistory.length})
+              </summary>
+              <ul class="divide-y divide-slate-800 border-t border-slate-800">
+                {#each syncHistory as h (h.startedAt)}
+                  {@const total =
+                    h.counts.added +
+                    h.counts.alreadyFriend +
+                    h.counts.alreadyPending +
+                    h.counts.notFound +
+                    h.counts.error}
+                  {@const durationMs = h.completedAt - h.startedAt}
+                  {@const durationLabel =
+                    durationMs < 1000
+                      ? `${durationMs}ms`
+                      : durationMs < 60_000
+                        ? `${Math.round(durationMs / 1000)}s`
+                        : `${Math.round(durationMs / 60_000)}m`}
+                  <li class="flex items-center gap-2 px-3 py-1.5 text-[11px]">
+                    <div class="min-w-0 flex-1">
+                      <p
+                        class="truncate text-slate-300"
+                        title={new Date(h.startedAt).toLocaleString()}
+                      >
+                        {relativeAgo(h.startedAt)}
+                        <span class="text-slate-600">· {durationLabel}</span>
+                        {#if h.cancelled}
+                          <span
+                            class="ml-1 rounded bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-300 ring-1 ring-inset ring-amber-500/30"
+                            >Cancelled</span
+                          >
+                        {/if}
+                      </p>
+                      <p class="truncate text-[10px] text-slate-500">
+                        {total} processed
+                        {#if h.counts.added > 0}<span class="text-emerald-400/80">
+                            · +{h.counts.added} added</span
+                          >{/if}
+                        {#if h.counts.notFound > 0}<span class="text-slate-400">
+                            · {h.counts.notFound} not found</span
+                          >{/if}
+                        {#if h.counts.error > 0}<span class="text-rose-400/80">
+                            · {h.counts.error} error</span
+                          >{/if}
+                      </p>
+                    </div>
+                  </li>
+                {/each}
+              </ul>
+            </details>
           {/if}
         </div>
       {/if}

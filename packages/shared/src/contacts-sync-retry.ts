@@ -32,6 +32,31 @@ export const PTU_SYNC_RETRY_INTERVAL_MIN = 12 * 60;
  *  forever. Tunable; one week was the cadence @Camille requested. */
 export const PTU_SYNC_RETRY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+/** chrome.storage.local key holding the last retry-tick stats. Used by
+ *  the popup to show "Last retry: Xh ago — Y succeeded" so the user has
+ *  a visible signal that the queue is actually being processed. */
+export const PTU_SYNC_RETRY_TICK_STATS_KEY = 'ptu-sync:last-tick';
+
+/** Snapshot of the most recent retry-tick run. Persisted so the popup
+ *  can render "last retry was Nh ago" even after the SW slept. */
+export interface PtuSyncRetryTickStats {
+  /** ms epoch when the tick completed. */
+  at: number;
+  /** How many entries the tick attempted (excludes drops past the
+   *  7-day window). */
+  retried: number;
+  /** How many of those resulted in an `added` /
+   *  `ErrExistingPendingFriendRequest` (treated as success since the
+   *  contact is now in the user's PTU pending list either way). */
+  succeeded: number;
+  /** How many entries hit the 7-day window during this tick and got
+   *  evicted from the queue. */
+  dropped: number;
+  /** Queue size after the tick — tells the user how many are still
+   *  pending without forcing a separate read. */
+  remaining: number;
+}
+
 /** One pending retry — a LIVE friend the most recent sync couldn't
  *  resolve on PTU yet. Keyed by lowercase(nickname) externally. */
 export interface PtuSyncPendingRetry {

@@ -222,6 +222,17 @@ export interface ContactsRetriesListResponsePayload {
   windowMs: number;
   /** minutes — interval between automatic retry ticks. */
   intervalMin: number;
+  /** Snapshot of the most recent tick's outcome. Null until the first
+   *  tick has run. The popup uses it to render "Last retry: Nh ago —
+   *  M succeeded" so the user has a visible signal that the queue is
+   *  alive. */
+  lastTick: {
+    at: number;
+    retried: number;
+    succeeded: number;
+    dropped: number;
+    remaining: number;
+  } | null;
 }
 
 /** Drop one or all pending retries. Empty `nickname` clears the
@@ -235,6 +246,40 @@ export interface ContactsRetriesCancelRequest {
 }
 export interface ContactsRetriesCancelResponsePayload {
   remaining: number;
+}
+
+/** Bounded list of recent sync runs (last PTU_SYNC_HISTORY_MAX = 10).
+ *  Newest first. Used by the "Recent syncs" panel in the Sync tab. */
+export interface ContactsSyncHistoryListRequest {
+  type: 'contacts.syncHistory.list';
+}
+export interface ContactsSyncHistoryListResponsePayload {
+  entries: Array<{
+    startedAt: number;
+    completedAt: number;
+    cancelled: boolean;
+    counts: {
+      added: number;
+      alreadyFriend: number;
+      alreadyPending: number;
+      notFound: number;
+      error: number;
+    };
+  }>;
+}
+
+/** Single-contact retry. Used by the per-error retry button in the
+ *  post-sync result table. The popup passes the row's full identity
+ *  so the BG can return an entry it can drop straight into the
+ *  rendered list. */
+export interface ContactsRetryOneRequest {
+  type: 'contacts.retryOne';
+  nickname: string;
+  displayName: string;
+  avatar: string;
+}
+export interface ContactsRetryOneResponsePayload {
+  entry: ContactsSyncToPtuEntry;
 }
 
 export interface OrgsRequest {
@@ -1207,6 +1252,8 @@ export type RsiMessage =
   | ContactsSyncToPtuRequest
   | ContactsRetriesListRequest
   | ContactsRetriesCancelRequest
+  | ContactsSyncHistoryListRequest
+  | ContactsRetryOneRequest
   | OrgsRequest
   | OrgsInvitationsRequest
   | OrgsApplicationsRequest
@@ -1290,6 +1337,8 @@ interface ResponseMap {
   'contacts.syncToPtu': ContactsSyncToPtuResponsePayload;
   'contacts.retries.list': ContactsRetriesListResponsePayload;
   'contacts.retries.cancel': ContactsRetriesCancelResponsePayload;
+  'contacts.syncHistory.list': ContactsSyncHistoryListResponsePayload;
+  'contacts.retryOne': ContactsRetryOneResponsePayload;
   'orgs.myList': OrgsResponsePayload;
   'orgs.invitations': OrgsInvitationsResponsePayload;
   'orgs.applications': OrgsApplicationsResponsePayload;
