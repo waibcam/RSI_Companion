@@ -71,7 +71,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // Emerald now also marks the bundled Lynx + P-72 Archimedes as
   // owned. Old caches don't have those flags set.
   'ships:list': 3,
-  'contacts:list': 1,
+  // v2: 1.4.x shipped a poll-side cache write that only seeded `contacts`
+  // and dropped `incoming`/`outgoing` — the popup module read those as
+  // undefined and crashed on .length. Bump invalidates broken entries.
+  'contacts:list': 2,
   'orgs:list': 1,
   'orgs:invitations': 1,
   'orgs:applications': 1,
@@ -2768,10 +2771,20 @@ async function writeSpectrumNotificationsCache(
   );
 }
 
-async function writeContactsListCache(contacts: Rsi.Contact[]): Promise<void> {
+async function writeContactsListCache(bundle: Rsi.ContactsBundle): Promise<void> {
+  // Match the full shape handleContactsList writes — `contacts` PLUS
+  // `incoming` and `outgoing` request lists. The popup's Contacts module
+  // reads all three and crashes with "Cannot read properties of
+  // undefined" on `.length` if we only seed the contacts array. Bug
+  // shipped in 1.4.0; fixed here.
   await cacheSet(
     'contacts:list',
-    { contacts, fetchedAt: Date.now() },
+    {
+      contacts: bundle.contacts,
+      incoming: bundle.incoming,
+      outgoing: bundle.outgoing,
+      fetchedAt: Date.now(),
+    },
     TTL.contacts,
   );
 }
@@ -2872,8 +2885,10 @@ async function collectRoadmapIds(): Promise<string[]> {
 async function collectContactsPendingIds(): Promise<string[]> {
   const bundle = await Rsi.fetchContactsBundle();
   // Same data the Contacts module renders — drop it in the cache here so
-  // opening Contacts after a poll doesn't cost an extra roundtrip.
-  await writeContactsListCache(bundle.contacts);
+  // opening Contacts after a poll doesn't cost an extra roundtrip. The
+  // full bundle (contacts + incoming + outgoing) goes in; partial seeding
+  // would crash the module on .length reads of the missing fields.
+  await writeContactsListCache(bundle);
   return bundle.incoming.map((r) => String(r.id));
 }
 

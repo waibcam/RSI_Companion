@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.4.3",
+    "released_at": 1777748400,
+    "notes": "{\"info\":[\"Hotfix on top of v1.4.2 — Contacts module crashed with 'Cannot read properties of undefined (reading length)' after a background poll tick. Caused by my own poll-side cache write in 1.4.0 only seeding `contacts` and dropping `incoming`/`outgoing`. The popup module read those as undefined and crashed on .length.\"],\"features\":[\"Contacts: writeContactsListCache now writes the full bundle (contacts + incoming + outgoing + fetchedAt) — same shape handleContactsList writes from the popup path. Cache version bumped (contacts:list v1→v2) so installs that already cached the broken shape get a clean wipe.\"]}"
+  },
+  {
     "version": "1.4.2",
     "released_at": 1777744800,
     "notes": "{\"info\":[\"Two small UX additions on top of the 1.4.0 + 1.4.1 cache + polling work — a status banner that surfaces RSI outages directly in the popup, and a 'Refresh all modules' button that hard-resets every cache + backoff in one click.\"],\"features\":[\"Status banner: when the BG circuit breaker (1.4.1) decides to skip a poll because RSI's published platform health says they're down or in maintenance, the popup now shows a thin amber banner under the header with the reason and a link to status.robertsspaceindustries.com. Disappears the moment the next successful poll clears the skip. Tracks the BG state live via the existing notify-state subscription — no extra fetch.\",\"Settings → Performance → Cache → Refresh all modules: wipes every cache: entry, resets the per-module exponential backoff (so a degraded module gets a fresh chance instead of waiting out its 60-min cooldown), triggers an immediate poll, and reloads the popup so every Svelte module re-mounts against the fresh data. Heavier than per-module refresh buttons but useful when something feels broadly stale (e.g. RSI just came back from an outage and per-module TTLs haven't expired yet).\"]}"
