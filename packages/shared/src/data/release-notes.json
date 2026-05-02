@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.4.10",
+    "released_at": 1777773600,
+    "notes": "{\"info\":[\"Hotfix on top of v1.4.9 — accepting/declining/cancelling a friend request from the Pending tab left the row visible until the user clicked Refresh manually, even though the action had actually gone through on RSI's side.\"],\"features\":[\"Contacts: race fix on friend-request mutations. RSI's accept/decline/cancel endpoints return 200 OK *before* the next identify response stops echoing the row (server-side replication lag). The popup now keeps a 30 s shield on every successfully-acted request id and filters it out of incoming/outgoing on every load, so the optimistic removal sticks until the server actually catches up. No more 'click Refresh for the row to leave'.\"]}"
+  },
+  {
     "version": "1.4.9",
     "released_at": 1777770000,
     "notes": "{\"info\":[\"Hotfix on top of v1.4.8 — Contacts → Pending tab listed every pending friend request as Incoming, even ones the user had sent themselves. Reproduced from a HAR dump of /api/spectrum/auth/identify: RSI dropped the `type` field from friend_requests entries, so the previous `r.type === 'out'` check always fell to the 'in' branch.\"],\"features\":[\"Contacts: friend-request direction is now derived from `requesting_member_id` (the actor who pressed Add friend) instead of the no-longer-populated `r.type` field. If I'm the requester, the entry is outgoing; otherwise it's incoming. The legacy `type` path is kept as a fallback in case RSI rolls the field back. Fix applies to both LIVE and PTU identify paths.\",\"Cache: contacts:list cache version bumped (v2 → v3) so existing installs evict the previously misclassified bundle and refetch with the correct incoming/outgoing split on next popup open.\"]}"

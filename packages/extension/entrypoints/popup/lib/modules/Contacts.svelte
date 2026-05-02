@@ -58,6 +58,30 @@
   let busyId = $state<number | null>(null);
   let actionError = $state<string | null>(null);
 
+  // Shield against RSI's eventual-consistency lag on friend_request
+  // mutations. Their accept/decline/cancel endpoints return 200 OK
+  // *before* the identify response stops echoing the row, so an
+  // immediate force-refresh after the action would re-paint the entry
+  // back into Pending (user reported "I have to click refresh manually
+  // for it to disappear"). Once we've successfully acted on a request
+  // id, we keep it in this set for 30 s and filter both incoming and
+  // outgoing arrays through it on every load. Long enough to cover any
+  // reasonable replication lag, short enough that a stale id can't
+  // permanently hide a real future request that happens to reuse the
+  // same numeric id (RSI ids are auto-incrementing — collision in the
+  // 30 s window is essentially impossible).
+  let actedRequestIds = $state<Set<number>>(new Set());
+  function shieldRequestId(id: number): void {
+    const next = new Set(actedRequestIds);
+    next.add(id);
+    actedRequestIds = next;
+    setTimeout(() => {
+      const after = new Set(actedRequestIds);
+      after.delete(id);
+      actedRequestIds = after;
+    }, 30_000);
+  }
+
   // "Sync LIVE → PTU" workflow. Streamed via a long-lived port so the
   // popup can render progress live instead of sitting on a 30-second
   // spinner. The port handler in the BG calls runContactsSyncToPtu()
@@ -436,8 +460,10 @@
     try {
       const res = await sendRsiMessage({ type: 'contacts.list', force });
       contacts = res.contacts;
-      incoming = res.incoming;
-      outgoing = res.outgoing;
+      // Apply the eventual-consistency shield: drop any request the
+      // user just acted on if RSI's identify is still echoing it.
+      incoming = res.incoming.filter((r) => !actedRequestIds.has(r.id));
+      outgoing = res.outgoing.filter((r) => !actedRequestIds.has(r.id));
       signedIn = res.signedIn;
       fromCache = res.fromCache;
     } catch (e) {
@@ -472,6 +498,14 @@
 
     try {
       await sendRsiMessage({ type: 'contacts.action', action, id });
+      // Mark the request id as acted-upon BEFORE the refresh so the
+      // shield in load() can filter it out even if RSI's identify
+      // response is still echoing the entry. Without this, the user
+      // had to click Refresh manually for the accepted row to leave
+      // the Pending list.
+      if (action === 'accept' || action === 'decline' || action === 'cancel') {
+        shieldRequestId(id);
+      }
       // Authoritative refresh — on success we replace the optimistic state
       // with whatever the server reports (the `accept` case promotes a row
       // from `incoming` into `contacts`, which only the server can do).
