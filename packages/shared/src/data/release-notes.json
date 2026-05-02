@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.3.9",
+    "released_at": 1777723200,
+    "notes": "{\"info\":[\"Hotfix on top of v1.3.8 — Constellation Phoenix and Phoenix Emerald packages bundle a Lynx rover and a P-72 Archimedes (regular or Emerald) according to the ship-matrix description, but RSI's hangar HTML rolls those into the parent Phoenix entry, so they were silently missing from the Ships tab.\"],\"features\":[\"Ships: new bundle inclusion table marks ships as actually OWNED (not just loaner) when their parent SKU is owned. Distinct from the existing loaners table — loaners are temporary chassis access, bundles are real ownership transitive across SKUs. Two seed entries for the Phoenix line, more can be added from the ship-matrix description text as users surface them.\",\"Ships: when the bundled child has its own separate hangar entry (RSI sometimes splits Archimedes Emerald next to Phoenix Emerald), the existing hangar count wins; the bundle path only fills the gap when RSI consolidated the package.\"]}"
+  },
+  {
     "version": "1.3.8",
     "released_at": 1777712400,
     "notes": "{\"info\":[\"Hotfix on top of v1.3.7 — three ship-matching aliases reported by @superpenguintv via Discord on a v1.3.6 hangar dump showing 'A.T.L.S.', 'Ursa Rover Fortuna', and 'Dragonfly Star Kitten Edition' as Unknown.\"],\"features\":[\"Ships: A.T.L.S. (with dots) in the RSI hangar now matches the matrix entry ATLS (no dots — id 277). Both spellings resolve. Bonus: ATLS GEO (id 296) added too.\",\"Ships: Ursa Rover Fortuna in the hangar now matches the matrix entry Ursa Fortuna (id 179) — RSI's hangar carries the 'Rover' qualifier on the Fortuna SKU but not on Ursa Medivac, so we needed an explicit alias for the long form.\",\"Ships: Dragonfly Star Kitten Edition's catalog entry pointed at matrix id 1000 which doesn't exist any more (zombie id from an older RSI matrix). Updated to id 111 — it's a paint variant of the Yellowjacket, same chassis.\"]}"

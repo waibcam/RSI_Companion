@@ -15,6 +15,7 @@ if (typeof browser !== 'undefined') {
 
 import {
   LOANERS,
+  BUNDLES,
   Notify,
   RELEASE_NOTES,
   RSI_BASE_URL,
@@ -66,7 +67,10 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // catalogue (server-authoritative). Old v1 entries may have the wrong
   // owned set on the cached payload — wipe once so the new algorithm
   // runs fresh.
-  'ships:list': 2,
+  // v3: bundle expansion — owning Constellation Phoenix / Phoenix
+  // Emerald now also marks the bundled Lynx + P-72 Archimedes as
+  // owned. Old caches don't have those flags set.
+  'ships:list': 3,
   'contacts:list': 1,
   'orgs:list': 1,
   'orgs:invitations': 1,
@@ -587,6 +591,7 @@ async function handleShipsList(force: boolean) {
       hangarNames,
       nameCatalog,
       loanerTable,
+      bundleTable: BUNDLES,
       ccuOwnedIds,
     });
 

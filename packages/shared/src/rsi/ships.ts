@@ -198,6 +198,18 @@ interface MergeInput {
   nameCatalog: Array<{ name: string; ids: string[] }>;
   /** From backend /loaners — { "<shipId>": ["loanerId", ...] }. */
   loanerTable: Record<string, string[]>;
+  /** Bundle inclusion table — { "<parentShipId>": ["childId", ...] }.
+   *  Marks bundled child ships as actually OWNED (not loaner) when the
+   *  user owns the parent SKU. RSI's hangar HTML occasionally splits
+   *  bundles into separate entries (e.g. P-72 Archimedes Emerald shows
+   *  up next to Constellation Phoenix Emerald) but more often merges
+   *  them under the parent (e.g. the Lynx rover bundled with the
+   *  Phoenix is invisible from the hangar scrape — only the ship
+   *  matrix description mentions it). Bundle expansion runs after the
+   *  hangar / CCU ownership pass and only marks children whose owned
+   *  flag is still false, so existing owned counts from real hangar
+   *  duplicates aren't clobbered. */
+  bundleTable?: Record<string, string[]>;
   /** Optional authoritative set of owned ship ids, sourced from the CCU
    *  upgrade catalogue (`pledge.ccuInit` → ships[].owned). When provided:
    *    - `owned` on each ship comes from this set (server-authoritative).
@@ -250,7 +262,7 @@ function stripPrefix(name: string, prefixes: readonly string[]): string | null {
 }
 
 export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
-  const { matrix, hangarNames, nameCatalog, loanerTable, ccuOwnedIds } = input;
+  const { matrix, hangarNames, nameCatalog, loanerTable, bundleTable, ccuOwnedIds } = input;
   // Whether the caller handed us an authoritative owned-set from CCU. In
   // that mode the hangar-name matching below only bumps counts; `owned`
   // is solely driven by `ccuOwnedIds` and can't be set by hangar hits.
@@ -367,6 +379,33 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
     }
 
     notFound.push(name);
+  }
+
+  // Bundle expansion — for every owned ship, mark its bundled children
+  // (per the BUNDLES table) as owned too. Only writes to children whose
+  // `owned` is still false, so a real second hangar entry for the
+  // child (CIG sometimes splits the bundle into multiple SKUs in the
+  // hangar HTML) keeps its count from the matching pass above. Runs
+  // after the hangar pass on purpose: a child that's actually owned
+  // separately gets the higher hangar-derived count, and the bundle
+  // path only fills the gap when RSI consolidated the bundle into the
+  // parent SKU. Same behaviour in CCU mode and legacy mode.
+  if (bundleTable) {
+    for (const ship of byId.values()) {
+      if (!ship.owned) continue;
+      const bundled = bundleTable[String(ship.id)];
+      if (!bundled || bundled.length === 0) continue;
+      for (const idStr of bundled) {
+        const id = Number.parseInt(idStr, 10);
+        if (!Number.isFinite(id)) continue;
+        const child = byId.get(id);
+        if (!child) continue;
+        if (!child.owned) {
+          child.owned = true;
+          if (child.count === 0) child.count = 1;
+        }
+      }
+    }
   }
 
   // In CCU mode, a ship flagged owned server-side but with zero hangar

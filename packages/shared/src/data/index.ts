@@ -13,12 +13,25 @@
 // hot server edit. Acceptable — the data is stable enough.
 
 import loanersData from './loaners.json';
+import bundlesData from './bundles.json';
 import shipNameInfoData from './ship-name-info.json';
 import releaseNotesData from './release-notes.json';
 
 /** Ship-id → [loaner-id, ...] mapping. Same shape the legacy
  *  `/loaners` endpoint returned (without the success/code envelope). */
 export const LOANERS: Record<string, string[]> = loanersData as Record<string, string[]>;
+
+/** Ship-id → [bundled-child-ship-id, ...] mapping for ownership-
+ *  transitive packages: buying the parent SKU gives you N child ships
+ *  outright (NOT as loaners — real owned units, just consolidated
+ *  into a single hangar entry on RSI's side). Sourced from the
+ *  /ship-matrix description text, which lists each ship's included
+ *  contents in plain English. Examples:
+ *    Constellation Phoenix → Lynx + P-72 Archimedes
+ *    Constellation Phoenix Emerald → Lynx + P-72 Archimedes Emerald
+ *  Distinct from LOANERS: loaner = temporary chassis access while a
+ *  ship is in development; bundle = ownership transitive across SKUs. */
+export const BUNDLES: Record<string, string[]> = bundlesData as Record<string, string[]>;
 
 /** Catalogue of ship-name aliases → matrix-id lists. The Ships module
  *  uses this to reconcile user-facing display names (e.g. "Sabre Comet")
