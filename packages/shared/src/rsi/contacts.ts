@@ -78,6 +78,29 @@ function pickCounterparty(
   return null;
 }
 
+/** Decide whether a friend_request is incoming or outgoing. Reported by
+ *  the maintainer with a HAR dump in 1.4.9: RSI's identify response no
+ *  longer populates `r.type` ('in' | 'out'), so the previous classifier
+ *  (which only looked at `r.type`) bucketed every entry as 'in'. The new
+ *  shape carries `requesting_member_id` (the actor who pressed Add
+ *  friend) and `target_member_id` (the recipient) on every entry, so we
+ *  derive direction from the authoritative field: if I'm the requester,
+ *  the request is outgoing; otherwise it's incoming. We still fall back
+ *  to `type` if RSI ever rolls the field back, since I don't want a
+ *  silent regression on either side of the schema drift. */
+function pickDirection(
+  r: {
+    type?: string;
+    requesting_member_id?: number | null;
+  },
+  myId: number,
+): 'in' | 'out' {
+  if (typeof r.requesting_member_id === 'number' && r.requesting_member_id !== 0) {
+    return r.requesting_member_id === myId ? 'out' : 'in';
+  }
+  return r.type === 'out' ? 'out' : 'in';
+}
+
 export async function fetchContactsBundle(): Promise<ContactsBundle> {
   const data = await identifyFull();
   if (!data) throw new RsiNotAuthenticatedError();
@@ -103,7 +126,7 @@ export async function fetchContactsBundle(): Promise<ContactsBundle> {
     if (!member?.nickname) continue;
     const req: ContactRequest = {
       id: r.id,
-      direction: r.type === 'out' ? 'out' : 'in',
+      direction: pickDirection(r, myId),
       nickname: member.nickname,
       displayname: member.displayname ?? '',
       avatar: member.avatar ?? '',
@@ -338,7 +361,7 @@ export async function fetchPtuContactsBundle(): Promise<ContactsBundle> {
     if (!member?.nickname) continue;
     const req: ContactRequest = {
       id: r.id,
-      direction: r.type === 'out' ? 'out' : 'in',
+      direction: pickDirection(r, myId),
       nickname: member.nickname,
       displayname: member.displayname ?? '',
       avatar: member.avatar ?? '',

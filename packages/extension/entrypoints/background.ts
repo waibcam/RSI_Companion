@@ -89,7 +89,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v2: 1.4.x shipped a poll-side cache write that only seeded `contacts`
   // and dropped `incoming`/`outgoing` — the popup module read those as
   // undefined and crashed on .length. Bump invalidates broken entries.
-  'contacts:list': 2,
+  // v3: 1.4.9 — RSI dropped `r.type` from friend_requests on identify, so
+  // every entry was bucketed as 'in'. Direction is now derived from
+  // requesting_member_id; old caches still hold the wrong incoming/outgoing
+  // split, so bump to evict and refetch.
+  'contacts:list': 3,
   'orgs:list': 1,
   'orgs:invitations': 1,
   'orgs:applications': 1,
