@@ -140,7 +140,7 @@
   {
     "name": "Dragonfly Star Kitten Edition",
     "ids": [
-      "1000"
+      "111"
     ]
   },
   {
@@ -719,6 +719,30 @@
     "name": "Perseus",
     "ids": [
       "217"
+    ]
+  },
+  {
+    "name": "A.T.L.S.",
+    "ids": [
+      "277"
+    ]
+  },
+  {
+    "name": "ATLS",
+    "ids": [
+      "277"
+    ]
+  },
+  {
+    "name": "ATLS GEO",
+    "ids": [
+      "296"
+    ]
+  },
+  {
+    "name": "Ursa Rover Fortuna",
+    "ids": [
+      "179"
     ]
   }
 ]
