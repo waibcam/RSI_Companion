@@ -2906,6 +2906,87 @@ function modulesForScope(scope: PollScope): ReadonlySet<Notify.NotifyModule> {
   return new Set<Notify.NotifyModule>([...FAST_MODULES, ...SLOW_MODULES]);
 }
 
+// --- Status-feed circuit breaker ---------------------------------------
+//
+// RSI publishes the platform health at /index.json on the status host.
+// Three systems are reported (Platform / Persistent Universe / Arena
+// Commander). We only care about Platform — that's what hosts the API
+// + Spectrum + Pledge Store + Community Hub etc. When Platform is
+// `down` or `maintenance`, polling is guaranteed to fail; skipping the
+// whole tick saves the user's network + RSI's infra.
+//
+// Reads the existing status:summary cache first (popup users keep it
+// fresh on a 90 s TTL). If the cache is stale (> POLL_GATE_FRESH_MS old)
+// or missing, we fetch a single status-feed JSON before deciding —
+// cheaper than firing 6 collectors that will all fail.
+const POLL_GATE_FRESH_MS = 10 * MIN;
+type PlatformGate = { skip: boolean; reason: string };
+
+async function readPlatformGate(): Promise<PlatformGate> {
+  let summary: Rsi.RsiStatusSummary | null = null;
+  const cached = await cacheGet<{ summary: Rsi.RsiStatusSummary; fetchedAt: number }>(
+    'status:summary',
+  );
+  if (cached && Date.now() - cached.fetchedAt < POLL_GATE_FRESH_MS) {
+    summary = cached.summary;
+  } else {
+    // Cache too stale (or absent — first boot, or popup never opened).
+    // Fetch fresh and refresh the cache while we're at it; popup users
+    // reading from this cache will benefit.
+    try {
+      summary = await Rsi.fetchRsiStatus();
+      await cacheSet('status:summary', { summary, fetchedAt: Date.now() }, TTL.status);
+    } catch (e) {
+      // Status feed itself unreachable — could be a wider RSI outage or
+      // just our network. Don't block the poll; let the per-module
+      // backoff handle persistent failure.
+      log.debug('notify', 'status feed unreachable; falling through to normal poll', e);
+      return { skip: false, reason: '' };
+    }
+  }
+  if (!summary) return { skip: false, reason: '' };
+  // Match by name — RSI's feed currently lists "Platform" but we don't
+  // want to break if they rename it slightly. Fall back to the worst
+  // overall level if no Platform system is found.
+  const platform =
+    summary.systems.find((s) => /platform/i.test(s.name)) ??
+    summary.systems.reduce<typeof summary.systems[number] | null>((worst, s) => {
+      if (!worst) return s;
+      const SEV = { operational: 0, notice: 1, maintenance: 2, disrupted: 3, down: 4 } as const;
+      return SEV[s.level] > SEV[worst.level] ? s : worst;
+    }, null);
+  if (!platform) return { skip: false, reason: '' };
+  if (platform.level === 'down') {
+    return { skip: true, reason: `RSI Platform reported down (${platform.name})` };
+  }
+  if (platform.level === 'maintenance') {
+    return { skip: true, reason: `RSI Platform under maintenance (${platform.name})` };
+  }
+  // 'operational' / 'notice' / 'disrupted' — proceed. Disrupted is partial
+  // impact and individual modules might still succeed.
+  return { skip: false, reason: '' };
+}
+
+// --- Per-module exponential backoff ------------------------------------
+//
+// After a collector fails, that module gets a `nextRetryAt` timestamp
+// based on how many consecutive failures it's racked up. Schedule:
+//   1st fail → retry in 10 min  (next tick anyway)
+//   2nd fail → retry in 20 min  (skip 1 fast tick)
+//   3rd fail → retry in 40 min  (skip ~3 fast ticks)
+//   4th+    → retry in 60 min  (cap)
+// First success resets streak + nextRetryAt to 0. The whole struct
+// persists in NotifyState so the BG SW can sleep + wake without losing
+// the schedule.
+const POLL_BACKOFF_BASE_MS = 10 * MIN;
+const POLL_BACKOFF_CAP_MS = 60 * MIN;
+
+function computeBackoffDelay(streak: number): number {
+  // 2^(streak-1): 1, 2, 4, 8, … capped.
+  const factor = Math.min(2 ** Math.max(0, streak - 1), POLL_BACKOFF_CAP_MS / POLL_BACKOFF_BASE_MS);
+  return Math.min(POLL_BACKOFF_BASE_MS * factor, POLL_BACKOFF_CAP_MS);
+}
+
 // Cache prefixes a poll-detected "new content" event should evict in the
 // popup's module cache so the next popup open refetches fresh. Counterpart
 // to the side-effect cache writes in collectSpectrumIds /
@@ -2963,6 +3044,23 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
         counts: { ...Notify.EMPTY_COUNTS },
         lastPolledAt: Date.now(),
         lastErrors: {},
+        backoffs: {},
+        skippedReason: null,
+      };
+      await notifyStateSet(next);
+      return next;
+    }
+
+    // Layer 1: status circuit breaker. RSI's own status feed says we're
+    // wasting our time, skip the whole tick.
+    const gate = await readPlatformGate();
+    if (gate.skip) {
+      log.info('notify', `poll skipped: ${gate.reason}`);
+      const next: Notify.NotifyState = {
+        ...prev,
+        signedIn: true,
+        lastPolledAt: Date.now(),
+        skippedReason: gate.reason,
       };
       await notifyStateSet(next);
       return next;
@@ -2973,11 +3071,24 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
     // success or failure replaces its prior entry so stale errors don't linger
     // after a transient failure recovers.
     const lastErrors: Notify.NotifyErrors = { ...prev.lastErrors };
+    const backoffs: Notify.NotifyBackoffs = { ...(prev.backoffs ?? {}) };
     const modules = modulesForScope(scope);
+    const now = Date.now();
 
     const tasks: Array<Promise<void>> = [];
     const run = (m: Notify.NotifyModule, collector: () => Promise<string[]>): void => {
       if (!modules.has(m)) return;
+      // Layer 2: per-module exponential backoff. If this module is in
+      // its cooldown window from a prior failure, skip — keep prior
+      // counts and errors intact so the badge / UI don't flicker.
+      const bo = backoffs[m];
+      if (bo && bo.nextRetryAt > now) {
+        log.debug(
+          'notify',
+          `${m} in backoff (streak=${bo.failStreak}, ${Math.round((bo.nextRetryAt - now) / 1000)}s remaining)`,
+        );
+        return;
+      }
       // Clear any prior error for this module — we either succeed (stays clear)
       // or fail and set a fresh one.
       delete lastErrors[m];
@@ -2985,6 +3096,8 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
         diffModule(m, collector)
           .then((n) => {
             counts[m] = n;
+            // Reset backoff on success.
+            if (backoffs[m]) backoffs[m] = { failStreak: 0, nextRetryAt: 0 };
             // When the diff surfaced new items, evict the popup's module
             // cache for keys whose shape we couldn't write directly from
             // the collector (different fetcher, different filters, …).
@@ -2999,6 +3112,12 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
           })
           .catch((e: unknown) => {
             lastErrors[m] = e instanceof Error ? e.message : String(e);
+            const prevStreak = backoffs[m]?.failStreak ?? 0;
+            const nextStreak = prevStreak + 1;
+            backoffs[m] = {
+              failStreak: nextStreak,
+              nextRetryAt: Date.now() + computeBackoffDelay(nextStreak),
+            };
           }),
       );
     };
@@ -3017,6 +3136,8 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
       counts,
       lastPolledAt: Date.now(),
       lastErrors,
+      backoffs,
+      skippedReason: null,
     };
     await notifyStateSet(next);
     return next;

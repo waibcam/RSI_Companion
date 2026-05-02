@@ -30,6 +30,19 @@ export interface NotifyCounts {
  *  fast tick overwrites them). */
 export type NotifyErrors = Partial<Record<NotifyModule, string>>;
 
+/** Per-module backoff state for the consecutive-failure circuit. Reset
+ *  to {failStreak:0, nextRetryAt:0} on the next successful poll. */
+export interface NotifyModuleBackoff {
+  /** Number of consecutive failed polls for this module since the last
+   *  success. Drives the exponential next-retry delay. */
+  failStreak: number;
+  /** ms epoch — the poll loop skips this module when Date.now() < this.
+   *  0 means no backoff active (allow immediate retry). */
+  nextRetryAt: number;
+}
+
+export type NotifyBackoffs = Partial<Record<NotifyModule, NotifyModuleBackoff>>;
+
 export interface NotifyState {
   signedIn: boolean;
   counts: NotifyCounts;
@@ -38,6 +51,15 @@ export interface NotifyState {
   /** Per-module errors from the last poll that touched each module. Empty
    *  when everything succeeded. */
   lastErrors: NotifyErrors;
+  /** Per-module exponential backoff state. Modules whose collectors fail
+   *  N times in a row get skipped for increasing intervals (10/20/40/60
+   *  minutes capped) so a flaky upstream doesn't waste quota. Cleared
+   *  on first success. */
+  backoffs?: NotifyBackoffs;
+  /** Reason the last poll skipped every module (e.g. "RSI Platform down").
+   *  Set by the status-feed circuit breaker; cleared when the next poll
+   *  actually runs. */
+  skippedReason?: string | null;
 }
 
 export const EMPTY_COUNTS: NotifyCounts = {
