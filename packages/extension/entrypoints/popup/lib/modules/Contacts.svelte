@@ -2,8 +2,11 @@
   import {
     sendRsiMessage,
     RSI_BASE_URL,
+    CONTACTS_SYNC_TO_PTU_PORT,
     type ContactsSyncToPtuEntry,
     type ContactsSyncToPtuResponsePayload,
+    type ContactsSyncToPtuStreamCommand,
+    type ContactsSyncToPtuStreamEvent,
     type Rsi,
   } from '@rsi-companion/shared';
   import {
@@ -55,24 +58,157 @@
   let busyId = $state<number | null>(null);
   let actionError = $state<string | null>(null);
 
-  // "Sync LIVE → PTU" workflow. Single bulk operation, fires when the
-  // user clicks the button on the Sync tab. Background handler does
-  // the diff + fan-out and returns a summary we render inline.
+  // "Sync LIVE → PTU" workflow. Streamed via a long-lived port so the
+  // popup can render progress live instead of sitting on a 30-second
+  // spinner. The port handler in the BG calls runContactsSyncToPtu()
+  // with a streaming emitter; each event lands here and updates the
+  // local state. See packages/shared/src/contacts-sync-stream.ts for
+  // the protocol.
   let syncing = $state(false);
   let syncError = $state<string | null>(null);
   let syncResult = $state<SyncResponse | null>(null);
-  let syncLogOpen = $state(false);
+  let syncLogOpen = $state(true);
+  /** Phase + counters streamed from the BG. Drives the progress bar,
+   *  the X / Y label, and the "currently trying" hint. */
+  let syncProgress = $state<{
+    phase: 'reading' | 'classifying' | 'adding' | 'cancelling';
+    current: number;
+    total: number;
+    nowTrying: string | null;
+    alreadyFriendCount: number;
+    alreadyPendingCount: number;
+  } | null>(null);
+  /** Live entry log — newest first so the user sees the latest result
+   *  at the top without having to scroll down a long list mid-sync. */
+  let syncLog = $state<SyncEntry[]>([]);
+  /** Held during an active sync so cancel() can postMessage. Reset to
+   *  null after the port disconnects (success / error / cancel). */
+  let syncPort = $state<chrome.runtime.Port | null>(null);
+
+  function resetSyncState() {
+    syncResult = null;
+    syncError = null;
+    syncProgress = null;
+    syncLog = [];
+  }
 
   async function runSync() {
     if (syncing) return;
+    resetSyncState();
     syncing = true;
-    syncError = null;
+    syncProgress = {
+      phase: 'reading',
+      current: 0,
+      total: 0,
+      nowTrying: null,
+      alreadyFriendCount: 0,
+      alreadyPendingCount: 0,
+    };
+    let port: chrome.runtime.Port;
     try {
-      syncResult = await sendRsiMessage({ type: 'contacts.syncToPtu' });
+      port = chrome.runtime.connect({ name: CONTACTS_SYNC_TO_PTU_PORT });
     } catch (e) {
       syncError = errorMessage(e);
-    } finally {
       syncing = false;
+      syncProgress = null;
+      return;
+    }
+    syncPort = port;
+
+    port.onMessage.addListener((raw: unknown) => {
+      const event = raw as ContactsSyncToPtuStreamEvent;
+      switch (event.type) {
+        case 'started': {
+          syncProgress = {
+            phase: event.total > 0 ? 'adding' : 'classifying',
+            current: 0,
+            total: event.total,
+            nowTrying: null,
+            alreadyFriendCount: event.alreadyFriendCount,
+            alreadyPendingCount: event.alreadyPendingCount,
+          };
+          break;
+        }
+        case 'progress': {
+          syncProgress = {
+            ...(syncProgress ?? {
+              phase: 'adding',
+              current: 0,
+              total: event.total,
+              nowTrying: null,
+              alreadyFriendCount: 0,
+              alreadyPendingCount: 0,
+            }),
+            phase: 'adding',
+            current: event.current,
+            total: event.total,
+            nowTrying: event.nickname,
+          };
+          break;
+        }
+        case 'entry': {
+          // Newest at the top so the live log reads as a feed.
+          syncLog = [event.entry, ...syncLog];
+          break;
+        }
+        case 'complete': {
+          syncResult = event.result;
+          syncing = false;
+          syncProgress = null;
+          syncPort = null;
+          break;
+        }
+        case 'cancelled': {
+          // Synthesize a partial result from the entries we collected
+          // so the totals card still renders something sensible.
+          const entries = event.partialEntries;
+          const counts = {
+            added: entries.filter((e) => e.status === 'added').length,
+            alreadyFriend: entries.filter((e) => e.status === 'alreadyFriend').length,
+            alreadyPending: entries.filter((e) => e.status === 'alreadyPending').length,
+            notFound: entries.filter((e) => e.status === 'notFound').length,
+            error: entries.filter((e) => e.status === 'error').length,
+          };
+          syncResult = {
+            signedIn: { live: true, ptu: true },
+            entries,
+            counts,
+          };
+          syncing = false;
+          syncProgress = null;
+          syncPort = null;
+          break;
+        }
+        case 'error': {
+          syncError = event.message;
+          syncing = false;
+          syncProgress = null;
+          syncPort = null;
+          break;
+        }
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      // BG-side disconnect — covers complete/cancel/error paths via
+      // the messages above too, but also catches the rare case where
+      // the BG SW restarted mid-sync. Clear the spinner regardless.
+      syncing = false;
+      syncProgress = null;
+      syncPort = null;
+    });
+  }
+
+  function cancelSync() {
+    if (!syncPort || !syncing) return;
+    if (syncProgress) {
+      syncProgress = { ...syncProgress, phase: 'cancelling' };
+    }
+    const cmd: ContactsSyncToPtuStreamCommand = { type: 'cancel' };
+    try {
+      syncPort.postMessage(cmd);
+    } catch {
+      // Port already disconnected — onDisconnect will clean up state.
     }
   }
 
@@ -596,20 +732,34 @@
           </div>
 
           <div class="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onclick={runSync}
-              disabled={syncing}
-              class="inline-flex items-center gap-1.5 rounded-md bg-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-300 ring-1 ring-sky-500/40 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                onclick={runSync}
+                disabled={syncing}
+                class="inline-flex items-center gap-1.5 rounded-md bg-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-300 ring-1 ring-sky-500/40 transition hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {#if syncing}
+                  <Loader2 class="size-3.5 animate-spin" />
+                  Syncing…
+                {:else}
+                  <RefreshCw class="size-3.5" />
+                  {syncResult ? 'Run again' : 'Sync now'}
+                {/if}
+              </button>
               {#if syncing}
-                <Loader2 class="size-3.5 animate-spin" />
-                Syncing…
-              {:else}
-                <RefreshCw class="size-3.5" />
-                {syncResult ? 'Run again' : 'Sync now'}
+                <button
+                  type="button"
+                  onclick={cancelSync}
+                  disabled={syncProgress?.phase === 'cancelling'}
+                  class="inline-flex items-center gap-1.5 rounded-md bg-slate-800/60 px-3 py-1.5 text-xs font-semibold text-slate-300 ring-1 ring-slate-700 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  title="Stop the sync after the current request completes"
+                >
+                  <X class="size-3.5" />
+                  {syncProgress?.phase === 'cancelling' ? 'Cancelling…' : 'Cancel'}
+                </button>
               {/if}
-            </button>
+            </div>
             {#if syncResult?.counts}
               {@const c = syncResult.counts}
               <p class="text-[11px] text-slate-500">
@@ -617,6 +767,91 @@
               </p>
             {/if}
           </div>
+
+          <!-- Live progress card. Shown only while a sync is in flight.
+               Surfaces phase + a current/total counter + the handle
+               currently being attempted, plus a thin progress bar.
+               The pre-classified counts (alreadyFriend / alreadyPending
+               from the initial bundle reads) appear as sub-counters so
+               the user can see those are already accounted for and
+               doesn't expect them to appear in the live log. -->
+          {#if syncing && syncProgress}
+            {@const phaseLabel =
+              syncProgress.phase === 'reading'
+                ? 'Reading LIVE + PTU friend lists…'
+                : syncProgress.phase === 'classifying'
+                  ? 'Classifying contacts…'
+                  : syncProgress.phase === 'cancelling'
+                    ? 'Cancelling…'
+                    : `Adding to PTU (${syncProgress.current} / ${syncProgress.total})`}
+            {@const pct =
+              syncProgress.total > 0
+                ? Math.round((syncProgress.current / syncProgress.total) * 100)
+                : 0}
+            <div class="rounded-md border border-sky-900/60 bg-sky-950/30 p-3 text-xs">
+              <div class="mb-2 flex items-baseline justify-between gap-2">
+                <p class="font-semibold text-sky-200">{phaseLabel}</p>
+                {#if syncProgress.nowTrying}
+                  <p class="truncate text-[11px] text-slate-400">
+                    <span class="text-slate-500">trying </span>
+                    <span class="font-mono text-slate-200">{syncProgress.nowTrying}</span>
+                  </p>
+                {/if}
+              </div>
+              {#if syncProgress.total > 0}
+                <div class="mb-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div
+                    class="h-full bg-sky-500 transition-all"
+                    style:width="{pct}%"
+                  ></div>
+                </div>
+              {:else if syncProgress.phase === 'reading' || syncProgress.phase === 'classifying'}
+                <!-- Indeterminate — total isn't known until the started
+                     event fires. Animated stripes communicate "working". -->
+                <div class="mb-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                  <div class="h-full w-1/3 animate-pulse bg-sky-500/50"></div>
+                </div>
+              {/if}
+              <div class="flex flex-wrap gap-2 text-[10px] text-slate-500">
+                <span>{syncProgress.alreadyFriendCount} already friend</span>
+                <span>•</span>
+                <span>{syncProgress.alreadyPendingCount} already pending</span>
+                {#if syncProgress.total > 0}
+                  <span>•</span>
+                  <span>{syncProgress.total - syncProgress.current} remaining</span>
+                {/if}
+              </div>
+            </div>
+          {/if}
+
+          <!-- Live log — populated incrementally as each `entry` event
+               lands, newest at the top. Visible as soon as the sync
+               starts producing entries (classification + per-add). -->
+          {#if syncing && syncLog.length > 0}
+            <details class="rounded-md border border-slate-800 bg-slate-900/40 text-xs" open>
+              <summary class="cursor-pointer px-3 py-1.5 text-slate-300 hover:text-slate-100">
+                Live log ({syncLog.length})
+              </summary>
+              <ul class="max-h-48 divide-y divide-slate-800 overflow-y-auto border-t border-slate-800">
+                {#each syncLog.slice(0, 50) as e (e.nickname)}
+                  {@const meta = SYNC_STATUS_META[e.status]}
+                  {@const SvelteIcon = meta.icon}
+                  <li class="flex items-center gap-2 px-3 py-1">
+                    <SvelteIcon class="size-3 shrink-0 {meta.textClass}" />
+                    <span class="flex-1 truncate text-slate-300">{e.displayName}</span>
+                    <span class="text-[10px] uppercase tracking-wider {meta.textClass}">
+                      {meta.label}
+                    </span>
+                  </li>
+                {/each}
+                {#if syncLog.length > 50}
+                  <li class="px-3 py-1 text-center text-[10px] italic text-slate-500">
+                    + {syncLog.length - 50} more above
+                  </li>
+                {/if}
+              </ul>
+            </details>
+          {/if}
 
           {#if syncError}
             <div class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-2.5 text-xs text-rose-200">

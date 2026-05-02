@@ -26,8 +26,11 @@ import {
   SHIP_NAME_CATALOG,
   fetchWithTimeout,
   log,
+  CONTACTS_SYNC_TO_PTU_PORT,
   type ContactsSyncToPtuEntry,
   type ContactsSyncToPtuResponsePayload,
+  type ContactsSyncToPtuStreamCommand,
+  type ContactsSyncToPtuStreamEvent,
   type RsiMessage,
   type RsiMessageResult,
 } from '@rsi-companion/shared';
@@ -842,9 +845,21 @@ const PTU_SYNC_DELAY_MS = 300;
 // delay so we step out of whatever burst window the server is in.
 const PTU_SYNC_RETRY_BACKOFF_MS = 1500;
 
-async function handleContactsSyncToPtu(): Promise<
-  ContactsSyncToPtuResponsePayload
-> {
+/** Inner workhorse for the LIVE → PTU sync. Designed to be shared by
+ *  the legacy one-shot message handler (returns the final result) and
+ *  the streaming port handler (calls `emit` for each lifecycle event
+ *  + checks `cancel.cancelled` between adds for early termination).
+ *
+ *  The caller is responsible for delivering events / honouring the
+ *  cancel signal. This function just runs the algorithm and threads
+ *  the hooks through. */
+type SyncEmitter = (event: ContactsSyncToPtuStreamEvent) => void;
+type SyncCancelToken = { cancelled: boolean };
+
+async function runContactsSyncToPtu(
+  emit: SyncEmitter,
+  cancel: SyncCancelToken,
+): Promise<ContactsSyncToPtuResponsePayload> {
   // Step 0 — check both sessions up front so the UI can direct the
   // user to the right sign-in page instead of surfacing a generic
   // "not authenticated" error.
@@ -874,6 +889,8 @@ async function handleContactsSyncToPtu(): Promise<
   };
   const entries: ContactsSyncToPtuEntry[] = [];
   const toAdd: Pending[] = [];
+  let alreadyFriendCount = 0;
+  let alreadyPendingCount = 0;
   for (const f of liveBundle.contacts) {
     const nick = f.nickname.toLowerCase();
     const base = {
@@ -882,13 +899,26 @@ async function handleContactsSyncToPtu(): Promise<
       avatar: f.avatar || '',
     };
     if (ptuFriends.has(nick)) {
-      entries.push({ ...base, status: 'alreadyFriend' });
+      const e: ContactsSyncToPtuEntry = { ...base, status: 'alreadyFriend' };
+      entries.push(e);
+      emit({ type: 'entry', entry: e });
+      alreadyFriendCount += 1;
     } else if (ptuOutgoing.has(nick)) {
-      entries.push({ ...base, status: 'alreadyPending' });
+      const e: ContactsSyncToPtuEntry = { ...base, status: 'alreadyPending' };
+      entries.push(e);
+      emit({ type: 'entry', entry: e });
+      alreadyPendingCount += 1;
     } else {
       toAdd.push(base);
     }
   }
+
+  emit({
+    type: 'started',
+    total: toAdd.length,
+    alreadyFriendCount,
+    alreadyPendingCount,
+  });
 
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -941,12 +971,23 @@ async function handleContactsSyncToPtu(): Promise<
   // Sequential — each call waits PTU_SYNC_DELAY_MS after the previous
   // one (skipped on the first iteration). Drops worst-case throttle
   // hits to near zero on a single user's normal-sized friend list.
-  const addedEntries: ContactsSyncToPtuEntry[] = [];
   for (let i = 0; i < toAdd.length; i++) {
+    // Cancel-check between iterations. We don't abort an in-flight
+    // RSI request — that would orphan a pending friend-request the
+    // server might still create — but we stop starting new ones.
+    if (cancel.cancelled) break;
     if (i > 0) await sleep(PTU_SYNC_DELAY_MS);
-    addedEntries.push(await addOne(toAdd[i]!));
+    const p = toAdd[i]!;
+    emit({
+      type: 'progress',
+      current: i + 1,
+      total: toAdd.length,
+      nickname: p.nickname,
+    });
+    const entry = await addOne(p);
+    entries.push(entry);
+    emit({ type: 'entry', entry });
   }
-  entries.push(...addedEntries);
 
   // Step 4 — counts for the UI summary card. Sort entries by status →
   // display name so the log reads "added, pending, already, notFound,
@@ -970,6 +1011,70 @@ async function handleContactsSyncToPtu(): Promise<
     error: entries.filter((e) => e.status === 'error').length,
   };
   return { signedIn, entries, counts };
+}
+
+// Legacy message-based handler — kept for backward compat in case any
+// caller still uses it. Calls runContactsSyncToPtu with a no-op emitter
+// and a never-cancel token, returns just the final summary.
+async function handleContactsSyncToPtu(): Promise<ContactsSyncToPtuResponsePayload> {
+  return runContactsSyncToPtu(
+    () => {},
+    { cancelled: false },
+  );
+}
+
+// Streaming port handler — wired via chrome.runtime.onConnect at boot.
+// Pushes events to the popup as they happen so the UI can render a
+// live progress indicator + per-entry log instead of the old "spinner
+// for 30 s then everything appears at once" experience.
+async function handleContactsSyncToPtuStream(port: chrome.runtime.Port): Promise<void> {
+  const cancel: SyncCancelToken = { cancelled: false };
+  const partialEntries: ContactsSyncToPtuEntry[] = [];
+
+  // Popup → BG: only one valid command (cancel). A popup close also
+  // disconnects the port, which we treat as cancel below.
+  port.onMessage.addListener((msg: unknown) => {
+    const m = msg as ContactsSyncToPtuStreamCommand;
+    if (m && m.type === 'cancel') cancel.cancelled = true;
+  });
+  port.onDisconnect.addListener(() => {
+    cancel.cancelled = true;
+  });
+
+  function safePost(event: ContactsSyncToPtuStreamEvent): void {
+    try {
+      port.postMessage(event);
+    } catch (e) {
+      // postMessage throws "Attempt to postMessage on disconnected port"
+      // when the popup closed mid-stream. That's expected — drop the
+      // event silently. The cancel handler above already flipped the
+      // flag from onDisconnect, so the loop will exit on its next check.
+      log.debug('contacts-sync', 'port post failed (likely disconnected)', e);
+    }
+  }
+
+  function emit(event: ContactsSyncToPtuStreamEvent): void {
+    // Track entries locally so a cancel can include the partials.
+    if (event.type === 'entry') partialEntries.push(event.entry);
+    safePost(event);
+  }
+
+  try {
+    const result = await runContactsSyncToPtu(emit, cancel);
+    if (cancel.cancelled) {
+      safePost({ type: 'cancelled', partialEntries });
+    } else {
+      safePost({ type: 'complete', result });
+    }
+  } catch (e) {
+    safePost({ type: 'error', message: e instanceof Error ? e.message : String(e) });
+  } finally {
+    try {
+      port.disconnect();
+    } catch {
+      /* already disconnected */
+    }
+  }
 }
 
 async function handleContactsAction(
@@ -3934,6 +4039,15 @@ async function wipeAuthDependentCache(): Promise<void> {
 }
 
 export default defineBackground(() => {
+  // Long-lived port for the Sync LIVE → PTU streaming handler. Lets
+  // the popup render progress live instead of waiting on a 30-second
+  // sendMessage. See packages/shared/src/contacts-sync-stream.ts.
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === CONTACTS_SYNC_TO_PTU_PORT) {
+      void handleContactsSyncToPtuStream(port);
+    }
+  });
+
   chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     if (!message || typeof message !== 'object' || !('type' in message)) {
       sendResponse({ ok: false, error: 'Invalid message' });

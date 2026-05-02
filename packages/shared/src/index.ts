@@ -4,5 +4,6 @@ export * as Rsi from './rsi/index.js';
 export * as Notify from './notify.js';
 export * from './data/index.js';
 export * from './messaging.js';
+export * from './contacts-sync-stream.js';
 export * from './net.js';
 export * from './log.js';
