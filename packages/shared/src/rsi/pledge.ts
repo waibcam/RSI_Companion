@@ -205,11 +205,12 @@ function mapShip(raw: z.infer<typeof RawShip>): PledgeShip {
 }
 
 /**
- * Fetch the full pledge-store catalogue of on-sale ships. Runs the same
- * batched POST the pledge-store SPA uses on its /ships page load; we request
- * a single oversized page (limit 200) rather than paginating — the full
- * catalogue is ~90 entries, well under any reasonable server cap, and the
- * extension caches the result for 30 minutes.
+ * Fetch the full pledge-store catalogue of ships. Reported in 1.4.13:
+ * the original "single oversized page" approach (`limit: 200`) silently
+ * truncated the result — RSI's GraphQL caps the page size at ~30 items
+ * regardless of what the client requests, so a user with 90 on-sale or
+ * 250 total ships only saw the first 30. We now paginate explicitly
+ * until we've collected `totalCount` items (or hit the safety cap).
  *
  * `onlyOnSale` — when true (default), the server filter `sale: [true]`
  * drops SKUs CIG isn't currently selling (limited editions, concept sales
@@ -220,77 +221,83 @@ export async function fetchPledgeShipList(
   options: { onlyOnSale?: boolean; limit?: number } = {},
 ): Promise<PledgeShipListResult> {
   const onlyOnSale = options.onlyOnSale ?? true;
-  const limit = options.limit ?? 200;
+  // Per-page request size. Asking for more than ~30 doesn't help (RSI
+  // ignores the request and still returns ~30) but doesn't hurt either —
+  // we keep it at 100 so smaller catalogues fit in one round trip if
+  // RSI ever lifts the cap.
+  const limit = options.limit ?? 100;
+  // Hard upper bound on pages so a wrong totalCount can't loop forever.
+  // Catalogue maxes are ~300 ships even in "show all" mode → 20×100 = 2000
+  // is wildly more than enough but cheap insurance.
+  const MAX_PAGES = 20;
 
-  const batch = [
+  const filters = onlyOnSale ? { sale: [true] } : { sale: [true, false] };
+  const buildShipListOp = (page: number) => ({
+    operationName: 'GetShipList',
+    variables: {
+      storeFront: 'pledge',
+      query: {
+        page,
+        limit,
+        sort: { field: 'name', direction: 'asc' },
+        ships: {
+          filters,
+          // imageComposer slot configuration — tells the server which
+          // thumbnail sizes to render URLs for. We ask for one (900px)
+          // to keep the response small.
+          imageComposer: [
+            { name: '900', size: 'SIZE_900', ratio: 'RATIO_16_9', extension: 'WEBP' },
+          ],
+        },
+      },
+    },
+    query: SHIP_LIST_QUERY,
+  });
+
+  // First round trip is batched with Manufacturers so the popup gets
+  // the manufacturer dropdown and the first slice of ships in a single
+  // network call. Subsequent pages (if any) are sent as individual
+  // ShipList queries since Manufacturers is already in hand.
+  const firstBatch = [
     {
       operationName: 'GetManufacturers',
       variables: {},
       query: MANUFACTURERS_QUERY,
     },
-    {
-      operationName: 'GetShipList',
-      variables: {
-        storeFront: 'pledge',
-        query: {
-          page: 1,
-          limit,
-          sort: { field: 'name', direction: 'asc' },
-          ships: {
-            // Reported in 1.4.12: the original `all: true` + empty
-            // filters combination 500s on RSI's GraphQL ("Internal
-            // server error"). Switching to an explicit
-            // `{ sale: [true, false] }` filter for the full-catalogue
-            // case asks for both on-sale and off-sale ships in one
-            // query; the on-sale-only path keeps the original single-
-            // value filter. The `all` boolean is dropped — it was
-            // never documented and only worked alongside `sale: [true]`.
-            filters: onlyOnSale ? { sale: [true] } : { sale: [true, false] },
-            // imageComposer slot configuration — tells the server which
-            // thumbnail sizes to render URLs for. We ask for one (900px)
-            // to keep the response small.
-            imageComposer: [
-              { name: '900', size: 'SIZE_900', ratio: 'RATIO_16_9', extension: 'WEBP' },
-            ],
-          },
-        },
-      },
-      query: SHIP_LIST_QUERY,
-    },
+    buildShipListOp(1),
   ];
 
-  const response = await fetchWithTimeout(`${RSI_BASE_URL}/graphql`, {
+  const firstResp = await fetchWithTimeout(`${RSI_BASE_URL}/graphql`, {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
-    body: JSON.stringify(batch),
+    body: JSON.stringify(firstBatch),
   });
-  if (!response.ok) {
-    throw new Error(`pledge GraphQL returned ${response.status}`);
+  if (!firstResp.ok) {
+    throw new Error(`pledge GraphQL returned ${firstResp.status}`);
   }
-
-  const raw = (await response.json()) as unknown;
-  const parsed = ShipListBatchResponse.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`pledge GraphQL: unexpected shape (${parsed.error.message})`);
+  const firstRaw = (await firstResp.json()) as unknown;
+  const firstParsed = ShipListBatchResponse.safeParse(firstRaw);
+  if (!firstParsed.success) {
+    throw new Error(`pledge GraphQL: unexpected shape (${firstParsed.error.message})`);
   }
 
   // Apollo's batch transport preserves operation order, so index 0 is
-  // Manufacturers and index 1 is ShipList.
-  const manufacturersResp = parsed.data[0];
-  const shipsResp = parsed.data[1];
-  if (!manufacturersResp || !shipsResp) {
+  // Manufacturers and index 1 is ShipList page 1.
+  const manufacturersResp = firstParsed.data[0];
+  const firstShipsResp = firstParsed.data[1];
+  if (!manufacturersResp || !firstShipsResp) {
     throw new Error('pledge GraphQL: batch response missing expected entries');
   }
-  const errs = [
+  const firstErrs = [
     ...(manufacturersResp.errors ?? []),
-    ...(shipsResp.errors ?? []),
+    ...(firstShipsResp.errors ?? []),
   ];
-  if (errs.length > 0) {
-    throw new Error(`pledge GraphQL errors: ${errs.map((e) => e.message).join('; ')}`);
+  if (firstErrs.length > 0) {
+    throw new Error(`pledge GraphQL errors: ${firstErrs.map((e) => e.message).join('; ')}`);
   }
 
   const manufacturers: PledgeManufacturer[] = (
@@ -298,9 +305,59 @@ export async function fetchPledgeShipList(
   ).map((m) => ({ id: m.id, name: m.name }));
   manufacturers.sort((a, b) => a.name.localeCompare(b.name));
 
-  const search = shipsResp.data?.store?.search;
-  const ships = (search?.resources ?? []).map(mapShip);
-  const totalCount = search?.totalCount ?? ships.length;
+  const firstSearch = firstShipsResp.data?.store?.search;
+  const ships = (firstSearch?.resources ?? []).map(mapShip);
+  const totalCount = firstSearch?.totalCount ?? ships.length;
+  // De-dupe across pages by SKU id — RSI sometimes echoes the same item
+  // across boundary pages when items are added/removed mid-pagination.
+  const seenIds = new Set(ships.map((s) => s.id));
+
+  // Continue paginating sequentially as long as we haven't reached
+  // totalCount. Sequential rather than parallel because RSI's pledge
+  // GraphQL throttles aggressive concurrent loads on the same session
+  // cookie; the wall-clock cost (3-9 round trips for typical catalogue
+  // sizes) is acceptable since this is a 30-min-cached query.
+  let page = 2;
+  while (ships.length < totalCount && page <= MAX_PAGES) {
+    const pageResp = await fetchWithTimeout(`${RSI_BASE_URL}/graphql`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify([buildShipListOp(page)]),
+    });
+    if (!pageResp.ok) {
+      throw new Error(`pledge GraphQL returned ${pageResp.status} on page ${page}`);
+    }
+    const pageRaw = (await pageResp.json()) as unknown;
+    const pageParsed = ShipListBatchResponse.safeParse(pageRaw);
+    if (!pageParsed.success) {
+      throw new Error(
+        `pledge GraphQL: unexpected shape on page ${page} (${pageParsed.error.message})`,
+      );
+    }
+    const pageShipsResp = pageParsed.data[0];
+    if (!pageShipsResp) {
+      throw new Error(`pledge GraphQL: empty batch on page ${page}`);
+    }
+    if (pageShipsResp.errors?.length) {
+      throw new Error(
+        `pledge GraphQL errors page ${page}: ${pageShipsResp.errors.map((e) => e.message).join('; ')}`,
+      );
+    }
+    const pageItems = (pageShipsResp.data?.store?.search?.resources ?? []).map(mapShip);
+    if (pageItems.length === 0) break; // server signalled no more items
+    let added = 0;
+    for (const item of pageItems) {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        ships.push(item);
+        added++;
+      }
+    }
+    // If a page returned only duplicates we'd loop forever — bail.
+    if (added === 0) break;
+    page++;
+  }
 
   return { ships, totalCount, manufacturers };
 }

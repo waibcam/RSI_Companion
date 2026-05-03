@@ -1313,10 +1313,10 @@
                       : durationMs < 60_000
                         ? `${Math.round(durationMs / 1000)}s`
                         : `${Math.round(durationMs / 60_000)}m`}
-                  <li class="flex items-center gap-2 px-3 py-1.5 text-[11px]">
-                    <div class="min-w-0 flex-1">
+                  <li class="px-3 py-2 text-[11px]">
+                    <div class="mb-1.5 flex items-baseline justify-between gap-2">
                       <p
-                        class="truncate text-slate-300"
+                        class="min-w-0 flex-1 truncate text-slate-300"
                         title={new Date(h.startedAt).toLocaleString()}
                       >
                         {relativeAgo(h.startedAt)}
@@ -1328,18 +1328,34 @@
                           >
                         {/if}
                       </p>
-                      <p class="truncate text-[10px] text-slate-500">
-                        {total} processed
-                        {#if h.counts.added > 0}<span class="text-emerald-400/80">
-                            · +{h.counts.added} added</span
-                          >{/if}
-                        {#if h.counts.notFound > 0}<span class="text-slate-400">
-                            · {h.counts.notFound} not found</span
-                          >{/if}
-                        {#if h.counts.error > 0}<span class="text-rose-400/80">
-                            · {h.counts.error} error</span
-                          >{/if}
-                      </p>
+                      <span class="shrink-0 text-[10px] text-slate-500"
+                        >{total} processed</span
+                      >
+                    </div>
+                    <!-- Same 5-card totals grid as the post-sync result.
+                         Compact variant — no number-only "0" cards take
+                         visual weight, but the header always shows so
+                         the user can compare runs at a glance. -->
+                    <div class="grid grid-cols-5 gap-1">
+                      {#each [['added', h.counts.added], ['alreadyPending', h.counts.alreadyPending], ['alreadyFriend', h.counts.alreadyFriend], ['notFound', h.counts.notFound], ['error', h.counts.error]] as const as [status, n] (status)}
+                        {@const meta = SYNC_STATUS_META[status]}
+                        {@const SvelteIcon = meta.icon}
+                        <div
+                          class="rounded bg-slate-900/60 px-1 py-1 text-center ring-1 ring-slate-800 {n === 0
+                            ? 'opacity-40'
+                            : ''}"
+                        >
+                          <div
+                            class="flex items-center justify-center gap-0.5 text-[9px] uppercase tracking-wider {meta.textClass}"
+                          >
+                            <SvelteIcon class="size-2.5" />
+                            <span class="truncate">{meta.label}</span>
+                          </div>
+                          <div class="mt-0.5 font-mono text-xs font-semibold text-slate-100">
+                            {n}
+                          </div>
+                        </div>
+                      {/each}
                     </div>
                   </li>
                 {/each}

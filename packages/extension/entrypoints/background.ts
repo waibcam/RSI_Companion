@@ -67,7 +67,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v2: PledgeShip gained a `size` field for the Size filter group.
   // Old v1 cache entries have no `size` → filter shows everyone as
   // "unknown size". Bump wipes them cleanly.
-  'pledge:shipList': 2,
+  // v3: 1.4.13 — fetchPledgeShipList now paginates until totalCount.
+  // v2 entries are silently truncated to ~30 ships (RSI's per-page
+  // cap that the previous "single oversized page" approach didn't
+  // notice). Bump invalidates so the next fetch returns the full set.
+  'pledge:shipList': 3,
   // v3: PledgeShipDetail gained per-SKU native-currency pricing plus
   // the user's pricing context (currencyCode/symbol/exponent). Older
   // entries (v1 or v2) don't have `price`/`currencyCode` → Editions

@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.4.13",
+    "released_at": 1777807200,
+    "notes": "{\"info\":[\"Two reports stacked: the Pledge Store ships count was lying (showed 30/30 even when RSI had 90 on sale, capped at 250 in the all view) and the Recent syncs panel in Sync→PTU was too terse — now mirrors the same 5-card status grid as the post-sync result.\"],\"features\":[\"Pledge Store ships: pagination fix. RSI's GraphQL caps per-page results at ~30 regardless of the limit we ask for, so the previous single-page query silently truncated catalogues bigger than that. Now paginates sequentially until `ships.length >= totalCount` (with a 20-page safety cap and per-id de-dupe). The 90-on-sale and 250-all examples both now resolve to the full set.\",\"Cache: pledge:shipList cache version bumped (v2 → v3) so existing installs evict the truncated 30-ship payloads on first popup open.\",\"Contacts → Sync to PTU → Recent syncs: each entry now embeds the same 5-card totals grid as the post-sync result (Added / Pending / Already friend / No PTU account / Error). Compact variant — zero-count cells dim out so non-zero cells pop visually. Title row keeps the relative timestamp, duration, and Cancelled badge.\"]}"
+  },
+  {
     "version": "1.4.12",
     "released_at": 1777803600,
     "notes": "{\"info\":[\"Hotfix on top of v1.4.11 — clicking the new 'X on sale' toggle in the Pledge Store ships tab to flip to the full catalogue returned 'Couldn't load ships: pledge GraphQL errors: Internal server error'. RSI's GraphQL refused the original query shape (the `all: true` flag combined with empty filters).\"],\"features\":[\"Pledge Store ships: full-catalogue query rewritten to ask explicitly for both on-sale and off-sale ships via `{ sale: [true, false] }`, instead of relying on an undocumented `all: true` flag with empty filters. The on-sale-only path is unchanged.\"]}"
