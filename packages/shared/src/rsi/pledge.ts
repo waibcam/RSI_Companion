@@ -237,14 +237,21 @@ export async function fetchPledgeShipList(
           limit,
           sort: { field: 'name', direction: 'asc' },
           ships: {
-            filters: onlyOnSale ? { sale: [true] } : {},
+            // Reported in 1.4.12: the original `all: true` + empty
+            // filters combination 500s on RSI's GraphQL ("Internal
+            // server error"). Switching to an explicit
+            // `{ sale: [true, false] }` filter for the full-catalogue
+            // case asks for both on-sale and off-sale ships in one
+            // query; the on-sale-only path keeps the original single-
+            // value filter. The `all` boolean is dropped — it was
+            // never documented and only worked alongside `sale: [true]`.
+            filters: onlyOnSale ? { sale: [true] } : { sale: [true, false] },
             // imageComposer slot configuration — tells the server which
             // thumbnail sizes to render URLs for. We ask for one (900px)
             // to keep the response small.
             imageComposer: [
               { name: '900', size: 'SIZE_900', ratio: 'RATIO_16_9', extension: 'WEBP' },
             ],
-            all: !onlyOnSale,
           },
         },
       },
