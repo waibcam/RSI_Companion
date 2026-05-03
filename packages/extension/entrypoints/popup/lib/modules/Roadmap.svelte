@@ -436,22 +436,23 @@
                       : status === 'moved'
                         ? 'ring-amber-700/70'
                         : 'ring-slate-800'}
-                  <li class="flex gap-2 rounded-md bg-slate-900/60 p-2 ring-1 ring-inset {ringClass}">
-                    {#if thumb}
-                      <button
-                        type="button"
-                        class="shrink-0 overflow-hidden rounded ring-1 ring-inset ring-slate-700/60 transition hover:ring-sky-500/60 focus:outline-none focus:ring-sky-400"
-                        onclick={() => (zoomedCard = card)}
-                        title="Click to expand"
-                      >
-                        <img
-                          src={thumb}
-                          alt=""
-                          loading="lazy"
-                          class="size-16 object-cover"
-                        />
-                      </button>
-                    {/if}
+                  <li>
+                    <button
+                      type="button"
+                      class="flex w-full gap-2 rounded-md bg-slate-900/60 p-2 text-left ring-1 ring-inset {ringClass} transition hover:ring-sky-500/60 focus:outline-none focus:ring-sky-400"
+                      onclick={() => (zoomedCard = card)}
+                      title="Click to expand"
+                    >
+                      {#if thumb}
+                        <div class="shrink-0 overflow-hidden rounded ring-1 ring-inset ring-slate-700/60">
+                          <img
+                            src={thumb}
+                            alt=""
+                            loading="lazy"
+                            class="size-16 object-cover"
+                          />
+                        </div>
+                      {/if}
                     <div class="min-w-0 flex-1">
                       <div class="flex items-center gap-1">
                         <span class="truncate text-xs font-medium text-slate-200">{card.name}</span>
@@ -482,6 +483,7 @@
                         <p class="mt-1 line-clamp-2 text-[11px] text-slate-400">{card.description}</p>
                       {/if}
                     </div>
+                    </button>
                   </li>
                 {/each}
               </ul>

@@ -98,6 +98,17 @@
   let shipsLoading = $state(false);
   let shipsError = $state<string | null>(null);
   let shipsFromCache = $state(false);
+  // Defaults to true (matches today's behaviour) — RSI rotates ships in
+  // and out of "on sale" status throughout the year, so the active set
+  // is typically a small subset (e.g. 30) of the full catalogue. The
+  // user can flip this off to browse the full catalogue including
+  // currently-locked ships. Persisted so the choice sticks across
+  // popup opens.
+  const shipsOnSaleOnlyP = persistedState<boolean>(
+    'pledge:shipsOnSaleOnly',
+    true,
+    (v): v is boolean => typeof v === 'boolean',
+  );
 
   // ---- Generic browse (all other categories) -------------------------------
   // Keyed by categoryId — we keep the last result for each so switching
@@ -300,7 +311,11 @@
     shipsLoading = true;
     shipsError = null;
     try {
-      const res = await sendRsiMessage({ type: 'pledge.shipList', force });
+      const res = await sendRsiMessage({
+        type: 'pledge.shipList',
+        onlyOnSale: shipsOnSaleOnlyP.value,
+        force,
+      });
       ships = res.ships;
       manufacturers = res.manufacturers;
       shipsTotal = res.totalCount;
@@ -310,6 +325,13 @@
     } finally {
       shipsLoading = false;
     }
+  }
+  function toggleShipsOnSale() {
+    shipsOnSaleOnlyP.value = !shipsOnSaleOnlyP.value;
+    // Cache key on the BG includes onlyOnSale so the two views are
+    // memoized independently — flipping the toggle hits cache on
+    // either side after the first round trip.
+    void loadShips(false);
   }
 
   async function loadBrowse(
@@ -880,7 +902,21 @@
   >
     {#snippet meta()}
       {#if tab === 'store' && category === 'ships' && ships.length > 0}
-        <span class="text-[10px] text-slate-500">{filteredShips.length}/{ships.length} · {shipsTotal} on sale</span>
+        <span class="flex items-center gap-1.5 text-[10px] text-slate-500">
+          {filteredShips.length}/{ships.length} ·
+          <button
+            type="button"
+            onclick={toggleShipsOnSale}
+            class="rounded px-1 py-0.5 text-[10px] uppercase tracking-wider transition {shipsOnSaleOnlyP.value
+              ? 'bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/30 hover:bg-amber-500/20'
+              : 'bg-slate-800 text-slate-300 ring-1 ring-inset ring-slate-700 hover:bg-slate-700'}"
+            title={shipsOnSaleOnlyP.value
+              ? 'Showing only ships currently on sale. Click to include the full catalogue.'
+              : 'Showing the full catalogue. Click to filter to on-sale only.'}
+          >
+            {shipsOnSaleOnlyP.value ? `${shipsTotal} on sale` : `${shipsTotal} all`}
+          </button>
+        </span>
       {:else if tab === 'store' && browseItems.length > 0}
         <span class="text-[10px] text-slate-500">{filteredBrowse.length}/{browseItems.length}</span>
       {:else if tab === 'upgrade' && ccu}

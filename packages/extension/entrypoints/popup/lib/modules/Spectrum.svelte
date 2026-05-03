@@ -919,6 +919,16 @@
     threadDetailForSlug = null;
     threadDetailError = null;
     expandedReplies = new Set();
+    // When the user lands here via DevTracker → click post → Back, the
+    // thread list for this channel was never loaded (DevTracker jumps
+    // straight to the thread detail without going through the channel
+    // list view). Without this lazy load, the user sees an empty
+    // threads page until they click Refresh manually. The same applies
+    // when arriving via a Spectrum URL or notification deep-link.
+    const ch = forumChannelP.value;
+    if (ch != null && forumThreadsForChannel !== ch) {
+      void loadForumThreads(ch);
+    }
   }
 
   function selectCommunity(communityId: number) {

@@ -67,6 +67,19 @@
   let fromCache = $state(false);
   let query = $state('');
 
+  // Per-strip loading flags for the Home tab. Home now fans out into four
+  // parallel BG requests (live + 3 post strips) so each renders as soon
+  // as its fetch lands, instead of blocking on the slowest of the four.
+  // Reported by the maintainer as "Home takes 4-5 s, would be nice to
+  // see things appear progressively". Bonus: each strip's data is cached
+  // under the same key the dedicated tab uses (communityHub:live,
+  // communityHub:posts:discover:trending::, etc.), so navigating to the
+  // Lives or Discover tab right after Home is a hot-cache hit.
+  let homeLiveLoading = $state(false);
+  let homeTrendingLoading = $state(false);
+  let homeGameplayLoading = $state(false);
+  let homeTutorialLoading = $state(false);
+
   const TAB_META: Record<Tab, { label: string; icon: typeof Tv; path: string }> = {
     home: { label: 'Home', icon: Home, path: '/community-hub' },
     live: { label: 'Lives', icon: Tv, path: '/community-hub' },
@@ -81,7 +94,102 @@
   );
   const showTypes = $derived(tabP.value === 'discover' || tabP.value === 'gameplay' || tabP.value === 'tutorial');
 
+  // Drives the header's spinning-icon and refresh-disabled state on
+  // the home tab. As long as ANY strip is still in flight, treat the
+  // home view as "loading" — even if some strips have already painted.
+  const homeAnyLoading = $derived(
+    homeLiveLoading || homeTrendingLoading || homeGameplayLoading || homeTutorialLoading,
+  );
+  const homeAllEmpty = $derived(
+    !homeAnyLoading &&
+      live.length === 0 &&
+      followed.length === 0 &&
+      trending.length === 0 &&
+      gameplay.length === 0 &&
+      tutorial.length === 0,
+  );
+
+  /** Home tab is split into four parallel BG calls so each strip
+   *  renders as soon as its fetch lands — see the comment on the
+   *  homeXxxLoading state declarations above. The non-home tabs keep
+   *  the original single-call path. */
+  async function loadHome(force: boolean) {
+    error = null;
+    posts = [];
+    upcoming = [];
+    past = [];
+    homeLiveLoading = true;
+    homeTrendingLoading = true;
+    homeGameplayLoading = true;
+    homeTutorialLoading = true;
+    fromCache = false;
+    // Track the slowest fromCache result — if every strip came from the
+    // cache, surface that to the user via the header indicator.
+    let allFromCache = true;
+    let anyError: string | null = null;
+    const livePromise = (async () => {
+      try {
+        const res = await sendRsiMessage({ type: 'communityHub.list', tab: 'live', force });
+        if (tabP.value !== 'home') return;
+        if (res.tab === 'live') {
+          live = res.live.slice(0, 8);
+          followed = res.followed.slice(0, 8);
+          if (!res.fromCache) allFromCache = false;
+        }
+      } catch (e) {
+        anyError ??= errorMessage(e);
+      } finally {
+        homeLiveLoading = false;
+      }
+    })();
+    const stripFetch = async (
+      stripTab: 'discover' | 'gameplay' | 'tutorial',
+      assign: (posts: Post[]) => void,
+    ) => {
+      try {
+        const res = await sendRsiMessage({
+          type: 'communityHub.list',
+          tab: stripTab,
+          sort: 'trending',
+          force,
+        });
+        if (tabP.value !== 'home') return;
+        if (res.tab === stripTab) {
+          assign(res.posts.slice(0, 6));
+          if (!res.fromCache) allFromCache = false;
+        }
+      } catch (e) {
+        anyError ??= errorMessage(e);
+      }
+    };
+    const trendingPromise = (async () => {
+      await stripFetch('discover', (p) => (trending = p));
+      homeTrendingLoading = false;
+    })();
+    const gameplayPromise = (async () => {
+      await stripFetch('gameplay', (p) => (gameplay = p));
+      homeGameplayLoading = false;
+    })();
+    const tutorialPromise = (async () => {
+      await stripFetch('tutorial', (p) => (tutorial = p));
+      homeTutorialLoading = false;
+    })();
+    await Promise.all([livePromise, trendingPromise, gameplayPromise, tutorialPromise]);
+    if (tabP.value !== 'home') return;
+    fromCache = allFromCache;
+    if (anyError && live.length === 0 && trending.length === 0 && gameplay.length === 0 && tutorial.length === 0) {
+      error = anyError;
+    }
+  }
+
   async function load(force = false) {
+    if (tabP.value === 'home') {
+      // Don't set the global `loading` flag — per-strip flags drive
+      // the home rendering so each strip can paint independently as
+      // its fetch lands. The header indicator uses homeAnyLoading.
+      await loadHome(force);
+      return;
+    }
     loading = true;
     error = null;
     try {
@@ -92,16 +200,7 @@
         types: showTypes && selectedTypes.length > 0 ? selectedTypes : undefined,
         force,
       });
-      if (res.tab === 'home') {
-        live = res.live;
-        followed = res.followed;
-        trending = res.trending;
-        gameplay = res.gameplay;
-        tutorial = res.tutorial;
-        posts = [];
-        upcoming = [];
-        past = [];
-      } else if (res.tab === 'live') {
+      if (res.tab === 'live') {
         live = res.live;
         followed = res.followed;
         trending = [];
@@ -119,6 +218,9 @@
         gameplay = [];
         tutorial = [];
         posts = [];
+      } else if (res.tab === 'home') {
+        // Defensive: should be handled by loadHome above. Ignore to
+        // keep TS happy on the discriminated union.
       } else {
         posts = res.posts;
         live = [];
@@ -206,7 +308,12 @@
 </script>
 
 <section class="flex h-full flex-col overflow-hidden">
-  <ModuleHeader title="Community Hub" {loading} {fromCache} onRefresh={() => load(true)}>
+  <ModuleHeader
+    title="Community Hub"
+    loading={tabP.value === 'home' ? homeAnyLoading : loading}
+    {fromCache}
+    onRefresh={() => load(true)}
+  >
     {#snippet meta()}
       <span class="text-[10px] text-slate-500">
         {#if tabP.value === 'home'}
@@ -318,7 +425,7 @@
           <p class="mt-1 break-all text-rose-300/80">{error}</p>
         </div>
       </div>
-    {:else if loading}
+    {:else if loading && tabP.value !== 'home'}
       <div class="flex h-full items-center justify-center text-slate-500">
         <Loader2 class="size-5 animate-spin" />
       </div>
@@ -458,7 +565,27 @@
         </li>
       {/snippet}
 
-      {#if followed.length === 0 && live.length === 0 && trending.length === 0 && gameplay.length === 0 && tutorial.length === 0}
+      {#snippet stripSkeleton()}
+        <!-- Single tile-shaped skeleton stripe per strip-in-flight so
+             the user sees something where the data will land. The
+             height matches the post/stream card aspect-ratio so the
+             page doesn't visibly reflow when the actual cards arrive. -->
+        <ul class={stripCls}>
+          {#each Array(3) as _}
+            <li class="w-44 shrink-0">
+              <div class="flex flex-col overflow-hidden rounded-md bg-slate-900/40 ring-1 ring-slate-800/60">
+                <div class="aspect-video w-full animate-pulse bg-slate-800/40"></div>
+                <div class="space-y-1 p-1.5">
+                  <div class="h-2 w-3/4 animate-pulse rounded bg-slate-800/40"></div>
+                  <div class="h-2 w-1/2 animate-pulse rounded bg-slate-800/40"></div>
+                </div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+
+      {#if homeAllEmpty}
         <div class="flex h-full flex-col items-center justify-center gap-2 text-slate-500">
           <Sparkles class="size-8" />
           <p class="text-xs italic">The Community Hub is quiet right now.</p>
@@ -512,40 +639,56 @@
           </ul>
         {/if}
 
-        {#if live.length > 0}
+        {#if live.length > 0 || homeLiveLoading}
           {@render stripHeader('Livestreams', 'Live now on Twitch.tv', 'text-rose-300', 'live', Tv)}
-          <ul class={stripCls}>
-            {#each live as p (p.uid)}
-              {@render streamCard(p)}
-            {/each}
-          </ul>
+          {#if live.length > 0}
+            <ul class={stripCls}>
+              {#each live as p (p.uid)}
+                {@render streamCard(p)}
+              {/each}
+            </ul>
+          {:else}
+            {@render stripSkeleton()}
+          {/if}
         {/if}
 
-        {#if trending.length > 0}
+        {#if trending.length > 0 || homeTrendingLoading}
           {@render stripHeader('Trending', "See what's hot on the Hub", 'text-amber-400', 'discover', Flame)}
-          <ul class={stripCls}>
-            {#each trending as p (p.uid)}
-              {@render postCard(p)}
-            {/each}
-          </ul>
+          {#if trending.length > 0}
+            <ul class={stripCls}>
+              {#each trending as p (p.uid)}
+                {@render postCard(p)}
+              {/each}
+            </ul>
+          {:else}
+            {@render stripSkeleton()}
+          {/if}
         {/if}
 
-        {#if gameplay.length > 0}
+        {#if gameplay.length > 0 || homeGameplayLoading}
           {@render stripHeader('Gameplay', 'Show off what you can do in the game', 'text-violet-400', 'gameplay', Gamepad2)}
-          <ul class={stripCls}>
-            {#each gameplay as p (p.uid)}
-              {@render postCard(p)}
-            {/each}
-          </ul>
+          {#if gameplay.length > 0}
+            <ul class={stripCls}>
+              {#each gameplay as p (p.uid)}
+                {@render postCard(p)}
+              {/each}
+            </ul>
+          {:else}
+            {@render stripSkeleton()}
+          {/if}
         {/if}
 
-        {#if tutorial.length > 0}
+        {#if tutorial.length > 0 || homeTutorialLoading}
           {@render stripHeader('Tutorial', 'Guides, breakdowns, and helpful content', 'text-emerald-400', 'tutorial', GraduationCap)}
-          <ul class={stripCls}>
-            {#each tutorial as p (p.uid)}
-              {@render postCard(p)}
-            {/each}
-          </ul>
+          {#if tutorial.length > 0}
+            <ul class={stripCls}>
+              {#each tutorial as p (p.uid)}
+                {@render postCard(p)}
+              {/each}
+            </ul>
+          {:else}
+            {@render stripSkeleton()}
+          {/if}
         {/if}
       {/if}
     {:else if tabP.value === 'live'}

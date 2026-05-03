@@ -1281,6 +1281,23 @@ function normalizeReply(r: RawThreadReplyOutput): SpectrumThreadReply {
 // _score + _source carrying body, subject, channel_id, thread_id,
 // member_id, votes, etc.
 
+// User-reported in 1.4.11 with a complete Zod error dump: searching a
+// query that yields zero results crashed the entire search flow with
+// "Expected number, received nan" on `_source.time_created` for every
+// hit. The values RSI returns for those hits are the literal string
+// "NaN" (not the JS number NaN), and the previous `z.coerce.number()`
+// happily coerces "NaN" → JS NaN, which then fails `.int()`.
+//
+// Fix: a preprocess that catches null / undefined / empty / non-finite
+// values and substitutes 0 BEFORE Zod's number validation runs. Used
+// for every numeric field on the search hit because we don't trust
+// any one of them not to drift to the same broken shape.
+const safeIntDefault0 = z.preprocess((v) => {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : 0;
+}, z.number().int().default(0));
+
 const RawSearchHit = z
   .object({
     _index: z.string().default(''),
@@ -1290,11 +1307,11 @@ const RawSearchHit = z
       .object({
         body: z.string().default(''),
         subject: z.string().default(''),
-        time_created: z.coerce.number().int().default(0),
-        community_id: z.coerce.number().int().default(0),
-        channel_id: z.coerce.number().int().default(0),
-        thread_id: z.coerce.number().int().default(0),
-        member_id: z.coerce.number().int().default(0),
+        time_created: safeIntDefault0,
+        community_id: safeIntDefault0,
+        channel_id: safeIntDefault0,
+        thread_id: safeIntDefault0,
+        member_id: safeIntDefault0,
         highlight_role_id: z.coerce.number().int().nullable().optional(),
       })
       .passthrough()
