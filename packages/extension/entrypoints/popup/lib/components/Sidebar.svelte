@@ -17,6 +17,7 @@
     Settings as SettingsIcon,
     ShoppingCart,
     Users,
+    Warehouse,
   } from 'lucide-svelte';
   import type { ComponentType } from 'svelte';
   import { appState, getEffectiveModules, settingsState, type ModuleId } from '../state.svelte';
@@ -28,6 +29,7 @@
     'progress-tracker': ClipboardList,
     dashboard:          LayoutDashboard,
     ships:              Ship,
+    hangar:             Warehouse,
     'buy-back':         Archive,
     'pledge-store':     ShoppingCart,
     'comm-link':        Newspaper,

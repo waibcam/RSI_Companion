@@ -39,6 +39,7 @@ import type {
 import type { DashboardSummary } from './rsi/dashboard.js';
 import type { MyOrg, OrgMember, PublicOrg, PublicOrgSearchParams } from './rsi/orgs.js';
 import type { RsiIdentity } from './rsi/auth.js';
+import type { HangarPledge } from './rsi/hangar.js';
 import type { Ship } from './rsi/ships.js';
 import type {
   SpectrumBookmark,
@@ -110,6 +111,21 @@ export interface ShipsResponsePayload {
    *  the user to type each row by hand. Empty when the user isn't
    *  signed in (no hangar to scrape). */
   rawHangarNames: string[];
+  signedIn: boolean;
+  fetchedAt: number;
+  fromCache: boolean;
+}
+
+/** Rich hangar (pledges) listing for the Hangar module — distinct from
+ *  ships.list which surfaces matrix entries with owned counts. Returns
+ *  every pledge row with its ships denormalised inside, ready to drive
+ *  the Pledges tab and the HTF (`shiplist.json`) export. */
+export interface HangarListRequest {
+  type: 'hangar.list';
+  force?: boolean;
+}
+export interface HangarListResponsePayload {
+  pledges: HangarPledge[];
   signedIn: boolean;
   fetchedAt: number;
   fromCache: boolean;
@@ -1245,6 +1261,7 @@ export type RsiMessage =
   | IdentityRequest
   | CommLinkRequest
   | ShipsRequest
+  | HangarListRequest
   | ContactsRequest
   | ContactsSearchRequest
   | ContactsActionRequest
@@ -1330,6 +1347,7 @@ interface ResponseMap {
   'auth.identity': IdentityResponse;
   'commlink.list': CommLinkResponsePayload;
   'ships.list': ShipsResponsePayload;
+  'hangar.list': HangarListResponsePayload;
   'contacts.list': ContactsResponsePayload;
   'contacts.search': ContactsSearchResponsePayload;
   'contacts.action': ContactsActionResponsePayload;

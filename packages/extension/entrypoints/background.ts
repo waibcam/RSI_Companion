@@ -90,6 +90,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // Emerald now also marks the bundled Lynx + P-72 Archimedes as
   // owned. Old caches don't have those flags set.
   'ships:list': 3,
+  // Hangar module's rich pledges list — separate cache from ships:list
+  // because the granularity is per-pledge (with id / cost / flags / per-
+  // ship metadata) rather than per-matrix-entry. Wiped on sign-in/out
+  // by the cookie listener, same as ships:list.
+  'hangar:list': 1,
   // v2: 1.4.x shipped a poll-side cache write that only seeded `contacts`
   // and dropped `incoming`/`outgoing` — the popup module read those as
   // undefined and crashed on .length. Bump invalidates broken entries.
@@ -246,6 +251,13 @@ const TTL = {
   dashboard: ACCOUNT_TTL,
   spectrum: ACCOUNT_TTL, // DM lobbies + highlighted threads (the counts are LIVE)
   ships: ACCOUNT_TTL,
+  // Rich hangar / pledges listing (Hangar module). Same data source as
+  // the ships:list scrape (/account/pledges) but parsed at a finer
+  // granularity (per-pledge attrs + per-ship metadata). Tied to auth so
+  // the cookies.onChanged listener wipes it on sign-in/out, same as
+  // ships. 30-min TTL is enough for repeat popup opens to be cache hits
+  // while still picking up new pledges within the session.
+  hangar: ACCOUNT_TTL,
   contacts: ACCOUNT_TTL,
   buyback: ACCOUNT_TTL,
   orgs: ACCOUNT_TTL,
@@ -783,6 +795,64 @@ async function handleShipsList(force: boolean) {
       const payload = { ...bundle, rawHangarNames: [], fetchedAt };
       await cacheSet('ships:list:public', payload, TTL.ships);
       return { ...payload, signedIn: false, fromCache: false };
+    }
+    throw e;
+  }
+}
+
+async function handleHangarList(force: boolean) {
+  // Hangar module fetches the same /account/pledges scrape as
+  // handleShipsList but at a finer granularity. We don't piggyback on
+  // ships:list cache because (a) ships:list throws away pledge-level
+  // attrs and (b) the user may have ships:list cached from a session
+  // before the Hangar module ever ran. Independent cache keeps the
+  // modules' lifecycles cleanly separated.
+  const token = await Rsi.readRsiToken();
+  const signedIn = Boolean(token);
+
+  if (!signedIn) {
+    // No hangar without a session cookie — return empty payload so the
+    // UI can render its sign-in prompt.
+    return {
+      pledges: [] as Rsi.HangarPledge[],
+      signedIn: false,
+      fetchedAt: Date.now(),
+      fromCache: false,
+    };
+  }
+
+  const key = 'hangar:list';
+  if (!force) {
+    const cached = await cacheGet<{
+      pledges: Rsi.HangarPledge[];
+      fetchedAt: number;
+    }>(key);
+    if (cached) {
+      return {
+        pledges: cached.pledges,
+        signedIn: true,
+        fetchedAt: cached.fetchedAt,
+        fromCache: true,
+      };
+    }
+  }
+
+  try {
+    const pledges = await Rsi.fetchHangarPledges();
+    const fetchedAt = Date.now();
+    await cacheSet(key, { pledges, fetchedAt }, TTL.hangar);
+    return { pledges, signedIn: true, fetchedAt, fromCache: false };
+  } catch (e) {
+    // If the cookie went stale mid-fetch, downgrade to "not signed in"
+    // rather than failing the whole module — same defensive pattern
+    // as handleShipsList. The popup will render its sign-in prompt.
+    if (e instanceof Rsi.RsiNotAuthenticatedError) {
+      return {
+        pledges: [] as Rsi.HangarPledge[],
+        signedIn: false,
+        fetchedAt: Date.now(),
+        fromCache: false,
+      };
     }
     throw e;
   }
@@ -4072,6 +4142,8 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
         return { ok: true, data: await handleCommLinkList(message) };
       case 'ships.list':
         return { ok: true, data: await handleShipsList(message.force ?? false) };
+      case 'hangar.list':
+        return { ok: true, data: await handleHangarList(message.force ?? false) };
       case 'contacts.list':
         return { ok: true, data: await handleContactsList(message.force ?? false) };
       case 'contacts.search':
@@ -4386,6 +4458,7 @@ async function handleMessage(message: RsiMessage): Promise<RsiMessageResult<RsiM
 const AUTH_DEPENDENT_CACHE_PREFIXES = [
   'auth:identity',
   'ships:list',
+  'hangar:list',
   'contacts:list',
   'orgs:list',
   'orgs:invitations',

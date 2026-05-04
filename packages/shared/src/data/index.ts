@@ -16,6 +16,7 @@ import loanersData from './loaners.json';
 import bundlesData from './bundles.json';
 import shipNameInfoData from './ship-name-info.json';
 import releaseNotesData from './release-notes.json';
+import shipCodesData from './ship-codes.json';
 
 /** Ship-id → [loaner-id, ...] mapping. Same shape the legacy
  *  `/loaners` endpoint returned (without the success/code envelope). */
@@ -52,3 +53,25 @@ export const RELEASE_NOTES: ReadonlyArray<{
   released_at: number;
   notes: string;
 }>;
+
+/** Canonical (ship_code, manufacturer_code, manufacturer_name) lookup
+ *  keyed by ship display name. The table was seeded from HangarXPLOR's
+ *  matching reference list (MIT-licensed — see `ship-codes.NOTICE.md`)
+ *  so that our HTF / `shiplist.json` exports plug straight into the
+ *  third-party tooling ecosystem (value calculators, buyback helpers,
+ *  ship-matching tools) without a translation step.
+ *
+ *  Schema per entry:
+ *    { ship_code, ship_name, manufacturer_code, manufacturer_name }
+ *
+ *  Lookup strategy in the parser is "exact name match first, then
+ *  fall back to a deterministic `<MFR>_<NAME>` slug" — see
+ *  `resolveShipCode` in `rsi/hangar.ts`. */
+export interface ShipCodeEntry {
+  ship_code: string;
+  ship_name: string;
+  manufacturer_code: string;
+  manufacturer_name: string;
+}
+export const SHIP_CODES: ReadonlyArray<ShipCodeEntry> =
+  shipCodesData as ShipCodeEntry[];

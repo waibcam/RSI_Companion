@@ -5,6 +5,7 @@ export * from './community-hub.js';
 export * from './contacts.js';
 export * from './dashboard.js';
 export * from './galactapedia.js';
+export * from './hangar.js';
 export * from './orgs.js';
 export * from './patch-notes.js';
 export * from './pledge.js';

@@ -32,6 +32,7 @@
     'comm-link': () => import('./lib/modules/CommLink.svelte'),
     'patch-notes': () => import('./lib/modules/PatchNotes.svelte'),
     ships: () => import('./lib/modules/Ships.svelte'),
+    hangar: () => import('./lib/modules/Hangar.svelte'),
     'buy-back': () => import('./lib/modules/BuyBack.svelte'),
     'pledge-store': () => import('./lib/modules/PledgeStore.svelte'),
     contacts: () => import('./lib/modules/Contacts.svelte'),

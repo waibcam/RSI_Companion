@@ -8,6 +8,7 @@ export type ModuleId =
   | 'release-notes'
   | 'dashboard'
   | 'ships'
+  | 'hangar'
   | 'buy-back'
   | 'pledge-store'
   | 'comm-link'
@@ -45,6 +46,13 @@ export const MODULES: ReadonlyArray<ModuleDescriptor> = [
   { id: 'patch-notes',       label: 'Patch Notes',       ready: true },
   { id: 'dashboard',      label: 'Dashboard',     ready: true },
   { id: 'ships',          label: 'Ships',         ready: true },
+  // Hangar sits between Ships and Buy-Back / Pledge Store: Ships is the
+  // matrix-overlay view ("everything CIG ever made, with my owned flag"),
+  // Hangar is the per-pledge breakdown ("the X pledges in my account,
+  // each with their N ships and metadata"), Buy-Back / Pledge Store are
+  // outflow / inflow surfaces. Logical "what I have → details of what
+  // I have → what I can buy" reading order.
+  { id: 'hangar',         label: 'Hangar',        ready: true },
   { id: 'buy-back',       label: 'Buy-Back',      ready: true },
   { id: 'pledge-store',   label: 'Pledge Store',  ready: true },
   { id: 'contacts',       label: 'Contacts',      ready: true },
