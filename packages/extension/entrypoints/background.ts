@@ -89,7 +89,11 @@ const CACHE_NAMESPACE_VERSIONS: Record<string, number> = {
   // v3: bundle expansion — owning Constellation Phoenix / Phoenix
   // Emerald now also marks the bundled Lynx + P-72 Archimedes as
   // owned. Old caches don't have those flags set.
-  'ships:list': 3,
+  // v4: 1.5.3 — Genesis Starliner loaner table fix (Mercury Star
+  // Runner → C2 Hercules, reported by @!DakotaVosselman against
+  // RSI's official loaner matrix). Old caches have the wrong
+  // loaner baked into the merged payload.
+  'ships:list': 4,
   // Hangar module's rich pledges list — separate cache from ships:list
   // because the granularity is per-pledge (with id / cost / flags / per-
   // ship metadata) rather than per-matrix-entry. Wiped on sign-in/out
@@ -310,6 +314,23 @@ const TTL = {
 interface CacheEntry<T> {
   value: T;
   expiresAt: number;
+  /** Optional Rsi-Token fingerprint (first 12 chars) the entry was
+   *  written under. When present, `cacheGetAuthDep` invalidates the
+   *  entry on read if the current cookie's fingerprint differs.
+   *
+   *  Defends against the race that bit Buy-Back / Organizations
+   *  reported on Discord (2026-05-04): user signs out → cookies.onChanged
+   *  fires → wipeAuthDependentCache() is async → user signs back in
+   *  before the wipe completes (or the BG SW was asleep and missed
+   *  the sign-out event entirely) → the next handler call serves the
+   *  previous session's payload because the cache was never cleared.
+   *  With the fingerprint, that read sees "stored token != current
+   *  token" and treats it as a miss, forcing a fresh fetch.
+   *
+   *  Public caches (commlink, ships:list:public, communityHub, …)
+   *  don't use this field — they're user-independent. Distinct
+   *  cacheSet path keeps them light.  */
+  authToken?: string;
 }
 
 // Enumerate every top-level key in chrome.storage.local without reading the
@@ -363,6 +384,61 @@ async function cacheSet<T>(key: string, value: T, ttlMs: number): Promise<void> 
   await chrome.storage.local.set({ [CACHE_PREFIX + key]: entry });
 }
 
+/** First 12 chars of the current Rsi-Token, or empty string when no
+ *  cookie. Used to fingerprint auth-dependent cache entries — long
+ *  enough to be unique across accounts (cookies are 64+ char base64
+ *  blobs) and short enough to fit comfortably in a chrome.storage
+ *  payload. The token itself is rotated on every sign-in by RSI, so
+ *  even signing back in to the SAME account after a sign-out gets a
+ *  fresh fingerprint. */
+async function authFingerprint(): Promise<string> {
+  const token = await Rsi.readRsiToken();
+  return token ? token.slice(0, 12) : '';
+}
+
+/** cacheGet variant that also enforces an auth-token fingerprint.
+ *  Returns null (cache miss) when the stored fingerprint differs
+ *  from the current Rsi-Token's fingerprint. Use for any cache
+ *  whose value is account-specific (Buy-Back, Organizations,
+ *  Hangar, Contacts, Dashboard, Stats, Spectrum notifications /
+ *  threads / lobbies, pledge cart / ccuInit / ccuTargets). */
+async function cacheGetAuthDep<T>(key: string): Promise<T | null> {
+  const res = await chrome.storage.local.get(CACHE_PREFIX + key);
+  const entry = res[CACHE_PREFIX + key] as CacheEntry<T> | undefined;
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  const fp = await authFingerprint();
+  if (entry.authToken !== fp) {
+    // Auth flipped (sign-out / sign-in / different account) since the
+    // entry was written. Drop it so the next call refetches under the
+    // current session.
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  return entry.value;
+}
+
+/** cacheSet variant that captures the current auth fingerprint.
+ *  Pair with `cacheGetAuthDep` so the read-side check has a value
+ *  to compare against. Cheap — one cookie read (memoised 5 s in
+ *  auth.ts). */
+async function cacheSetAuthDep<T>(
+  key: string,
+  value: T,
+  ttlMs: number,
+): Promise<void> {
+  const fp = await authFingerprint();
+  const entry: CacheEntry<T> = {
+    value,
+    expiresAt: Date.now() + ttlMs,
+    authToken: fp,
+  };
+  await chrome.storage.local.set({ [CACHE_PREFIX + key]: entry });
+}
+
 /** Schema-validated cache read.
  *
  *  Catches the class of bugs where two cache writers for the same key
@@ -384,6 +460,43 @@ async function cacheGetValidated<T>(key: string, schema: z.ZodType<T>): Promise<
   const entry = res[CACHE_PREFIX + key] as CacheEntry<unknown> | undefined;
   if (!entry) return null;
   if (entry.expiresAt < Date.now()) {
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  const parsed = schema.safeParse(entry.value);
+  if (!parsed.success) {
+    log.debug(
+      'cache',
+      `evicting ${key} — schema mismatch: ${parsed.error.issues.map((i) => i.path.join('.') || '<root>').join(', ')}`,
+    );
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  return parsed.data;
+}
+
+/** cacheGetValidated variant that also enforces an auth-token
+ *  fingerprint match. Combines the schema-shape safety with the
+ *  auth-flip safety — used for caches that are both multi-field
+ *  AND account-specific (ships:list, contacts:list, stats:summary).
+ *
+ *  Returns null on any of the three failure modes (missing entry,
+ *  expired, schema mismatch, fingerprint mismatch) so the caller
+ *  treats it as a clean cache miss and refetches under the current
+ *  session. */
+async function cacheGetValidatedAuthDep<T>(
+  key: string,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
+  const res = await chrome.storage.local.get(CACHE_PREFIX + key);
+  const entry = res[CACHE_PREFIX + key] as CacheEntry<unknown> | undefined;
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    await chrome.storage.local.remove(CACHE_PREFIX + key);
+    return null;
+  }
+  const fp = await authFingerprint();
+  if (entry.authToken !== fp) {
     await chrome.storage.local.remove(CACHE_PREFIX + key);
     return null;
   }
@@ -685,8 +798,12 @@ async function handleShipsList(force: boolean) {
     // Same shape used by both ships:list (signed-in) and ships:list:public
     // (anonymous). Schema-validated read covers either key — five required
     // arrays + ownedCount, lots of opportunity to crash the grid renderer
-    // if a writer ever drops one.
-    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['ships:list']);
+    // if a writer ever drops one. The signed-in variant additionally
+    // checks the auth fingerprint so an account flip can't surface a
+    // previous user's owned / hangar counts.
+    const cached = signedIn
+      ? await cacheGetValidatedAuthDep(key, CACHE_SCHEMAS['ships:list'])
+      : await cacheGetValidated(key, CACHE_SCHEMAS['ships:list']);
     if (cached) {
       return {
         ships: cached.ships as Rsi.Ship[],
@@ -774,7 +891,11 @@ async function handleShipsList(force: boolean) {
 
     const fetchedAt = Date.now();
     const payload = { ...bundle, rawHangarNames: hangarNames, fetchedAt };
-    await cacheSet(key, payload, TTL.ships);
+    // Auth-dep write: this entry is the user's own merged hangar +
+    // matrix; tagged with the current token fingerprint so an account
+    // flip auto-invalidates on read. The signed-out path below uses
+    // plain cacheSet because the public matrix is user-independent.
+    await cacheSetAuthDep(key, payload, TTL.ships);
 
     return { ...payload, signedIn: true, fromCache: false };
   } catch (e) {
@@ -823,7 +944,7 @@ async function handleHangarList(force: boolean) {
 
   const key = 'hangar:list';
   if (!force) {
-    const cached = await cacheGet<{
+    const cached = await cacheGetAuthDep<{
       pledges: Rsi.HangarPledge[];
       fetchedAt: number;
     }>(key);
@@ -840,7 +961,7 @@ async function handleHangarList(force: boolean) {
   try {
     const pledges = await Rsi.fetchHangarPledges();
     const fetchedAt = Date.now();
-    await cacheSet(key, { pledges, fetchedAt }, TTL.hangar);
+    await cacheSetAuthDep(key, { pledges, fetchedAt }, TTL.hangar);
     return { pledges, signedIn: true, fetchedAt, fromCache: false };
   } catch (e) {
     // If the cookie went stale mid-fetch, downgrade to "not signed in"
@@ -872,13 +993,13 @@ async function handleContactsList(force: boolean) {
   }
   const key = 'contacts:list';
   if (!force) {
-    // Schema-validated read — defends against the partial-shape crash
-    // we hit in 1.4.x (poll-side writer initially seeded only `contacts`,
-    // missing `incoming`/`outgoing`; popup module crashed on .length of
-    // undefined). If a future writer regresses, the schema rejects the
-    // shape and we return a clean cache miss instead of propagating the
-    // bad value.
-    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['contacts:list']);
+    // Schema-validated + auth-fingerprint-checked read. Defends against
+    // BOTH the partial-shape crash we hit in 1.4.x (poll-side writer
+    // initially seeded only `contacts`, missing `incoming`/`outgoing`)
+    // AND the sign-out → sign-in cache-survives-cookie-flip race we hit
+    // in 1.5.2 (cookies.onChanged async wipe didn't beat the next
+    // popup interaction).
+    const cached = await cacheGetValidatedAuthDep(key, CACHE_SCHEMAS['contacts:list']);
     if (cached) {
       return {
         contacts: cached.contacts as Rsi.Contact[],
@@ -893,7 +1014,7 @@ async function handleContactsList(force: boolean) {
   return dedupe(key, async () => {
     const bundle = await Rsi.fetchContactsBundle();
     const fetchedAt = Date.now();
-    await cacheSet(key, { ...bundle, fetchedAt }, TTL.contacts);
+    await cacheSetAuthDep(key, { ...bundle, fetchedAt }, TTL.contacts);
     return { ...bundle, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -1535,7 +1656,12 @@ async function handleOrgsList(force: boolean) {
   }
   const key = 'orgs:list';
   if (!force) {
-    const cached = await cacheGet<{ orgs: Rsi.MyOrg[]; fetchedAt: number }>(key);
+    // Auth-dependent cache: cacheGetAuthDep invalidates the entry on
+    // read if the stored token fingerprint doesn't match the current
+    // cookie. Defends against the sign-out → sign-in race where the
+    // async wipe of cookies.onChanged hasn't completed before the
+    // next handler call.
+    const cached = await cacheGetAuthDep<{ orgs: Rsi.MyOrg[]; fetchedAt: number }>(key);
     if (cached) {
       return { ...cached, signedIn: true, fromCache: true };
     }
@@ -1543,7 +1669,7 @@ async function handleOrgsList(force: boolean) {
   return dedupe(key, async () => {
     const orgs = await Rsi.fetchMyOrgs();
     const fetchedAt = Date.now();
-    await cacheSet(key, { orgs, fetchedAt }, TTL.orgs);
+    await cacheSetAuthDep(key, { orgs, fetchedAt }, TTL.orgs);
     return { orgs, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -1561,13 +1687,13 @@ async function handleOrgsSection(
     return { orgs: [], signedIn: false, fetchedAt: Date.now(), fromCache: false };
   }
   if (!force) {
-    const cached = await cacheGet<{ orgs: Rsi.MyOrg[]; fetchedAt: number }>(key);
+    const cached = await cacheGetAuthDep<{ orgs: Rsi.MyOrg[]; fetchedAt: number }>(key);
     if (cached) return { ...cached, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
     const orgs = await fetcher();
     const fetchedAt = Date.now();
-    await cacheSet(key, { orgs, fetchedAt }, TTL.orgs);
+    await cacheSetAuthDep(key, { orgs, fetchedAt }, TTL.orgs);
     return { orgs, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -1632,7 +1758,7 @@ async function handleOrgMembers(message: Extract<RsiMessage, { type: 'orgs.membe
   }
   const key = `orgs:members:${sid}`;
   if (!force) {
-    const cached = await cacheGet<{
+    const cached = await cacheGetAuthDep<{
       sid: string;
       members: Rsi.OrgMember[];
       totalRows: number;
@@ -1643,7 +1769,7 @@ async function handleOrgMembers(message: Extract<RsiMessage, { type: 'orgs.membe
   const { members, totalRows } = await Rsi.fetchOrgMembers(token, sid);
   const fetchedAt = Date.now();
   const payload = { sid, members, totalRows, fetchedAt };
-  await cacheSet(key, payload, TTL.orgsMembers);
+  await cacheSetAuthDep(key, payload, TTL.orgsMembers);
   return { ...payload, signedIn: true, fromCache: false };
 }
 
@@ -1659,7 +1785,7 @@ async function handleDashboardSummary(force: boolean) {
   }
   const key = 'dashboard:summary';
   if (!force) {
-    const cached = await cacheGet<{ summary: Rsi.DashboardSummary | null; fetchedAt: number }>(key);
+    const cached = await cacheGetAuthDep<{ summary: Rsi.DashboardSummary | null; fetchedAt: number }>(key);
     if (cached) {
       return { ...cached, signedIn: true, fromCache: true };
     }
@@ -1667,7 +1793,7 @@ async function handleDashboardSummary(force: boolean) {
   return dedupe(key, async () => {
     const summary = await Rsi.fetchDashboardSummary();
     const fetchedAt = Date.now();
-    await cacheSet(key, { summary, fetchedAt }, TTL.dashboard);
+    await cacheSetAuthDep(key, { summary, fetchedAt }, TTL.dashboard);
     return { summary, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -1702,7 +1828,7 @@ async function handleBuyBackList(page: number, force: boolean) {
   }
   const key = `buyback:list:${page}`;
   if (!force) {
-    const cached = await cacheGet<{
+    const cached = await cacheGetAuthDep<{
       pledges: Rsi.BuyBackPledge[];
       hasNextPage: boolean;
       page: number;
@@ -1721,7 +1847,7 @@ async function handleBuyBackList(page: number, force: boolean) {
       page: result.page,
       fetchedAt,
     };
-    await cacheSet(key, payload, TTL.buyback);
+    await cacheSetAuthDep(key, payload, TTL.buyback);
     return { ...payload, signedIn: true as const, fromCache: false };
   });
 }
@@ -1731,7 +1857,13 @@ async function handleStatsSummary(force: boolean) {
   const token = await Rsi.readRsiToken();
 
   if (!force) {
-    const cached = await cacheGetValidated(key, CACHE_SCHEMAS['stats:summary']);
+    // Auth-fingerprinted read: stats:summary mixes a public field
+    // (crowdfund) with two account-specific fields (referral,
+    // buyBackTokens). Tagging with the current token's fingerprint
+    // ensures a sign-out → sign-in (or account flip) re-fetches all
+    // three fresh under the new session, instead of serving the
+    // previous account's referral / token-count.
+    const cached = await cacheGetValidatedAuthDep(key, CACHE_SCHEMAS['stats:summary']);
     if (cached) {
       return {
         crowdfund: cached.crowdfund as Rsi.CrowdfundStats,
@@ -1771,7 +1903,7 @@ async function handleStatsSummary(force: boolean) {
 
     const fetchedAt = Date.now();
     const payload = { crowdfund, referral, buyBackTokens, fetchedAt };
-    await cacheSet(key, payload, TTL.stats);
+    await cacheSetAuthDep(key, payload, TTL.stats);
     return { ...payload, signedIn: token !== null, fromCache: false };
   });
 }
@@ -1788,7 +1920,7 @@ async function handleSpectrumNotifications(force: boolean) {
   }
   const key = 'spectrum:notifications';
   if (!force) {
-    const cached = await cacheGet<{
+    const cached = await cacheGetAuthDep<{
       notifications: Rsi.SpectrumNotification[];
       fetchedAt: number;
     }>(key);
@@ -1799,7 +1931,7 @@ async function handleSpectrumNotifications(force: boolean) {
   return dedupe(key, async () => {
     const notifications = await Rsi.fetchSpectrumNotifications();
     const fetchedAt = Date.now();
-    await cacheSet(key, { notifications, fetchedAt }, TTL.spectrumNotifs);
+    await cacheSetAuthDep(key, { notifications, fetchedAt }, TTL.spectrumNotifs);
     return { notifications, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -2466,14 +2598,15 @@ async function withCsrfRetry<T>(op: () => Promise<T>): Promise<T> {
 async function handleCcuInit(force: boolean) {
   const key = 'pledge:ccuInit';
   if (!force) {
-    const cached = await cacheGet<{ catalogue: Rsi.CcuCatalogue; fetchedAt: number }>(key);
+    // CCU catalogue carries per-user `owned` flags — auth-dep.
+    const cached = await cacheGetAuthDep<{ catalogue: Rsi.CcuCatalogue; fetchedAt: number }>(key);
     if (cached) return { ...cached, fromCache: true };
   }
   return dedupe(key, async () => {
     const catalogue = await withCsrfRetry(() => Rsi.fetchCcuInit());
     const fetchedAt = Date.now();
     const payload = { catalogue, fetchedAt };
-    await cacheSet(key, payload, TTL.ccuInit);
+    await cacheSetAuthDep(key, payload, TTL.ccuInit);
     return { ...payload, fromCache: false };
   });
 }
@@ -2485,7 +2618,9 @@ async function handleCcuTargets(
   const force = message.force ?? false;
   const key = `pledge:ccuTargets:${fromId ?? 'all'}`;
   if (!force) {
-    const cached = await cacheGet<{
+    // ccuTargets' route list depends on what the user has in their
+    // hangar — auth-dep.
+    const cached = await cacheGetAuthDep<{
       fromId: number | null;
       result: Rsi.CcuTargetsResult;
       fetchedAt: number;
@@ -2496,7 +2631,7 @@ async function handleCcuTargets(
     const result = await withCsrfRetry(() => Rsi.fetchCcuTargets(fromId));
     const fetchedAt = Date.now();
     const payload = { fromId, result, fetchedAt };
-    await cacheSet(key, payload, TTL.ccuTargets);
+    await cacheSetAuthDep(key, payload, TTL.ccuTargets);
     return { ...payload, fromCache: false };
   });
 }
@@ -2554,14 +2689,16 @@ async function handlePledgeCart(
   const key = 'pledge:cart';
   const force = message.force ?? false;
   if (!force) {
-    const cached = await cacheGet<{ cart: Rsi.PledgeCart; fetchedAt: number }>(key);
+    // Cart is per-account — sign-out / sign-in flips it completely
+    // (empty or someone else's previous guest cart). Auth-dep.
+    const cached = await cacheGetAuthDep<{ cart: Rsi.PledgeCart; fetchedAt: number }>(key);
     if (cached) return { ...cached, fromCache: true };
   }
   return dedupe(key, async () => {
     const cart = await Rsi.fetchPledgeCart();
     const fetchedAt = Date.now();
     const payload = { cart, fetchedAt };
-    await cacheSet(key, payload, TTL.cart);
+    await cacheSetAuthDep(key, payload, TTL.cart);
     return { ...payload, fromCache: false };
   });
 }
@@ -2903,13 +3040,13 @@ async function handleSpectrumLobbies(force: boolean) {
   }
   const key = 'spectrum:lobbies';
   if (!force) {
-    const cached = await cacheGet<{ lobbies: Rsi.SpectrumLobby[]; fetchedAt: number }>(key);
+    const cached = await cacheGetAuthDep<{ lobbies: Rsi.SpectrumLobby[]; fetchedAt: number }>(key);
     if (cached) return { ...cached, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
     const lobbies = await Rsi.fetchSpectrumLobbies();
     const fetchedAt = Date.now();
-    await cacheSet(key, { lobbies, fetchedAt }, TTL.spectrumNotifs);
+    await cacheSetAuthDep(key, { lobbies, fetchedAt }, TTL.spectrumNotifs);
     return { lobbies, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -2940,7 +3077,7 @@ async function handleSpectrumThreads(force: boolean) {
   }
   const key = 'spectrum:threads';
   if (!force) {
-    const cached = await cacheGet<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
+    const cached = await cacheGetAuthDep<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
     if (cached) {
       return { ...cached, signedIn: true, fromCache: true };
     }
@@ -2954,7 +3091,7 @@ async function handleSpectrumThreads(force: boolean) {
     // which missed everything except outright announcements (#45).
     const threads = await Rsi.fetchDevTrackerPosts();
     const fetchedAt = Date.now();
-    await cacheSet(key, { threads, fetchedAt }, TTL.spectrum);
+    await cacheSetAuthDep(key, { threads, fetchedAt }, TTL.spectrum);
     return { threads, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -2971,13 +3108,13 @@ async function handleSpectrumTrending(force: boolean) {
   }
   const key = 'spectrum:trending';
   if (!force) {
-    const cached = await cacheGet<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
+    const cached = await cacheGetAuthDep<{ threads: Rsi.SpectrumThread[]; fetchedAt: number }>(key);
     if (cached) return { ...cached, signedIn: true, fromCache: true };
   }
   return dedupe(key, async () => {
     const threads = await Rsi.fetchTrendingThreads(token);
     const fetchedAt = Date.now();
-    await cacheSet(key, { threads, fetchedAt }, TTL.spectrum);
+    await cacheSetAuthDep(key, { threads, fetchedAt }, TTL.spectrum);
     return { threads, signedIn: true as const, fetchedAt, fromCache: false };
   });
 }
@@ -3568,7 +3705,7 @@ async function writeSpectrumLobbiesCache(lobbies: Rsi.SpectrumLobby[]): Promise<
 async function writeSpectrumNotificationsCache(
   notifications: Rsi.SpectrumNotification[],
 ): Promise<void> {
-  await cacheSet(
+  await cacheSetAuthDep(
     'spectrum:notifications',
     { notifications, fetchedAt: Date.now() },
     TTL.spectrumNotifs,
@@ -3581,7 +3718,11 @@ async function writeContactsListCache(bundle: Rsi.ContactsBundle): Promise<void>
   // reads all three and crashes with "Cannot read properties of
   // undefined" on `.length` if we only seed the contacts array. Bug
   // shipped in 1.4.0; fixed here.
-  await cacheSet(
+  // Auth-dep cache: tagged with the current Rsi-Token fingerprint so
+  // a subsequent sign-out → sign-in (or a flip to a different account)
+  // invalidates this entry on read instead of serving the previous
+  // session's contacts.
+  await cacheSetAuthDep(
     'contacts:list',
     {
       contacts: bundle.contacts,

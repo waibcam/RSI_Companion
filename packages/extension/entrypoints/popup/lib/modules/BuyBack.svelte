@@ -22,7 +22,6 @@
   let fromCache = $state(false);
   let query = $state('');
   let hideCcu = $state(false);
-  let sentinel = $state<HTMLElement | null>(null);
 
   async function loadPage(page: number, force = false) {
     if (loading) return;
@@ -34,7 +33,18 @@
       if (page === 1) {
         pledges = res.pledges;
       } else {
-        pledges = [...pledges, ...res.pledges];
+        // De-dupe by pledge id when appending. RSI's buyback
+        // pagination occasionally echoes a pledge across adjacent
+        // pages — typically when the user (or a poll) melts /
+        // restores something between two page fetches and the row
+        // shifts across the page boundary. Without this filter the
+        // {#each as p (p.id)} block in the template below crashed
+        // with svelte/each_key_duplicate (reported by MoBIoS [RHLD]
+        // on 2026-05-04). Keeping the first occurrence preserves
+        // RSI's server-side ordering on the page already rendered.
+        const existing = new Set(pledges.map((p) => p.id));
+        const fresh = res.pledges.filter((p) => !existing.has(p.id));
+        pledges = [...pledges, ...fresh];
       }
       fromCache = res.fromCache;
       hasMore = res.hasNextPage;
@@ -54,18 +64,27 @@
     loadPage(1, true);
   }
 
+  // Scroll-event-based infinite scroll. See the long rationale in
+  // CommLink.svelte's matching block — IntersectionObserver was
+  // missing fires on the "still in view after load completes" steady
+  // state, even with the reactive split we tried first.
+  let scrollContainer = $state<HTMLElement | null>(null);
+  const NEAR_BOTTOM_PX = 600;
+  function isNearBottom(): boolean {
+    const el = scrollContainer;
+    if (!el) return false;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }
+  function onScroll(): void {
+    if (isNearBottom() && !loading && hasMore && !query.trim()) {
+      void loadPage(nextPage);
+    }
+  }
   $effect(() => {
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        if (loading || !hasMore || query.trim()) return;
-        loadPage(nextPage);
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    void pledges.length;
+    if (!loading && hasMore && !query.trim() && isNearBottom()) {
+      void loadPage(nextPage);
+    }
   });
 
   // Plain text search across title + remaining fields ("Last Modified",
@@ -125,7 +144,11 @@
     {/snippet}
   </ModuleHeader>
 
-  <div class="flex-1 overflow-y-auto p-3">
+  <div
+    class="flex-1 overflow-y-auto p-3"
+    bind:this={scrollContainer}
+    onscroll={onScroll}
+  >
     {#if authState.signedIn === false || signedIn === false}
       <SignInPrompt label="Buy-Back" />
     {:else if authState.signedIn === null}
@@ -176,7 +199,13 @@
                 <p class="line-clamp-2 text-xs font-medium text-slate-100">{p.title}</p>
                 {#if p.fields.length > 0}
                   <dl class="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-                    {#each p.fields as f (f.label)}
+                    <!-- Key combines index + label so RSI emitting
+                         two fields with the same label on a single
+                         pledge can't trigger svelte/each_key_duplicate
+                         the way the parent pledge list did before
+                         the dedupe in loadPage(). Defensive — we've
+                         never observed this in practice. -->
+                    {#each p.fields as f, i (`${i}-${f.label}`)}
                       <dt class="text-slate-500">{f.label}</dt>
                       <dd class="truncate text-slate-300">{f.value}</dd>
                     {/each}
@@ -212,10 +241,7 @@
       {/if}
 
       {#if pledges.length > 0 && !query.trim()}
-        <div
-          bind:this={sentinel}
-          class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500"
-        >
+        <div class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500">
           {#if loading}
             <Loader2 class="size-4 animate-spin" />
           {:else if !hasMore}

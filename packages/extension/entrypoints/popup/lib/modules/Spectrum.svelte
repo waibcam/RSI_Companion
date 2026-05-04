@@ -996,6 +996,11 @@
     try {
       await sendRsiMessage({ type: 'spectrum.markRead' });
       notifs = notifs.map((n) => ({ ...n, read: true }));
+      // Clear the toolbar badge too — the "mark all read" button is
+      // the strongest possible "I've seen them" signal. Without this
+      // the badge kept the previous count until the next module
+      // mount.
+      void notifyState.markSeen('spectrum');
     } catch (e) {
       notifsError = errorMessage(e);
     } finally {
@@ -1341,6 +1346,17 @@
   function switchTab(next: Tab) {
     tabP.value = next;
     if (signedIn === false) return;
+    // Clear the Spectrum badge as soon as the user lands on the
+    // Notifications sub-tab — viewing the list IS the "seen" signal.
+    // Without this, the badge survived even after the user looked
+    // through every notif (reported by @!DakotaVosselman on
+    // 2026-05-04: "I have to click on Notes multiple times for the
+    // numbers on there to clear up"). The previous code only cleared
+    // the badge on Spectrum module FIRST mount via the kicked effect
+    // — sub-tab switches inside Spectrum did not re-fire it.
+    if (next === 'notifications') {
+      void notifyState.markSeen('spectrum');
+    }
     if (next === 'notifications' && !notifsLoaded) {
       loadNotifications();
     } else if (next === 'trending' && !trendingLoaded) {

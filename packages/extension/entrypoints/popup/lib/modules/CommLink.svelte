@@ -28,6 +28,51 @@
   // with a stale result set + empty hits on re-open.
   let text = $state('');
 
+  // Per-URL "image is fully decoded in browser cache" tracker. We
+  // preload each card's hero image via an off-DOM `new Image()`
+  // object first; only once `load` fires do we add the URL to this
+  // set, which mounts the visible `<img>` element below. The visible
+  // img then pulls from the browser cache and decodes synchronously —
+  // no partial-paint possible.
+  //
+  // Why preload off-DOM instead of revealing on load with opacity?
+  // The previous opacity-flip approach was racy: a parent re-render
+  // (filter change, query input, scroll) re-applied the static
+  // `style="opacity: 0"` after the action had flipped it to 1, and
+  // also `loading="lazy"` interacts badly with action timing —
+  // Chrome can paint partial scanlines before the load event
+  // resolves. Reported by the maintainer 2026-05-04 with screenshots
+  // showing half-loaded JPEGs surviving even past load completion
+  // until the user hovered (forcing a layout/repaint). Conditional
+  // mount via this set side-steps every one of those failure modes.
+  let imageLoaded = $state<Set<string>>(new Set());
+
+  /** Kick off an off-DOM preload for one image URL. No-op if already
+   *  in the loaded set. Adds the URL on success or on error — error
+   *  paths still mount the visible img so a broken image isn't stuck
+   *  forever behind the skeleton (the broken-img icon is fine; an
+   *  endless skeleton is not). */
+  function preloadImage(url: string): void {
+    if (imageLoaded.has(url)) return;
+    const probe = new Image();
+    const done = (): void => {
+      imageLoaded = new Set([...imageLoaded, url]);
+    };
+    probe.addEventListener('load', done, { once: true });
+    probe.addEventListener('error', done, { once: true });
+    probe.src = url;
+  }
+
+  // As the article list changes (initial load, filter changes, page
+  // 2 paginate-on-scroll), kick a preload for every hero image we
+  // haven't seen yet. The Set's `has` check inside `preloadImage`
+  // keeps this idempotent.
+  $effect(() => {
+    for (const a of articles) {
+      if (a.image) preloadImage(a.image);
+    }
+  });
+
   // Pending (edit-buffer) copies of the filters so the user can tweak multiple
   // controls before hitting Apply. Committed filters drive the fetch and the
   // persisted values; the pending copies drive the form inputs.
@@ -44,7 +89,6 @@
   let error = $state<string | null>(null);
   let fromCache = $state(false);
   let hasMore = $state(true);
-  let sentinel = $state<HTMLElement | null>(null);
   let filterOpen = $state(false);
 
   // Whether any server-side filter is active. Used by the infinite-scroll
@@ -136,18 +180,63 @@
     filterOpen = true;
   }
 
+  // Infinite-scroll: scroll-event-driven, with a "drain on load
+  // complete" effect as a backup.
+  //
+  // Why scroll-event over IntersectionObserver? Reported by the
+  // maintainer twice on 2026-05-04 — IO-based approaches kept
+  // missing fires:
+  //   - IO only fires on enter/exit *transitions*, not while the
+  //     sentinel is steadily in view. If `loading=true` swallows the
+  //     first event and the load completes WITHOUT the sentinel
+  //     scrolling out of view (typical on small popup with rapid
+  //     fetch), no fresh enter event is generated and the user has
+  //     to scroll back-and-forth to trigger a new one.
+  //   - The reactive split (sentinelInView state + drain effect) we
+  //     tried first fixed that in theory but the user reported it
+  //     still felt off — likely IO update-timing relative to Svelte
+  //     reactivity, or the popup's nested overflow-y-auto vs
+  //     `root: null` having a less-predictable interaction than
+  //     reading scrollTop directly.
+  //
+  // Direct scroll-event check is just `scrollHeight - scrollTop -
+  // clientHeight < threshold` — straightforward, no IO root /
+  // rootMargin / clipping subtleties to reason about. Fires on every
+  // scroll event (Chrome throttles those automatically; we don't
+  // need our own throttle since the work is gated by `loading`).
+  //
+  // The drain effect fires loadPage AFTER each fetch completes if
+  // the user is still close to the bottom — covers the case where
+  // a slow first fetch finishes while the user has stopped scrolling
+  // but is still near the end (no fresh scroll event would fire).
+  let scrollContainer = $state<HTMLElement | null>(null);
+  const NEAR_BOTTOM_PX = 600;
+  function isNearBottom(): boolean {
+    const el = scrollContainer;
+    if (!el) return false;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+  }
+  function onScroll(): void {
+    if (isNearBottom() && !loading && hasMore) {
+      void loadPage(nextPage);
+    }
+  }
   $effect(() => {
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        if (loading || !hasMore) return;
-        loadPage(nextPage);
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    // Drain on load-complete: when `loading` flips back to false, if
+    // we're still within NEAR_BOTTOM_PX of the bottom, fire the next
+    // page. Without this, a user who scrolled to the bottom and
+    // stopped (no further scroll events) wouldn't get the next batch
+    // after the first one arrived.
+    //
+    // `articles.length` is included as a dependency so this effect
+    // re-runs after the new batch is rendered (DOM update changes
+    // scrollHeight / clientHeight). Bare `_=articles.length` is a
+    // common Svelte 5 pattern for "depend on this state without
+    // reading it for logic".
+    void articles.length;
+    if (!loading && hasMore && isNearBottom()) {
+      void loadPage(nextPage);
+    }
   });
 
   // Snapshot the unread count BEFORE markSeen clears it. The badge on the
@@ -295,7 +384,11 @@
     </div>
   {/if}
 
-  <div class="flex-1 overflow-y-auto p-3">
+  <div
+    class="flex-1 overflow-y-auto p-3"
+    bind:this={scrollContainer}
+    onscroll={onScroll}
+  >
     {#if error}
       <div
         class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
@@ -323,13 +416,25 @@
                 {isNew ? 'ring-sky-500/60' : ''}"
             >
               {#if a.image}
-                <div class="aspect-[16/9] overflow-hidden bg-slate-950">
-                  <img
-                    src={a.image}
-                    alt=""
-                    loading="lazy"
-                    class="size-full object-cover transition group-hover:scale-105"
-                  />
+                <!-- Show a pulsing skeleton until the image is fully
+                     decoded in the browser cache (tracked by
+                     `imageLoaded` above via off-DOM preload). Once
+                     loaded, mount the real <img> — it hits the cache
+                     and renders instantly, no partial paint possible.
+                     `decoding="sync"` because we KNOW the bytes are
+                     in cache at this point; sync decode is a single
+                     blocking call with no perceptible cost. -->
+                <div class="relative aspect-[16/9] overflow-hidden bg-slate-950">
+                  {#if imageLoaded.has(a.image)}
+                    <img
+                      src={a.image}
+                      alt=""
+                      decoding="sync"
+                      class="size-full object-cover transition group-hover:scale-105"
+                    />
+                  {:else}
+                    <div class="absolute inset-0 animate-pulse bg-slate-800/40"></div>
+                  {/if}
                 </div>
               {/if}
               <div class="p-2">
@@ -363,10 +468,7 @@
       {/if}
 
       {#if articles.length > 0}
-        <div
-          bind:this={sentinel}
-          class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500"
-        >
+        <div class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500">
           {#if loading}
             <Loader2 class="size-4 animate-spin" />
           {:else if !hasMore}
