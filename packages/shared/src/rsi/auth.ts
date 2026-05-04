@@ -70,6 +70,31 @@ const FriendRequest = z
 // Native Spectrum notification — rich structured shape with text_tokens that
 // templating expands into the human-readable line. We preserve the raw
 // payload via passthrough so type-specific renderers can reach any token.
+//
+// `text_tokens` and `link_tokens` defensive shape: RSI's backend
+// sometimes serialises an empty associative array as a JSON array
+// (`[]`) instead of an object (`{}`). Reported on Discord on
+// 2026-05-04 — one notification at `data.notifications[40].link_tokens`
+// arrived as `[]` and our previous `z.record(...)` schema rejected
+// the whole identify response, which the popup interprets as
+// "signed out", which made sign-in spuriously fail until the user
+// did a Force-identity-check / close-window dance.
+//
+// `phpEmptyArrayAsRecord` accepts either shape and normalises an
+// empty array to an empty object so downstream code can keep
+// reading these as records without checking `Array.isArray` every
+// time. Verified that real-world payloads only emit `[]` when the
+// dictionary is empty — when it has any keys it's always an object,
+// matching PHP's `json_encode` behaviour with stdClass vs assoc
+// array.
+const phpEmptyArrayAsRecord = z
+  .union([
+    z.record(z.string(), z.unknown()),
+    z.array(z.unknown()).transform(() => ({}) as Record<string, unknown>),
+  ])
+  .nullable()
+  .optional();
+
 const RawNotification = z
   .object({
     id: z.union([z.string(), z.number()]).transform((v) => String(v)),
@@ -79,8 +104,8 @@ const RawNotification = z
     grouped: z.coerce.boolean().default(false),
     unread: z.union([z.boolean(), z.number(), z.string()]).optional(),
     thumbnail: z.string().nullable().optional(),
-    text_tokens: z.record(z.string(), z.unknown()).nullable().optional(),
-    link_tokens: z.record(z.string(), z.unknown()).nullable().optional(),
+    text_tokens: phpEmptyArrayAsRecord,
+    link_tokens: phpEmptyArrayAsRecord,
   })
   .passthrough();
 
@@ -126,6 +151,51 @@ const arrayOrRecord = <T extends z.ZodTypeAny>(inner: T) =>
       return v;
     },
     z.array(inner).default([]),
+  );
+
+/** Same null/object/array normalisation as `arrayOrRecord`, but each
+ *  entry is parsed individually with `safeParse` and the failing
+ *  ones are dropped with a console warning instead of taking down
+ *  the whole response.
+ *
+ *  Reserved for high-churn collections where RSI ships new
+ *  notification types / token shapes faster than we can update the
+ *  schema. Reported on Discord on 2026-05-04: ONE notification
+ *  with `link_tokens: []` (the PHP empty-object-as-array quirk)
+ *  rejected the entire identify response, which the popup interprets
+ *  as "signed out" — sign-in spuriously failed for everyone hitting
+ *  that account. Tolerant parsing trades a single dropped row for
+ *  keeping the rest of the user's session healthy. */
+const arrayOrRecordTolerant = <T extends z.ZodTypeAny>(
+  inner: T,
+  context: string,
+) =>
+  z.preprocess(
+    (v) => {
+      if (v == null) return [];
+      if (Array.isArray(v)) return v;
+      if (typeof v === 'object') return Object.values(v as Record<string, unknown>);
+      return v;
+    },
+    z
+      .array(z.unknown())
+      .default([])
+      .transform((arr): z.infer<T>[] => {
+        const out: z.infer<T>[] = [];
+        for (const item of arr) {
+          const parsed = inner.safeParse(item);
+          if (parsed.success) {
+            out.push(parsed.data);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[auth] ${context}: dropped malformed entry`,
+              parsed.error.issues,
+            );
+          }
+        }
+        return out;
+      }),
   );
 
 const Channel = z.object({
@@ -190,7 +260,11 @@ const IdentifyResponse = z.object({
       friends: arrayOrRecord(Friend),
       friend_requests: arrayOrRecord(FriendRequest),
       communities: arrayOrRecord(Community),
-      notifications: arrayOrRecord(RawNotification),
+      // Tolerant: a single malformed notification used to take the
+      // whole identify response down with it, which the popup
+      // surfaces as "signed out". Bad rows are now dropped with a
+      // console warning instead.
+      notifications: arrayOrRecordTolerant(RawNotification, 'notifications'),
       private_lobbies: arrayOrRecord(PrivateLobby),
       notifications_unread: z.coerce.number().int().default(0),
     })
