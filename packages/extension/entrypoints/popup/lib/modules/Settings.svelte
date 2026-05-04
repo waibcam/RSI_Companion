@@ -31,6 +31,7 @@
     Database,
     Eye,
     EyeOff,
+    Heart,
     Info,
     Loader2,
     Maximize2,
@@ -51,6 +52,7 @@
     isTabMode,
     MODULES,
     POPUP_SIZE_LIMITS,
+    ratePromptState,
     settingsState,
     type ModuleId,
     type SettingsTabId,
@@ -881,6 +883,68 @@
             Prime CCU now
           </button>
         </div>
+      </section>
+      {/if}
+
+      <!-- =================================================== UI TRIGGERS ====== -->
+      <!-- QA / debug helpers for transient UI surfaces. The "Trigger
+           rate prompt" button bypasses the 7-day-since-install + 5-popup-
+           opens gates so the maintainer can preview the banner without
+           waiting a week. The "Reset" button wipes the rate-prompt state
+           keys so the regular gates re-engage from scratch (useful
+           after testing a 'liked' / 'disliked' / 'never' click and
+           wanting to re-arm). -->
+      {#if tab === 'diagnostics'}
+      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+        <header class="mb-2 flex items-center gap-2">
+          <Heart class="size-4 text-pink-400" />
+          <h2 class="text-sm font-semibold text-slate-100">UI prompts (testing)</h2>
+        </header>
+        <p class="mb-2 text-[11px] text-slate-400">
+          Surfaces hidden behind time / usage gates. Useful for QA;
+          end users normally see them only after a week of regular
+          use.
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onclick={() => ratePromptState.showForTesting()}
+            class="inline-flex items-center gap-1 rounded-md bg-pink-500/20 px-2 py-1 text-[11px] font-semibold text-pink-300 ring-1 ring-pink-500/40 transition hover:bg-pink-500/30"
+            title="Show the 'Do you like the extension?' banner now, ignoring the install-age and popup-open gates."
+          >
+            <Heart class="size-3" />
+            Trigger rate prompt
+          </button>
+          <button
+            type="button"
+            onclick={() => ratePromptState.reset()}
+            class="inline-flex items-center gap-1 rounded-md bg-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-200 ring-1 ring-slate-600 transition hover:bg-slate-600"
+            title="Wipe firstSeenAt / opens / response so the regular gates re-engage from scratch."
+          >
+            <RefreshCw class="size-3" />
+            Reset rate-prompt state
+          </button>
+        </div>
+        <!-- Live readout so the maintainer can see what the gates
+             are currently telling the prompt. Reactive — updates
+             when the buttons above mutate state, or when the user
+             dismisses the banner. -->
+        <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] sm:grid-cols-4">
+          <dt class="text-slate-500">First seen</dt>
+          <dd class="font-mono text-slate-300">
+            {ratePromptState.firstSeenAt === 0
+              ? '—'
+              : new Date(ratePromptState.firstSeenAt).toLocaleDateString()}
+          </dd>
+          <dt class="text-slate-500">Popup opens</dt>
+          <dd class="font-mono text-slate-300">{ratePromptState.opens}</dd>
+          <dt class="text-slate-500">Response</dt>
+          <dd class="font-mono text-slate-300">{ratePromptState.response ?? 'null'}</dd>
+          <dt class="text-slate-500">Showing</dt>
+          <dd class="font-mono {ratePromptState.shouldShow ? 'text-emerald-300' : 'text-slate-500'}">
+            {ratePromptState.shouldShow ? 'yes' : 'no'}
+          </dd>
+        </dl>
       </section>
       {/if}
 

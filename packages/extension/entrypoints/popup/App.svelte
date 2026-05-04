@@ -2,6 +2,7 @@
   import { AlertTriangle, Loader2, RefreshCw, X } from 'lucide-svelte';
   import type { Component } from 'svelte';
   import Header from './lib/components/Header.svelte';
+  import RatePrompt from './lib/components/RatePrompt.svelte';
   import Sidebar from './lib/components/Sidebar.svelte';
   import StatusBanner from './lib/components/StatusBanner.svelte';
   import {
@@ -9,6 +10,7 @@
     getEffectiveModules,
     isTabMode,
     MODULES,
+    recordPopupOpen,
     settingsState,
     type ModuleId,
   } from './lib/state.svelte';
@@ -71,6 +73,12 @@
   // what's waiting on the server right now, not whatever the alarm caught
   // last (which could be up to 10 minutes stale).
   void notifyState.pollNow();
+
+  // Bookkeeping for the "Do you like the extension?" banner. Runs once
+  // per popup open (per App mount). Sets `firstSeenAt` if missing,
+  // otherwise increments the open counter — both used by RatePrompt to
+  // gate when the banner appears.
+  recordPopupOpen();
 
   const current = $derived(MODULES.find((m) => m.id === appState.activeModule)!);
   const activeModulePromise = $derived(loadModule(current.id));
@@ -178,6 +186,7 @@
 >
   <Header />
   <StatusBanner />
+  <RatePrompt />
 
   <div class="flex flex-1 overflow-hidden">
     <Sidebar />

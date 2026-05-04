@@ -22,6 +22,7 @@
   import { sendRsiMessage } from '@rsi-companion/shared';
   import {
     AlertTriangle,
+    ArrowUp,
     BookOpen,
     Bug,
     Check,
@@ -36,8 +37,14 @@
     LifeBuoy,
     MessageSquare,
     Shield,
+    Star,
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
+  import {
+    COMMUNITY_HUB_POST_URL,
+    storeName,
+    storeReviewUrl,
+  } from '../links';
   import { appState } from '../state.svelte';
 
   const REPO_URL = 'https://github.com/waibcam/RSI_Companion';
@@ -266,6 +273,58 @@
               <p class="truncate text-[10px] text-slate-500">Community channel</p>
             </div>
             <ExternalLink class="size-3 shrink-0 text-slate-500" />
+          </a>
+        </div>
+      </section>
+
+      <!-- =================================================== SPREAD THE WORD == -->
+      <!-- Always-visible counterparts to the timed RatePrompt banner.
+           Users who want to support the extension don't have to wait
+           7 days for the prompt to appear — they can land here and
+           click either CTA whenever. Both buttons just open the
+           destination in a new tab; we never POST anything on the
+           user's behalf. -->
+      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+        <header class="mb-2 flex items-center gap-2">
+          <Heart class="size-4 text-pink-400" />
+          <h2 class="text-sm font-semibold text-slate-100">Help spread the word</h2>
+        </header>
+        <p class="mb-2 text-[11px] text-slate-400">
+          The extension is free and ad-free. If it saves you time,
+          a 30-second upvote on the RSI Community Hub or a quick
+          rating on the {storeName()} listing helps it reach more
+          Star Citizens.
+        </p>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <a
+            href={COMMUNITY_HUB_POST_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-200 transition hover:border-amber-500/60 hover:bg-amber-500/20"
+          >
+            <ArrowUp class="size-4 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold">Upvote on RSI Community Hub</p>
+              <p class="truncate text-[10px] text-amber-300/70">
+                Opens the post — click Upvote there
+              </p>
+            </div>
+            <ExternalLink class="size-3 shrink-0 text-amber-300/60" />
+          </a>
+          <a
+            href={storeReviewUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-emerald-200 transition hover:border-emerald-500/60 hover:bg-emerald-500/20"
+          >
+            <Star class="size-4 shrink-0" />
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold">Rate on {storeName()}</p>
+              <p class="truncate text-[10px] text-emerald-300/70">
+                Leave a quick rating or review
+              </p>
+            </div>
+            <ExternalLink class="size-3 shrink-0 text-emerald-300/60" />
           </a>
         </div>
       </section>
