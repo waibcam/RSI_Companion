@@ -48,6 +48,21 @@ function createNotifyState() {
 
   async function markSeen(module: Notify.NotifyModule): Promise<void> {
     if (state.counts[module] === 0) return;
+    // Optimistic local update: zero the count immediately so the
+    // toolbar badge and sidebar pill drop visually before the BG
+    // round-trip resolves. Without this, fast users (Dakota report
+    // 2026-05-04: "I have to click on Notes twice") would close the
+    // popup before the BG's markSeen response landed and the next
+    // popup-open would still see the old number until init() pulled
+    // fresh state from storage. The await below overwrites this
+    // optimistic state with the authoritative one — if the BG
+    // disagrees, the badge briefly drops then reappears, but in
+    // practice the BG always agrees (it's just persisting what we
+    // optimistically set locally).
+    state = {
+      ...state,
+      counts: { ...state.counts, [module]: 0 },
+    };
     try {
       const next = await sendRsiMessage({ type: 'notify.markSeen', module });
       state = next;

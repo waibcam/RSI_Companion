@@ -71,13 +71,53 @@ export const EMPTY_COUNTS: NotifyCounts = {
   'release-notes': 0,
 };
 
-export function totalUnread(counts: NotifyCounts): number {
-  return (
-    counts.spectrum +
-    counts['comm-link'] +
-    counts['patch-notes'] +
-    counts.roadmap +
-    counts.contacts +
-    counts['release-notes']
-  );
+/** Default set of modules that contribute to the toolbar badge total
+ *  when the user hasn't customised the preference. All five
+ *  RSI / Star Citizen content surfaces; the extension's own
+ *  `release-notes` is intentionally excluded by default — Etyx
+ *  reported on Discord (2026-05-04) that internal changelog updates
+ *  shouldn't pollute the count of "stuff happening on RSI". Users
+ *  who want to include it can flip the toggle in
+ *  Settings → Appearance → Toolbar badge. */
+export const BADGE_MODULES_DEFAULT: ReadonlyArray<NotifyModule> = [
+  'spectrum',
+  'comm-link',
+  'patch-notes',
+  'roadmap',
+  'contacts',
+];
+
+/** Every module the badge could possibly contribute from. Drives
+ *  the Settings UI (one checkbox per entry). Order matters — it's
+ *  the order the checkboxes render. */
+export const BADGE_MODULES_ALL: ReadonlyArray<NotifyModule> = [
+  'spectrum',
+  'comm-link',
+  'patch-notes',
+  'roadmap',
+  'contacts',
+  'release-notes',
+];
+
+/** Sum of unread counts that contribute to the TOOLBAR BADGE.
+ *
+ *  `modules` is the list of NotifyModule keys to include in the sum.
+ *  Pass the user's preference (read from `chrome.storage.local`
+ *  under `settings:badgeModules`) to honour their per-module opt-in
+ *  / opt-out. Defaults to `BADGE_MODULES_DEFAULT` (the five RSI
+ *  modules, release-notes excluded) — matches what the badge did
+ *  hard-coded before this preference was introduced.
+ *
+ *  Modules NOT in the list are still counted on their per-module
+ *  sidebar pill. The list only controls what bubbles up to the
+ *  global toolbar badge. */
+export function totalUnread(
+  counts: NotifyCounts,
+  modules: ReadonlyArray<NotifyModule> = BADGE_MODULES_DEFAULT,
+): number {
+  let sum = 0;
+  for (const m of modules) {
+    sum += counts[m] ?? 0;
+  }
+  return sum;
 }

@@ -28,50 +28,63 @@
   // with a stale result set + empty hits on re-open.
   let text = $state('');
 
-  // Per-URL "image is fully decoded in browser cache" tracker. We
-  // preload each card's hero image via an off-DOM `new Image()`
-  // object first; only once `load` fires do we add the URL to this
-  // set, which mounts the visible `<img>` element below. The visible
-  // img then pulls from the browser cache and decodes synchronously —
-  // no partial-paint possible.
-  //
-  // Why preload off-DOM instead of revealing on load with opacity?
-  // The previous opacity-flip approach was racy: a parent re-render
-  // (filter change, query input, scroll) re-applied the static
-  // `style="opacity: 0"` after the action had flipped it to 1, and
-  // also `loading="lazy"` interacts badly with action timing —
-  // Chrome can paint partial scanlines before the load event
-  // resolves. Reported by the maintainer 2026-05-04 with screenshots
-  // showing half-loaded JPEGs surviving even past load completion
-  // until the user hovered (forcing a layout/repaint). Conditional
-  // mount via this set side-steps every one of those failure modes.
-  let imageLoaded = $state<Set<string>>(new Set());
+  /** Svelte action: fully load + decode the image on a SINGLE `<img>`
+   *  element, kept hidden under a skeleton until decode resolves.
+   *
+   *  History of attempts at this — in case anyone tries to "simplify"
+   *  by going back to one of the earlier shapes:
+   *
+   *  1. inline `style="opacity: 0"` + onload — broken because parent
+   *     re-renders re-applied the static style after onload flipped
+   *     it. Also `load` fires post-download but pre-decode, so the
+   *     reveal happened during the decode and showed partial paints.
+   *  2. off-DOM probe (`new Image()`) preload via `decode()`, then
+   *     mount a `<div>` with background-image — broken because the
+   *     `<div>` triggers a SEPARATE fetch + decode chain (HTTP cache
+   *     hits, decode cache doesn't transfer). The probe's decode
+   *     work was discarded; the mount-time decode could still paint
+   *     partial scanlines. Especially visible on COLD CDN entries
+   *     (older Comm-Links) where the second fetch is slow enough
+   *     for the partial-decode to be perceptible.
+   *
+   *  Current approach: one `<img>` element from creation through
+   *  display. Set its src, wait for `decode()` (single fetch +
+   *  single decode on this exact element), then reveal via opacity.
+   *  No double-fetch, no parent-rerender race. Reported by
+   *  @!DakotaVosselman & maintainer 2026-05-04. */
+  function loadAfterDecode(node: HTMLImageElement, src: string) {
+    let currentSrc = src;
+    node.style.opacity = '0';
+    node.style.transition = 'opacity 200ms ease';
 
-  /** Kick off an off-DOM preload for one image URL. No-op if already
-   *  in the loaded set. Adds the URL on success or on error — error
-   *  paths still mount the visible img so a broken image isn't stuck
-   *  forever behind the skeleton (the broken-img icon is fine; an
-   *  endless skeleton is not). */
-  function preloadImage(url: string): void {
-    if (imageLoaded.has(url)) return;
-    const probe = new Image();
-    const done = (): void => {
-      imageLoaded = new Set([...imageLoaded, url]);
+    const apply = (url: string): void => {
+      if (!url) return;
+      // Setting src starts the fetch (browser handles HTTP caching).
+      // decode() resolves only when the image is fully fetched AND
+      // fully decoded — never during partial decode, which is the
+      // exact window we need to hide.
+      node.src = url;
+      const onResolved = (): void => {
+        // Guard against late resolution after the action's been
+        // updated to a new URL — we don't want to reveal an obsolete
+        // image.
+        if (currentSrc === url) node.style.opacity = '1';
+      };
+      node.decode().then(onResolved).catch(onResolved);
     };
-    probe.addEventListener('load', done, { once: true });
-    probe.addEventListener('error', done, { once: true });
-    probe.src = url;
-  }
 
-  // As the article list changes (initial load, filter changes, page
-  // 2 paginate-on-scroll), kick a preload for every hero image we
-  // haven't seen yet. The Set's `has` check inside `preloadImage`
-  // keeps this idempotent.
-  $effect(() => {
-    for (const a of articles) {
-      if (a.image) preloadImage(a.image);
-    }
-  });
+    apply(src);
+
+    return {
+      update(newSrc: string): void {
+        if (newSrc !== currentSrc) {
+          currentSrc = newSrc;
+          node.style.opacity = '0';
+          apply(newSrc);
+        }
+      },
+    };
+  }
 
   // Pending (edit-buffer) copies of the filters so the user can tweak multiple
   // controls before hitting Apply. Committed filters drive the fetch and the
@@ -416,25 +429,20 @@
                 {isNew ? 'ring-sky-500/60' : ''}"
             >
               {#if a.image}
-                <!-- Show a pulsing skeleton until the image is fully
-                     decoded in the browser cache (tracked by
-                     `imageLoaded` above via off-DOM preload). Once
-                     loaded, mount the real <img> — it hits the cache
-                     and renders instantly, no partial paint possible.
-                     `decoding="sync"` because we KNOW the bytes are
-                     in cache at this point; sync decode is a single
-                     blocking call with no perceptible cost. -->
+                <!-- The skeleton sits ABOVE the <img> as a positioned
+                     overlay. The <img> starts at opacity:0 (set by the
+                     loadAfterDecode action) and fades in once decode()
+                     resolves. While opacity:0, the skeleton's
+                     animate-pulse is what the user sees — once the
+                     <img> opacity goes to 1, the skeleton is hidden
+                     behind the now-fully-decoded image. -->
                 <div class="relative aspect-[16/9] overflow-hidden bg-slate-950">
-                  {#if imageLoaded.has(a.image)}
-                    <img
-                      src={a.image}
-                      alt=""
-                      decoding="sync"
-                      class="size-full object-cover transition group-hover:scale-105"
-                    />
-                  {:else}
-                    <div class="absolute inset-0 animate-pulse bg-slate-800/40"></div>
-                  {/if}
+                  <div class="absolute inset-0 animate-pulse bg-slate-800/40"></div>
+                  <img
+                    use:loadAfterDecode={a.image}
+                    alt=""
+                    class="relative size-full object-cover transition group-hover:scale-105"
+                  />
                 </div>
               {/if}
               <div class="p-2">

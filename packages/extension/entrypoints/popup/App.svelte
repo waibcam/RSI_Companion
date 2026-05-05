@@ -7,6 +7,7 @@
   import StatusBanner from './lib/components/StatusBanner.svelte';
   import {
     appState,
+    badgeModulesState,
     getEffectiveModules,
     isTabMode,
     MODULES,
@@ -73,6 +74,11 @@
   // what's waiting on the server right now, not whatever the alarm caught
   // last (which could be up to 10 minutes stale).
   void notifyState.pollNow();
+
+  // Toolbar-badge per-module preference. Reads chrome.storage.local
+  // and subscribes to changes so the Settings UI's checkboxes are
+  // always in sync with the BG's badge calculation.
+  void badgeModulesState.init();
 
   // Bookkeeping for the "Do you like the extension?" banner. Runs once
   // per popup open (per App mount). Sets `firstSeenAt` if missing,

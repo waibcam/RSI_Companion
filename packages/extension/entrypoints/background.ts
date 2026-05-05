@@ -3648,8 +3648,36 @@ async function notifyStateSet(state: Notify.NotifyState): Promise<void> {
   await updateBadge(state);
 }
 
+/** Storage key for the user's per-module toolbar-badge preference.
+ *  Written by the popup's Settings → Appearance → Toolbar badge UI.
+ *  The popup keeps a reactive mirror via chrome.storage.onChanged;
+ *  the BG re-reads this on every badge update plus listens to
+ *  storage changes so toggling a checkbox in Settings repaints the
+ *  badge instantly without waiting for the next poll. */
+const BADGE_MODULES_KEY = 'settings:badgeModules';
+
+async function readBadgeModulesPref(): Promise<ReadonlyArray<Notify.NotifyModule>> {
+  try {
+    const res = await chrome.storage.local.get(BADGE_MODULES_KEY);
+    const stored = res[BADGE_MODULES_KEY];
+    if (Array.isArray(stored)) {
+      // Validate: keep only entries that match a known NotifyModule.
+      // A regression in the storage layer that wrote a typo
+      // shouldn't take down the badge.
+      const valid = stored.filter((m): m is Notify.NotifyModule =>
+        Notify.BADGE_MODULES_ALL.includes(m as Notify.NotifyModule),
+      );
+      return valid;
+    }
+  } catch (e) {
+    log.debug('badge', 'failed to read badge-modules pref, using default', e);
+  }
+  return Notify.BADGE_MODULES_DEFAULT;
+}
+
 async function updateBadge(state: Notify.NotifyState): Promise<void> {
-  const total = Notify.totalUnread(state.counts);
+  const modules = await readBadgeModulesPref();
+  const total = Notify.totalUnread(state.counts, modules);
   // MV3 Chromium and Firefox MV3 expose the toolbar API as
   // `chrome.action`; Firefox MV2 (our actual Firefox build target —
   // WXT defaults Firefox to MV2) uses `chrome.browserAction` instead.
@@ -4683,6 +4711,21 @@ export default defineBackground(() => {
   // open instead of serving stale `signedIn: false` (or vice versa) until the
   // per-module TTL expires. We also kick a notifications poll so the badge
   // updates right away.
+  // Repaint the toolbar badge whenever the user toggles a module in
+  // Settings → Appearance → Toolbar badge. The popup writes
+  // `settings:badgeModules` to chrome.storage.local; we listen for
+  // that key and recompute the badge from the current notify state
+  // (cached in the same storage area). No poll re-trigger needed —
+  // the underlying counts haven't changed, only which ones we sum.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    if (!changes[BADGE_MODULES_KEY]) return;
+    void (async () => {
+      const state = await notifyStateGet();
+      await updateBadge(state);
+    })();
+  });
+
   chrome.cookies.onChanged.addListener((change) => {
     if (change.cookie.name !== RSI_COOKIE_LIVE) return;
     // Exact-match the RSI domain. Using `.includes()` would also fire for

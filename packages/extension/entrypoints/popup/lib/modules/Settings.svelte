@@ -15,6 +15,7 @@
 
   import {
     log,
+    Notify,
     sendRsiMessage,
     type CacheEntriesResponsePayload,
     type CacheStatsResponsePayload,
@@ -23,6 +24,7 @@
     AlertTriangle,
     ArrowDown,
     ArrowUp,
+    Bell,
     ChevronDown,
     ChevronRight,
     CircleCheck,
@@ -48,6 +50,7 @@
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import {
     appState,
+    badgeModulesState,
     isSettingsTabId,
     isTabMode,
     MODULES,
@@ -59,6 +62,28 @@
   } from '../state.svelte';
   import { errorMessage } from '../error';
   import { persistedState } from '../persist.svelte';
+
+  // Display labels + a short hint for the badge-modules picker. The
+  // module key set is BADGE_MODULES_ALL from notify.ts; we render
+  // them in that order. Note that the on/off DEFAULT for each module
+  // is handled by `BADGE_MODULES_DEFAULT` (in notify.ts) — here we
+  // only label them. release-notes carries an italic note clarifying
+  // it's the extension's own changelog so users know what they're
+  // toggling on.
+  const BADGE_MODULE_META: Record<
+    Notify.NotifyModule,
+    { label: string; note?: string }
+  > = {
+    spectrum: { label: 'Spectrum (notifications & DMs)' },
+    'comm-link': { label: 'Comm-Link' },
+    'patch-notes': { label: 'Patch Notes' },
+    roadmap: { label: 'Roadmap' },
+    contacts: { label: 'Contacts (friend requests)' },
+    'release-notes': {
+      label: 'Release Notes',
+      note: "extension's own changelog",
+    },
+  };
 
   // Three top-level tabs: Appearance / Performance / Diagnostics. The
   // module had grown to nine sections plus the Support card; tabs cut
@@ -72,6 +97,34 @@
     isSettingsTabId,
   );
   const tab = $derived(tabP.value);
+
+  // Honour deep-link navigation requests from release-note buttons
+  // (e.g. `[Settings → Toolbar badge](module:settings/appearance#toolbar-badge)`).
+  // The effect re-runs whenever `appState.pendingTab` changes; we
+  // consume the request only when it targets us, so other modules'
+  // requests don't bleed in. After applying the tab, scroll the
+  // requested section into view on the next animation frame so the
+  // tab content has rendered first.
+  $effect(() => {
+    const requested = appState.consumePendingTab('settings');
+    if (!requested) return;
+    if (requested.tab && isSettingsTabId(requested.tab)) {
+      tabP.value = requested.tab;
+    }
+    if (requested.anchor) {
+      const anchor = requested.anchor;
+      // Defer to rAF (and a microtask after) so the conditional
+      // tab content has had a chance to mount before we ask for its
+      // bounding box. Without this, scrollIntoView would no-op when
+      // the tab switch is what made the section render.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(anchor);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    }
+  });
 
   // --- Cache section ---------------------------------------------------------
 
@@ -556,7 +609,7 @@
 
       <!-- =================================================== CACHE =========== -->
       {#if tab === 'performance'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="cache" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <Database class="size-4 text-sky-400" />
           <h2 class="text-sm font-semibold text-slate-100">Cache</h2>
@@ -802,7 +855,7 @@
 
       <!-- =================================================== SESSIONS ======== -->
       {#if tab === 'diagnostics'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="sessions" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <ShieldCheck class="size-4 text-emerald-400" />
           <h2 class="text-sm font-semibold text-slate-100">Sessions</h2>
@@ -895,7 +948,7 @@
            after testing a 'liked' / 'disliked' / 'never' click and
            wanting to re-arm). -->
       {#if tab === 'diagnostics'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="ui-prompts" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <Heart class="size-4 text-pink-400" />
           <h2 class="text-sm font-semibold text-slate-100">UI prompts (testing)</h2>
@@ -950,7 +1003,7 @@
 
       <!-- =================================================== PREFETCH ======== -->
       {#if tab === 'performance'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="prefetch" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <RefreshCw class="size-4 text-sky-400" />
           <h2 class="text-sm font-semibold text-slate-100">Prefetch</h2>
@@ -987,7 +1040,7 @@
 
       <!-- =================================================== POPUP SIZE ===== -->
       {#if tab === 'appearance'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="popup-size" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <Maximize2 class="size-4 text-sky-400" />
           <h2 class="text-sm font-semibold text-slate-100">Popup size</h2>
@@ -1095,7 +1148,7 @@
       </section>
 
       <!-- =================================================== UI SCALE ====== -->
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="ui-scale" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <ZoomIn class="size-4 text-sky-400" />
           <h2 class="text-sm font-semibold text-slate-100">UI scale</h2>
@@ -1162,8 +1215,53 @@
         {/if}
       </section>
 
+      <!-- =================================================== TOOLBAR BADGE === -->
+      <section id="toolbar-badge" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
+        <header class="mb-2 flex items-center gap-2">
+          <Bell class="size-4 text-emerald-400" />
+          <h2 class="text-sm font-semibold text-slate-100">Toolbar badge</h2>
+        </header>
+        <p class="mb-2 text-[11px] text-slate-400">
+          Choose which modules' unread counts add up to the number on the
+          extension's toolbar icon. Each module's individual badge in the
+          sidebar isn't affected — only the global total is.
+        </p>
+        <ul class="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
+          {#each Notify.BADGE_MODULES_ALL as moduleKey (moduleKey)}
+            {@const checked = badgeModulesState.modules.includes(moduleKey)}
+            {@const meta = BADGE_MODULE_META[moduleKey]}
+            <li class="flex items-center gap-2 px-2 py-1.5 text-[11px]">
+              <label class="flex flex-1 cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  {checked}
+                  onchange={() => void badgeModulesState.toggleModule(moduleKey)}
+                  class="size-3.5 rounded border-slate-600 bg-slate-900 text-sky-500 focus:ring-1 focus:ring-sky-500"
+                />
+                <span class="flex-1 {checked ? 'text-slate-200' : 'text-slate-500'}">
+                  {meta.label}
+                </span>
+                {#if meta.note}
+                  <span class="text-[10px] italic text-slate-600">{meta.note}</span>
+                {/if}
+              </label>
+            </li>
+          {/each}
+        </ul>
+        <div class="mt-2 flex justify-end">
+          <button
+            type="button"
+            onclick={() => void badgeModulesState.reset()}
+            class="inline-flex items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-800"
+          >
+            <RotateCcw class="size-3" />
+            Reset to default
+          </button>
+        </div>
+      </section>
+
       <!-- =================================================== MODULES ========= -->
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="sidebar-modules" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <SettingsIcon class="size-4 text-slate-400" />
           <h2 class="text-sm font-semibold text-slate-100">Sidebar modules</h2>
@@ -1223,7 +1321,7 @@
 
       <!-- =================================================== DEBUG =========== -->
       {#if tab === 'diagnostics'}
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="debug-info" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <Info class="size-4 text-slate-400" />
           <h2 class="text-sm font-semibold text-slate-100">Debug info</h2>
@@ -1280,7 +1378,7 @@
       </section>
 
       <!-- =================================================== RESET =========== -->
-      <section class="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <section id="reset-settings" class="rounded-lg border border-slate-800 bg-slate-900/60 p-3 scroll-mt-3">
         <header class="mb-2 flex items-center gap-2">
           <RotateCcw class="size-4 text-amber-400" />
           <h2 class="text-sm font-semibold text-slate-100">Reset settings</h2>

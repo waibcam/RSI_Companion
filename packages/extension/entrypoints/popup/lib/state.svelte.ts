@@ -1,6 +1,6 @@
 // Popup-wide reactive state. Svelte 5 runes work in .svelte.ts modules too.
 
-import { log, sendRsiMessage } from '@rsi-companion/shared';
+import { log, Notify, sendRsiMessage } from '@rsi-companion/shared';
 
 export type ModuleId =
   | 'roadmap'
@@ -94,6 +94,24 @@ function readInitialModule(): ModuleId {
 function createAppState() {
   let activeModule = $state<ModuleId>(readInitialModule());
   let releaseNotesOpen = $state(false);
+  // Pending navigation request, set by `navigateTo(module, tab?, anchor?)`
+  // and consumed by the target module's `$effect` once it mounts (or
+  // re-renders if it was already mounted). Decouples release-notes
+  // deep-links from each module's own internal tab / scroll state —
+  // the module just calls `appState.consumePendingTab(moduleId)` and
+  // applies whatever it gets back. Reset to null after consumption
+  // so a stale request doesn't fire twice.
+  //
+  // `anchor` is a DOM element id the module should scroll into view
+  // after switching the tab. Lets release notes deep-link directly
+  // to a specific section (e.g. Settings → Appearance → Toolbar
+  // badge with `#toolbar-badge`) so the user lands on the relevant
+  // card without scrolling.
+  let pendingTab = $state<{
+    moduleId: ModuleId;
+    tab: string | null;
+    anchor: string | null;
+  } | null>(null);
 
   return {
     get activeModule() {
@@ -106,6 +124,46 @@ function createAppState() {
       } catch (e) {
         log.warn('state', 'failed to persist active module', e);
       }
+    },
+    /** Switch to `moduleId`, optionally requesting a specific sub-tab
+     *  AND a specific in-module scroll anchor. Targets are stored as
+     *  pending; the module's `$effect` consumes them on its next
+     *  reactive pass. Closes the release-notes modal so the user
+     *  lands on the destination instead of a covered popup. */
+    navigateTo(moduleId: ModuleId, tab?: string, anchor?: string): void {
+      if (tab || anchor) {
+        pendingTab = {
+          moduleId,
+          tab: tab ?? null,
+          anchor: anchor ?? null,
+        };
+      }
+      releaseNotesOpen = false;
+      activeModule = moduleId;
+      try {
+        localStorage.setItem(STORAGE_KEY, moduleId);
+      } catch (e) {
+        log.warn('state', 'failed to persist active module', e);
+      }
+    },
+    get pendingTab() {
+      return pendingTab;
+    },
+    /** Pull and clear the pending-navigation request if it's for
+     *  `moduleId`. Modules call this in a `$effect` that reads
+     *  `pendingTab` so the effect re-runs whenever a new request
+     *  arrives. Returns `{tab, anchor}` — both fields can be null;
+     *  the module applies whichever ones are present (switch tab,
+     *  scroll to anchor, or both). */
+    consumePendingTab(
+      moduleId: ModuleId,
+    ): { tab: string | null; anchor: string | null } | null {
+      if (pendingTab && pendingTab.moduleId === moduleId) {
+        const out = { tab: pendingTab.tab, anchor: pendingTab.anchor };
+        pendingTab = null;
+        return out;
+      }
+      return null;
     },
     get releaseNotesOpen() {
       return releaseNotesOpen;
@@ -350,7 +408,7 @@ export const POPUP_SIZE_LIMITS = {
   minHeight: 400,
   maxHeight: 590,
   defaultWidth: 760,
-  defaultHeight: 530,
+  defaultHeight: 570,
 } as const;
 
 function clampPopupWidth(v: number): number {
@@ -465,6 +523,88 @@ function createSettingsState() {
 }
 
 export const settingsState = createSettingsState();
+
+// --- Toolbar badge modules preference --------------------------------------
+// Which modules' unread counts contribute to the number on the toolbar
+// icon. Distinct from the popup-only settings above because the BG
+// reads this too (it's the BG that calls chrome.action.setBadgeText).
+// Stored under `chrome.storage.local` so both contexts see the same
+// value; reactive via chrome.storage.onChanged so a checkbox click
+// here repaints the badge without a poll re-trigger.
+//
+// Default = BADGE_MODULES_DEFAULT (the five RSI-content modules, no
+// release-notes). Users who want their own changelog updates to
+// surface in the badge can opt in via the Settings UI.
+
+const BADGE_MODULES_KEY = 'settings:badgeModules';
+
+function createBadgeModulesState() {
+  let modules = $state<Notify.NotifyModule[]>([
+    ...Notify.BADGE_MODULES_DEFAULT,
+  ]);
+  let initialised = false;
+
+  async function init(): Promise<void> {
+    if (initialised) return;
+    initialised = true;
+    try {
+      const res = await chrome.storage.local.get(BADGE_MODULES_KEY);
+      const stored = res[BADGE_MODULES_KEY];
+      if (Array.isArray(stored)) {
+        modules = stored.filter((m): m is Notify.NotifyModule =>
+          Notify.BADGE_MODULES_ALL.includes(m as Notify.NotifyModule),
+        );
+      }
+    } catch (e) {
+      log.warn('badge', 'failed to read badge-modules pref', e);
+    }
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      const change = changes[BADGE_MODULES_KEY];
+      if (!change) return;
+      const next = change.newValue;
+      if (Array.isArray(next)) {
+        modules = next.filter((m): m is Notify.NotifyModule =>
+          Notify.BADGE_MODULES_ALL.includes(m as Notify.NotifyModule),
+        );
+      }
+    });
+  }
+
+  async function setModules(next: ReadonlyArray<Notify.NotifyModule>): Promise<void> {
+    const dedup = Array.from(new Set(next)).filter((m) =>
+      Notify.BADGE_MODULES_ALL.includes(m),
+    );
+    modules = dedup;
+    try {
+      await chrome.storage.local.set({ [BADGE_MODULES_KEY]: dedup });
+    } catch (e) {
+      log.warn('badge', 'failed to persist badge-modules pref', e);
+    }
+  }
+
+  function toggleModule(m: Notify.NotifyModule): Promise<void> {
+    return setModules(
+      modules.includes(m) ? modules.filter((x) => x !== m) : [...modules, m],
+    );
+  }
+
+  function reset(): Promise<void> {
+    return setModules(Notify.BADGE_MODULES_DEFAULT);
+  }
+
+  return {
+    get modules(): readonly Notify.NotifyModule[] {
+      return modules;
+    },
+    init,
+    setModules,
+    toggleModule,
+    reset,
+  };
+}
+
+export const badgeModulesState = createBadgeModulesState();
 
 /** Effective sidebar module list: user-defined order first, then any
  *  unknown/new modules appended in their MODULES order, then hidden
