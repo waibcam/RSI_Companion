@@ -20,6 +20,7 @@
   import { persistedState } from '../persist.svelte';
   import { createFavorites } from '../favorites.svelte';
   import { extractSignedIn, errorMessage } from '../error';
+  import { focusTrap } from '../focus-trap';
   import ShipReader from '../components/ShipReader.svelte';
 
   type Ship = Rsi.Ship;
@@ -477,6 +478,8 @@
       class="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/70 p-4"
       role="dialog"
       aria-modal="true"
+      tabindex="-1"
+      use:focusTrap
     >
       <div class="w-full max-w-lg overflow-hidden rounded-lg border border-slate-800 bg-slate-900 shadow-xl">
         <div class="flex items-center justify-between gap-3 border-b border-slate-800 bg-amber-950/30 px-4 py-2">

@@ -68,6 +68,7 @@
      Reported on GH #29 by @epoptic — on 4K displays the popup-tuned
      density felt cramped in tab mode. -->
 <nav
+  aria-label="Modules"
   class="flex w-44 shrink-0 flex-col gap-0.5 border-r border-slate-800 bg-slate-950/40 p-2
     tab:w-56 tab:gap-1 tab:p-3"
 >
@@ -77,6 +78,7 @@
     {@const unread = unreadFor(mod.id)}
     <button
       type="button"
+      aria-current={active ? 'page' : undefined}
       class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition
         tab:gap-3 tab:px-3.5 tab:py-2.5 tab:text-sm
         {active

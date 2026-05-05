@@ -667,7 +667,7 @@
         {:else}
           <ul class="grid grid-cols-2 gap-1.5 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 4xl:grid-cols-10">
             {#each filteredContacts as c (c.nickname)}
-              <li class="group relative">
+              <li class="virt-item group relative">
                 <a
                   href={`${RSI_BASE_URL}/citizens/${c.nickname}`}
                   target="_blank"
@@ -699,7 +699,7 @@
                     // Fallback: tell the user to do it from the RSI site.
                     window.open(`${RSI_BASE_URL}/citizens/${c.nickname}`, '_blank', 'noopener');
                   }}
-                  class="absolute right-1 top-1 rounded p-0.5 text-slate-600 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
+                  class="absolute right-1 top-1 rounded p-0.5 text-slate-400 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
                   title="Open profile to manage"
                 >
                   <UserMinus class="size-3" />
@@ -992,7 +992,7 @@
                     {/if}
                     <span class="flex-1 truncate text-[11px] text-slate-300">
                       {r.displayName}
-                      <span class="text-slate-600">@{r.nickname}</span>
+                      <span class="text-slate-400">@{r.nickname}</span>
                     </span>
                     <span
                       class="text-[10px] text-slate-500"
@@ -1007,7 +1007,7 @@
                       type="button"
                       onclick={() => cancelRetry(r.nickname)}
                       disabled={retryCancelling.has(r.nickname)}
-                      class="rounded p-0.5 text-slate-600 transition hover:bg-slate-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      class="rounded p-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
                       title="Stop retrying {r.nickname}"
                       aria-label="Stop retrying {r.nickname}"
                     >
@@ -1320,7 +1320,7 @@
                         title={new Date(h.startedAt).toLocaleString()}
                       >
                         {relativeAgo(h.startedAt)}
-                        <span class="text-slate-600">· {durationLabel}</span>
+                        <span class="text-slate-400">· {durationLabel}</span>
                         {#if h.cancelled}
                           <span
                             class="ml-1 rounded bg-amber-500/10 px-1 py-px text-[9px] uppercase tracking-wider text-amber-300 ring-1 ring-inset ring-amber-500/30"

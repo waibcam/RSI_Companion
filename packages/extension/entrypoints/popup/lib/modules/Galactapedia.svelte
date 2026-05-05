@@ -21,6 +21,7 @@
   import { createFavorites } from '../favorites.svelte';
   import { errorMessage } from '../error';
   import { runWithDelayedLoading } from '../loading';
+  import { safeHref } from '../safe-href';
 
   type Article = Rsi.GalactapediaArticle;
   type ArticleFull = Rsi.GalactapediaArticleFull;
@@ -816,7 +817,7 @@
         {/if}
       </div>
       {#if readerStack.length > 1}
-        <span class="text-[10px] text-slate-600">depth {readerStack.length}</span>
+        <span class="text-[10px] text-slate-400">depth {readerStack.length}</span>
       {/if}
       <button
         type="button"
@@ -914,7 +915,7 @@
                     {#each block.segments as seg, j (j)}
                       {#if seg.kind === 'text'}{seg.text}{:else}
                         <a
-                          href={seg.href}
+                          href={safeHref(seg.href)}
                           target="_blank"
                           rel="noopener noreferrer"
                           onclick={(e) => interceptInlineLink(e, seg.href)}
@@ -1455,7 +1456,7 @@
           <p class="text-[11px] italic">
             Crawling the full catalog (first time only — cached for a few days).
           </p>
-          <p class="text-[10px] text-slate-600">Results will appear as each page arrives.</p>
+          <p class="text-[10px] text-slate-400">Results will appear as each page arrives.</p>
         </div>
       {:else if indexArticles.length === 0}
         <p class="mt-6 text-center text-xs italic text-slate-500">Index is empty.</p>

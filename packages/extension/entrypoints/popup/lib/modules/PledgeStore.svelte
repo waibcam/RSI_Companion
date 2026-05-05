@@ -1696,7 +1696,7 @@
             </a>
           </div>
 
-          <p class="mt-1 text-center text-[10px] italic text-slate-600">
+          <p class="mt-1 text-center text-[10px] italic text-slate-400">
             Payment happens on RSI — the extension only surfaces the cart.
           </p>
         </div>

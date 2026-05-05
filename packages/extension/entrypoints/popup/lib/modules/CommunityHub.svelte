@@ -746,7 +746,7 @@
         </h3>
         <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {#each filteredLive as p (p.uid)}
-            <li>
+            <li class="virt-item-lg">
               <a
                 href={p.membershipUrl ?? '#'}
                 target="_blank"
@@ -806,7 +806,7 @@
           </h3>
           <ul class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {#each filteredUpcoming as e (e.uid)}
-              <li>
+              <li class="virt-item-lg">
                 <a
                   href={eventHref(e)}
                   target="_blank"
@@ -861,7 +861,7 @@
           </h3>
           <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {#each filteredPast as e (e.uid)}
-              <li>
+              <li class="virt-item-lg">
                 <a
                   href={eventHref(e)}
                   target="_blank"
@@ -914,7 +914,7 @@
       {:else}
         <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {#each filteredPosts as p (p.uid)}
-            <li>
+            <li class="virt-item-lg">
               <a
                 href={postHref(p)}
                 target="_blank"

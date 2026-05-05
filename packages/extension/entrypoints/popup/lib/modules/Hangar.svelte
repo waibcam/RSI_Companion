@@ -648,7 +648,7 @@
           {@const totalContent = p.ships.length + bundled.length}
           {@const isExpandable = totalContent > 0}
           {@const thumbUrl = p.imageUrl ?? p.ships[0]?.imageUrl ?? null}
-          <li class="rounded-md bg-slate-900/60 ring-1 ring-slate-800">
+          <li class="virt-item-lg rounded-md bg-slate-900/60 ring-1 ring-slate-800">
             <!-- Pledges with no Ship/Vehicle items inside (rewards-only,
                  coupon-only, sub-flair, etc.) render as a static row —
                  no chevron, no hover, no onclick. The header's snippet
@@ -833,7 +833,7 @@
         <ul class="space-y-0.5">
           {#each denormShips as r, i (`${r.pledgeId}-${i}-${r.shipName}`)}
             <li
-              class="flex items-center gap-2 rounded bg-slate-900/40 px-2 py-1 text-[11px] {r.bundled
+              class="virt-item flex items-center gap-2 rounded bg-slate-900/40 px-2 py-1 text-[11px] {r.bundled
                 ? 'opacity-75'
                 : ''}"
             >

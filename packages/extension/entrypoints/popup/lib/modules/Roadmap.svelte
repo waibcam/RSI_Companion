@@ -20,6 +20,7 @@
   import { notifyState } from '../notify.svelte';
   import { errorMessage } from '../error';
   import { persistedState } from '../persist.svelte';
+  import { focusTrap } from '../focus-trap';
   import { log } from '@rsi-companion/shared';
 
   type Payload = Schemas.Backend.RoadmapPayload;
@@ -254,7 +255,7 @@
 
   {#if newCount > 0 || movedCount > 0 || removedCards.length > 0}
     <div class="flex items-center gap-2 border-b border-slate-800 bg-slate-950/20 px-4 py-1.5 text-[10px] uppercase tracking-wider">
-      <CalendarClock class="size-3 text-slate-600" />
+      <CalendarClock class="size-3 text-slate-400" />
       {#if newCount > 0}
         <span class="rounded bg-emerald-900/60 px-1.5 py-0.5 text-emerald-300">{newCount} new</span>
       {/if}
@@ -344,6 +345,7 @@
     role="dialog"
     aria-modal="true"
     tabindex="-1"
+    use:focusTrap
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->

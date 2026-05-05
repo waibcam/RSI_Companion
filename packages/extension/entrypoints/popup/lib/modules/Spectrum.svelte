@@ -49,6 +49,8 @@
   const formatStat = (n: number) => formatCompact(n);
   import { persistedState } from '../persist.svelte';
   import { extractSignedIn, errorMessage } from '../error';
+  import { safeHref } from '../safe-href';
+  import { focusTrap } from '../focus-trap';
 
   type Thread = Rsi.SpectrumThread;
   type Notification = Rsi.SpectrumNotification;
@@ -2388,6 +2390,8 @@
       class="absolute top-full left-0 z-30 mt-1 w-72 rounded-md border border-slate-700 bg-slate-900 p-2 shadow-xl"
       role="dialog"
       aria-label="Reaction emoji picker"
+      tabindex="-1"
+      use:focusTrap
     >
       <input
         type="search"
@@ -2432,7 +2436,7 @@
             </button>
           {/each}
         </div>
-        <p class="mt-1 text-[9px] italic text-slate-600">
+        <p class="mt-1 text-[9px] italic text-slate-400">
           {pickerEmojis.length} emoji{pickerEmojis.length === 1 ? '' : 's'}
           {pickerSearch ? `· filter "${pickerSearch}"` : ''}
         </p>
@@ -2454,7 +2458,7 @@
         {@const cls = `${isBold ? 'font-semibold ' : ''}${isItalic ? 'italic ' : ''}${isCode ? 'rounded bg-slate-950/80 px-1 py-0.5 font-mono text-[10px] ' : ''}${isStrike ? 'line-through ' : ''}`}
         {#if seg.kind === 'link' && seg.url}
           <a
-            href={seg.url}
+            href={safeHref(seg.url)}
             target="_blank"
             rel="noopener noreferrer"
             class="text-sky-300 underline decoration-sky-700 underline-offset-2 hover:text-sky-200 hover:decoration-sky-400 {cls}"
@@ -2900,7 +2904,7 @@
             <p class="mt-0.5 line-clamp-1 text-[10px] text-slate-500">{ch.description}</p>
           {/if}
         </div>
-        <ChevronRight class="mt-0.5 size-3.5 shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-teal-400" />
+        <ChevronRight class="mt-0.5 size-3.5 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-teal-400" />
       </button>
     </li>
   {/snippet}

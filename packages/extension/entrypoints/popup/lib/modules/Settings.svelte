@@ -199,6 +199,21 @@
 
   async function clearCache(prefix?: string) {
     if (clearingPrefix !== null) return;
+    // Wiping every namespace has no UI undo path — the next popup
+    // open re-fetches everything from RSI under whatever the live
+    // session is, but every preference attached to a cache entry
+    // (e.g. ships favourites snapshot, hangar expansion state) is
+    // lost. Per-namespace clears stay frictionless because they're
+    // a common debugging workflow ("does this module crash on a
+    // cold cache?"), but the all-modules wipe is one click of an
+    // amber button away from a 30-second visible refetch storm
+    // across 13 modules — worth a confirm.
+    if (!prefix) {
+      const ok = window.confirm(
+        'Wipe every module cache? They will refetch on the next popup open.',
+      );
+      if (!ok) return;
+    }
     clearingPrefix = prefix ?? '__all__';
     try {
       await sendRsiMessage(
@@ -775,7 +790,7 @@
                               : ''}"
                           >
                             <Clock
-                              class="size-2.5 shrink-0 {e.isExpired ? 'text-amber-400' : 'text-slate-600'}"
+                              class="size-2.5 shrink-0 {e.isExpired ? 'text-amber-400' : 'text-slate-400'}"
                             />
                             <code
                               class="flex-1 truncate font-mono text-slate-400"
@@ -1098,7 +1113,7 @@
                 )}
               class="w-full accent-sky-500"
             />
-            <div class="mt-0.5 flex justify-between text-[9px] text-slate-600">
+            <div class="mt-0.5 flex justify-between text-[9px] text-slate-400">
               <span>{POPUP_SIZE_LIMITS.minWidth}px</span>
               <span>default {POPUP_SIZE_LIMITS.defaultWidth}px</span>
               <span>{POPUP_SIZE_LIMITS.maxWidth}px</span>
@@ -1127,7 +1142,7 @@
                 )}
               class="w-full accent-sky-500"
             />
-            <div class="mt-0.5 flex justify-between text-[9px] text-slate-600">
+            <div class="mt-0.5 flex justify-between text-[9px] text-slate-400">
               <span>{POPUP_SIZE_LIMITS.minHeight}px</span>
               <span>default {POPUP_SIZE_LIMITS.defaultHeight}px</span>
               <span>{POPUP_SIZE_LIMITS.maxHeight}px</span>
@@ -1242,7 +1257,7 @@
                   {meta.label}
                 </span>
                 {#if meta.note}
-                  <span class="text-[10px] italic text-slate-600">{meta.note}</span>
+                  <span class="text-[10px] italic text-slate-400">{meta.note}</span>
                 {/if}
               </label>
             </li>
@@ -1367,7 +1382,7 @@
                     {e.level === 'info'  ? 'text-slate-300' : ''}
                     {e.level === 'debug' ? 'text-slate-500' : ''}"
                 >
-                  <span class="text-slate-600">{new Date(e.time).toLocaleTimeString()}</span>
+                  <span class="text-slate-400">{new Date(e.time).toLocaleTimeString()}</span>
                   <span class="text-slate-500">[{e.scope}]</span>
                   {e.message}
                 </li>
@@ -1392,6 +1407,10 @@
           <button
             type="button"
             onclick={() => {
+              const ok = window.confirm(
+                'Reset all preferences (sidebar order, hidden modules, prefetch, popup size, UI scale, toolbar badge)? Caches and sign-in are not affected.',
+              );
+              if (!ok) return;
               settingsState.resetAll();
               // Bounce the user back to the default active module in case
               // they had picked Settings and just reset it.

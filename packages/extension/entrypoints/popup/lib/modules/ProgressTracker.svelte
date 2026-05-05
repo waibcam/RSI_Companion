@@ -94,7 +94,7 @@
     <span class="text-[10px] uppercase tracking-wider text-slate-500">Progress Tracker</span>
 
     {#if !loading && groups.length > 0}
-      <span class="text-[10px] text-slate-600">
+      <span class="text-[10px] text-slate-400">
         · {filteredGroups.length} {filteredGroups.length === 1 ? 'category' : 'categories'}
         · {totalCards} cards
       </span>
@@ -105,7 +105,7 @@
         <!-- `title` on the wrapping span — lucide-svelte icon components
              don't forward arbitrary attributes onto the <svg>. -->
         <span title="Cached" aria-label="Cached" class="inline-flex">
-          <Database class="size-3 text-slate-600" />
+          <Database class="size-3 text-slate-400" />
         </span>
       {/if}
       <button
@@ -140,7 +140,7 @@
         bind:value={query}
         placeholder="Search categories or cards…"
         class="h-6 flex-1 min-w-[120px] rounded bg-slate-800 px-2 text-xs text-slate-200
-               placeholder:text-slate-600 outline-none focus:ring-1 focus:ring-sky-600"
+               placeholder:text-slate-400 outline-none focus:ring-1 focus:ring-sky-600"
       />
       {#if allStatuses.length > 0}
         <div class="flex flex-wrap items-center gap-1">
@@ -187,7 +187,7 @@
       </div>
 
     {:else if filteredGroups.length === 0}
-      <div class="flex flex-col items-center gap-2 p-8 text-slate-600">
+      <div class="flex flex-col items-center gap-2 p-8 text-slate-400">
         <LayoutGrid class="size-6" />
         <p class="text-sm">
           {query || statusFilterP.value
@@ -215,7 +215,7 @@
               <span class="flex-1 truncate text-xs font-medium text-slate-200">
                 {group.name}
               </span>
-              <span class="shrink-0 text-[10px] text-slate-600">
+              <span class="shrink-0 text-[10px] text-slate-400">
                 {group.cards.length} {group.cards.length === 1 ? 'card' : 'cards'}
               </span>
             </button>
@@ -227,7 +227,7 @@
                   <div class="flex items-start gap-2 border-b border-slate-800/30 px-4 py-1.5 last:border-b-0">
                     <div class="flex-1 min-w-0">
                       <p class="truncate text-xs text-slate-300">{card.name}</p>
-                      <p class="truncate text-[10px] text-slate-600 mt-0.5">{card.releaseName}</p>
+                      <p class="truncate text-[10px] text-slate-400 mt-0.5">{card.releaseName}</p>
                     </div>
                     {#if card.status}
                       <span class="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium {statusCls(card.status)}">

@@ -22,6 +22,22 @@
 //
 // Signed-out handlers short-circuit (no RSI network call) so this is
 // cheap for anonymous users too.
+//
+// SCOPE TRIM (1.5.5 audit):
+// The previous list was 30 messages on every popup open — a noticeable
+// burst on slow connections, and ~70% of them prefetched modules the
+// user rarely opens (Galactapedia A-Z bootstrap, Community Hub all 5
+// tabs, Pledge cart + CCU init, Buy-Back). The shortlist below covers:
+//   1. The four globals every popup needs (auth, status, badge counts,
+//      referral stats — all surfaced in the header / sidebar).
+//   2. The five "high-traffic" modules: Comm-Link, Patch Notes,
+//      Spectrum notifications, Roadmap, Contacts. These match
+//      BADGE_MODULES_DEFAULT — i.e. the modules whose unread counts
+//      already feed the toolbar badge by default.
+// Everything else loads on first click via the module's own `$effect`,
+// which has been the case since v3 — the prefetch was extra warm-up,
+// not a hard requirement. Settings → Diagnostics → Recent prefetches
+// will show the new shorter run, which is the intended state.
 
 import { sendRsiMessage, log } from '@rsi-companion/shared';
 import { settingsState } from './state.svelte';
@@ -36,68 +52,25 @@ export function prefetchAll(): void {
   }
   const startedAt = performance.now();
   void Promise.allSettled([
-    // Global (always needed)
+    // Global — every popup open consumes these in the header / sidebar /
+    // dashboard, so warming them is always a win.
     sendRsiMessage({ type: 'auth.identity' }),
     sendRsiMessage({ type: 'status.summary' }),
-    sendRsiMessage({ type: 'stats.summary' }),
     sendRsiMessage({ type: 'notify.state' }),
+    sendRsiMessage({ type: 'stats.summary' }),
 
-    // Account
-    sendRsiMessage({ type: 'dashboard.summary' }),
-    sendRsiMessage({ type: 'ships.list' }),
-    sendRsiMessage({ type: 'buyback.list', page: 1 }),
-    sendRsiMessage({ type: 'contacts.list' }),
-    sendRsiMessage({ type: 'orgs.myList' }),
-    sendRsiMessage({ type: 'orgs.invitations' }),
-    sendRsiMessage({ type: 'orgs.applications' }),
-
-    // Spectrum (all 4 tabs)
-    sendRsiMessage({ type: 'spectrum.threads' }),
-    sendRsiMessage({ type: 'spectrum.trending' }),
-    sendRsiMessage({ type: 'spectrum.notifications' }),
-    sendRsiMessage({ type: 'spectrum.lobbies' }),
-
-    // Content feeds
+    // High-traffic modules (BADGE_MODULES_DEFAULT alignment). These five
+    // back the toolbar-badge unread counters by default and tend to be
+    // the first stops once a user opens the popup. Other modules
+    // (Hangar, Pledge, Galactapedia, Community Hub, Buy-Back, Org
+    // Browser, Settings, etc.) fetch on first click via their own
+    // `$effect` — fast enough for a single click target without
+    // bloating the boot burst.
     sendRsiMessage({ type: 'commlink.list', page: 1 }),
     sendRsiMessage({ type: 'patchnotes.list', page: 1 }),
-    sendRsiMessage({ type: 'pledge.shipList' }),
-    // CCU catalogue carries owned flags + full ship list for the upgrade
-    // picker. Cheap on cache hit, and prefetching makes the Upgrade tab
-    // render instantly when the user clicks it.
-    sendRsiMessage({ type: 'pledge.ccuInit' }),
-    // Cart (items + totals). Short-TTL (~1 min) so this prefetch is mostly
-    // a freshness nudge — popup-open fires a new fetch if the cached cart
-    // is older than a minute, which is what we want given how volatile
-    // the cart is between sessions.
-    sendRsiMessage({ type: 'pledge.cart' }),
-    // Community Hub: one fetch per tab. Each tab is a distinct RSI URL
-    // (different SSR'd Next.js page for Live/Events, different GraphQL
-    // variables for Discover/Gameplay/Tutorial) so we can't fan them out
-    // from a single call. Cheap enough to parallelize though.
-    sendRsiMessage({ type: 'communityHub.list', tab: 'live' }),
-    sendRsiMessage({ type: 'communityHub.list', tab: 'events' }),
-    sendRsiMessage({ type: 'communityHub.list', tab: 'discover' }),
-    sendRsiMessage({ type: 'communityHub.list', tab: 'gameplay' }),
-    sendRsiMessage({ type: 'communityHub.list', tab: 'tutorial' }),
-    sendRsiMessage({ type: 'progressTracker.list' }),
-    // Raw roadmap payload shared between Roadmap + Progress Tracker.
-    // Without this they'd each fetch /roadmap independently.
+    sendRsiMessage({ type: 'spectrum.notifications' }),
     sendRsiMessage({ type: 'roadmap.data' }),
-
-    // Galactapedia articles, categories, tags — cheap, one request each.
-    sendRsiMessage({ type: 'galactapedia.list', first: 30, skip: 0, search: '' }),
-    sendRsiMessage({ type: 'galactapedia.categories' }),
-    sendRsiMessage({ type: 'galactapedia.tags' }),
-    // Home tab: featured article + in-the-news + 4 featured categories.
-    // Lands the Home tab instantly on first open.
-    sendRsiMessage({ type: 'galactapedia.home' }),
-    // A-Z index: fire-once bootstrap. The handler is a no-op after the
-    // first successful crawl, so this line stays cheap on every subsequent
-    // popup open — even after the 30-day TTL expires, we rely on the
-    // user's next Galactapedia module visit (or manual refresh) to
-    // repopulate it, rather than silently paying 5-15 sequential GraphQL
-    // requests at every boot.
-    sendRsiMessage({ type: 'galactapedia.indexBootstrap' }),
+    sendRsiMessage({ type: 'contacts.list' }),
   ]).then((results) => {
     const durationMs = Math.round(performance.now() - startedAt);
     const failed = results.filter((r) => r.status === 'rejected').length;
@@ -105,7 +78,7 @@ export function prefetchAll(): void {
       log.debug('prefetch', `${failed}/${results.length} prefetch calls rejected (benign — per-module UI retries)`);
     }
     // Report outcome to the background so the Settings → Prefetch panel
-    // can show "last run: 850ms, 29 requests, 2 rejected" for diagnostics.
+    // can show "last run: 850ms, 9 requests, 2 rejected" for diagnostics.
     void sendRsiMessage({
       type: 'settings.recordPrefetch',
       durationMs,

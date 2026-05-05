@@ -16,6 +16,7 @@
     type ModuleId,
   } from './lib/state.svelte';
   import { notifyState } from './lib/notify.svelte';
+  import { focusTrap } from './lib/focus-trap';
 
   // Lazy-load each module so the initial popup bundle only parses the code
   // the user actually sees. The sidebar has 13 modules — eager-importing them
@@ -260,6 +261,8 @@
         role="dialog"
         aria-modal="true"
         aria-label="Release Notes"
+        tabindex="-1"
+        use:focusTrap
       >
         <div class="flex items-center justify-between border-b border-slate-800 bg-slate-950/60 px-3 py-1.5">
           <span class="text-[10px] uppercase tracking-wider text-slate-500">Extension</span>

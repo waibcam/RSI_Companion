@@ -25,6 +25,6 @@
   {/if}
   <p class="text-xs italic">{title}</p>
   {#if subtitle}
-    <p class="max-w-xs text-center text-[10px] text-slate-600">{subtitle}</p>
+    <p class="max-w-xs text-center text-[10px] text-slate-400">{subtitle}</p>
   {/if}
 </div>

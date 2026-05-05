@@ -83,6 +83,17 @@ export default defineConfig({
   },
   vite: () => ({
     plugins: [tailwindcss()],
+    // Strip "legal comments" (license banners) during minification.
+    // lucide-svelte ships an ISC+MIT banner inline on every icon (~700
+    // chars each); with 99 icons in popup-*.js / 33 in Hangar / 30 in
+    // Spectrum, that's ~80–120 kB of duplicated banners across the
+    // packed bundle. The licenses are still legally satisfied by
+    // lucide-svelte's `package.json` + `LICENSE` files which remain
+    // in node_modules and are reproducible from the published
+    // sources.zip — they don't need to ship in every chunk.
+    esbuild: {
+      legalComments: 'none',
+    },
     // Two dev-server-only fixes, both reported in GH #26. Production
     // Rollup builds don't need them — Rollup tree-shakes lucide-svelte
     // into individual icon bundles (no bulk `.svelte` re-processing)

@@ -317,7 +317,7 @@
       <span class="ml-1.5 text-slate-200">{hero.title}</span>
     </div>
     {#if depth > 0}
-      <span class="text-[10px] text-slate-600">variant depth {depth}</span>
+      <span class="text-[10px] text-slate-400">variant depth {depth}</span>
     {/if}
     {#if detail?.url}
       <a

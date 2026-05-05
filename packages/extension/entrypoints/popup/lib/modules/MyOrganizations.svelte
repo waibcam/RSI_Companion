@@ -466,14 +466,14 @@
                         {state.members.length} visible
                         {#if state.totalRows > state.members.length}
                           <span
-                            class="text-slate-600"
+                            class="text-slate-400"
                             title="Members who have set their org visibility to Redacted are not listed publicly. Only members they explicitly show are reachable from the public roster."
                           >
                             / {state.totalRows} total ({state.totalRows - state.members.length} redacted)
                           </span>
                         {/if}
                         {#if state.fromCache}
-                          <span class="ml-1 inline-flex items-center gap-0.5 text-slate-600">
+                          <span class="ml-1 inline-flex items-center gap-0.5 text-slate-400">
                             <Database class="size-2.5" /> cached
                           </span>
                         {/if}
@@ -542,7 +542,7 @@
                                   {/if}
                                 </p>
                                 {#if m.rank}
-                                  <p class="truncate text-[9px] uppercase tracking-wider text-slate-600">
+                                  <p class="truncate text-[9px] uppercase tracking-wider text-slate-400">
                                     {m.rank}
                                   </p>
                                 {/if}

@@ -177,7 +177,7 @@
     {:else}
       <ul class="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 4xl:grid-cols-7">
         {#each filtered as p (p.id)}
-          <li>
+          <li class="virt-item-lg">
             <div
               class="group flex h-full flex-col overflow-hidden rounded-md bg-slate-900/70 ring-1 ring-slate-800 transition hover:ring-sky-600"
             >
