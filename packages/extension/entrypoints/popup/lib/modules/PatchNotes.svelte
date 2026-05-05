@@ -7,75 +7,41 @@
   } from 'lucide-svelte';
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import { notifyState } from '../notify.svelte';
-  import { errorMessage } from '../error';
+  import { createPagedList } from '../paged-list.svelte';
 
   type PatchNote = Rsi.PatchNote;
 
-  let notes = $state<PatchNote[]>([]);
-  let nextPage = $state(1);
-  let hasMore = $state(true);
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let fromCache = $state(false);
   let query = $state('');
-  let sentinel = $state<HTMLElement | null>(null);
 
-  async function loadPage(page: number, force = false) {
-    if (loading) return;
-    loading = true;
-    error = null;
-    try {
+  // Paged list — same shape that powers Comm-Link / Buy-Back /
+  // Galactapedia. Switching from IntersectionObserver to scroll-event
+  // here matches the reasoning written up in CommLink.svelte: IO
+  // missed re-fires on the "sentinel still in view after the load
+  // settled" steady-state, and the popup's nested overflow-y-auto
+  // made `root: null` rootMargin reasoning fragile. Scroll-event-on-
+  // the-container is straightforward and Chrome auto-throttles.
+  const list = createPagedList<PatchNote>({
+    keyOf: (n) => n.href,
+    fetchPage: async (page, force) => {
       const res = await sendRsiMessage({ type: 'patchnotes.list', page, force });
-      if (page === 1) {
-        notes = res.notes;
-      } else {
-        // Dedupe by href — the RSI listing sometimes overlaps between pages,
-        // and duplicate keys in a keyed {#each} break Svelte's rendering.
-        const seen = new Set(notes.map((n) => n.href));
-        const fresh = res.notes.filter((n) => !seen.has(n.href));
-        notes = [...notes, ...fresh];
-      }
-      fromCache = res.fromCache;
-      nextPage = page + 1;
-      if (res.notes.length === 0) hasMore = false;
-    } catch (e) {
-      error = errorMessage(e);
-    } finally {
-      loading = false;
-    }
-  }
+      return { items: res.notes, fromCache: res.fromCache };
+    },
+    // Suppress pagination while the user has typed a filter — the
+    // visible filtered list isn't bottomed-out until the underlying
+    // list is, and the filter is purely client-side so adding more
+    // pages won't change the visible set's tail.
+    canFetchNext: () => !query.trim(),
+  });
 
   function refresh() {
-    nextPage = 1;
-    notes = [];
-    hasMore = true;
-    loadPage(1, true);
+    void list.refresh();
   }
-
-  // Observer triggers the next page fetch when the sentinel scrolls
-  // into view. Single-attach lifetime — no longer rebuilt on filter
-  // changes since we dropped the channel filter (CIG only publishes
-  // LIVE patches as Comm-Links nowadays, so PTU/EPTU tabs were
-  // permanently empty and confusing — see Dakota's report on Discord).
-  $effect(() => {
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0]?.isIntersecting) return;
-        if (loading || !hasMore || query.trim()) return;
-        loadPage(nextPage);
-      },
-      { rootMargin: '200px' },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  });
 
   const filtered = $derived.by<PatchNote[]>(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return notes;
+    if (!q) return list.items;
     const terms = q.split(/\s+/).filter(Boolean);
-    return notes.filter((n) => {
+    return list.items.filter((n) => {
       const hay = `${n.title} ${n.version ?? ''} ${n.channel}`.toLowerCase();
       return terms.every((t) => hay.includes(t));
     });
@@ -104,14 +70,14 @@
   // rows with a NEW chip this session (list is newest-first).
   const unreadAtOpen = notifyState.state.counts['patch-notes'];
 
-  loadPage(1);
+  void list.loadPage(1);
   notifyState.markSeen('patch-notes');
 </script>
 
 <section class="flex h-full flex-col overflow-hidden">
-  <ModuleHeader title="Patch Notes" {loading} {fromCache} onRefresh={refresh}>
+  <ModuleHeader title="Patch Notes" loading={list.loading} fromCache={list.fromCache} onRefresh={refresh}>
     {#snippet meta()}
-      <span class="text-[10px] text-slate-500">{filtered.length}/{notes.length}</span>
+      <span class="text-[10px] text-slate-500">{filtered.length}/{list.items.length}</span>
     {/snippet}
     {#snippet controls()}
       <input
@@ -123,18 +89,18 @@
     {/snippet}
   </ModuleHeader>
 
-  <div class="flex-1 overflow-y-auto p-3">
-    {#if error}
+  <div class="flex-1 overflow-y-auto p-3" use:list.attach>
+    {#if list.error}
       <div
         class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
       >
         <AlertTriangle class="mt-0.5 size-4 shrink-0" />
         <div>
           <p class="font-semibold">Failed to load patch notes</p>
-          <p class="mt-1 break-all text-rose-300/80">{error}</p>
+          <p class="mt-1 break-all text-rose-300/80">{list.error}</p>
         </div>
       </div>
-    {:else if loading && notes.length === 0}
+    {:else if list.loading && list.items.length === 0}
       <div class="flex h-full items-center justify-center text-slate-500">
         <Loader2 class="size-5 animate-spin" />
       </div>
@@ -204,20 +170,17 @@
         {/each}
       </ul>
 
-      {#if filtered.length === 0 && notes.length > 0}
+      {#if filtered.length === 0 && list.items.length > 0}
         <p class="mt-6 text-center text-xs italic text-slate-500">
           No patches match.
         </p>
       {/if}
 
-      {#if notes.length > 0 && !query.trim()}
-        <div
-          bind:this={sentinel}
-          class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500"
-        >
-          {#if loading}
+      {#if list.items.length > 0 && !query.trim()}
+        <div class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500">
+          {#if list.loading}
             <Loader2 class="size-4 animate-spin" />
-          {:else if !hasMore}
+          {:else if !list.hasMore}
             <span class="italic">No more patch notes.</span>
           {/if}
         </div>

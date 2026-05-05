@@ -10,7 +10,7 @@
   import ModuleHeader from '../components/ModuleHeader.svelte';
   import { notifyState } from '../notify.svelte';
   import { persistedState } from '../persist.svelte';
-  import { errorMessage } from '../error';
+  import { createPagedList } from '../paged-list.svelte';
 
   type Article = Rsi.CommLinkArticle;
   type FormOptions = Rsi.CommLinkFormOptions;
@@ -95,17 +95,11 @@
   let pendingSort = $state<Sort>(sortP.value);
   let pendingText = $state('');
 
-  let articles = $state<Article[]>([]);
   let options = $state<FormOptions>({ channels: [], series: [], types: [], sorts: [] });
-  let nextPage = $state(1);
-  let loading = $state(false);
-  let error = $state<string | null>(null);
-  let fromCache = $state(false);
-  let hasMore = $state(true);
   let filterOpen = $state(false);
 
-  // Whether any server-side filter is active. Used by the infinite-scroll
-  // sentinel (we still paginate when filtering) and by the "clear" button.
+  // Whether any server-side filter is active. Used by the "clear" button
+  // and to badge the filter trigger.
   const hasActiveFilter = $derived(
     channelP.value !== '' ||
       seriesP.value !== '' ||
@@ -114,11 +108,13 @@
       sortP.value !== 'publish_new',
   );
 
-  async function loadPage(page: number, force = false) {
-    if (loading) return;
-    loading = true;
-    error = null;
-    try {
+  // Paged list — same helper that powers Patch Notes / Buy-Back /
+  // Galactapedia. The fetcher closure reads the current filter state
+  // off the persisted refs so changing a filter + calling
+  // `list.refresh()` automatically picks up the new query.
+  const list = createPagedList<Article>({
+    keyOf: (a) => a.href,
+    fetchPage: async (page, force) => {
       const res = await sendRsiMessage({
         type: 'commlink.list',
         page,
@@ -129,48 +125,31 @@
         sort: sortP.value,
         force,
       });
-      if (page === 1) {
-        articles = res.articles;
-      } else {
-        articles = [...articles, ...res.articles];
-      }
-      // Options always reflect the server's latest list — handy if CIG adds
-      // a new series; users see it without an extension update. Guard against
-      // stale cache entries from pre-options builds where the field is absent.
+      // Options always reflect the server's latest list — handy if CIG
+      // adds a new series; users see it without an extension update.
+      // Guard against stale cache entries from pre-options builds
+      // where the field is absent.
       if (res.options && res.options.channels.length > 0) options = res.options;
-      fromCache = res.fromCache;
-      nextPage = page + 1;
-      if (res.articles.length === 0) hasMore = false;
-      else hasMore = true;
-    } catch (e) {
-      error = errorMessage(e);
-    } finally {
-      loading = false;
-    }
-  }
+      return { items: res.articles, fromCache: res.fromCache };
+    },
+  });
 
   function refresh() {
-    nextPage = 1;
-    articles = [];
-    hasMore = true;
-    loadPage(1, true);
+    void list.refresh();
   }
 
   function applyPending() {
     // Bail early if a fetch is already in flight. Without this guard the
-    // second rapid click would reset `articles = []` mid-load, flashing
+    // second rapid click would reset items mid-load, flashing
     // an empty list before the in-progress loadPage(1) settles.
-    if (loading) return;
+    if (list.loading) return;
     channelP.value = pendingChannel;
     seriesP.value = pendingSeries;
     typeP.value = pendingType;
     sortP.value = pendingSort;
     text = pendingText;
-    articles = [];
-    nextPage = 1;
-    hasMore = true;
     filterOpen = false;
-    loadPage(1);
+    void list.refresh();
   }
 
   function clearAll() {
@@ -193,65 +172,6 @@
     filterOpen = true;
   }
 
-  // Infinite-scroll: scroll-event-driven, with a "drain on load
-  // complete" effect as a backup.
-  //
-  // Why scroll-event over IntersectionObserver? Reported by the
-  // maintainer twice on 2026-05-04 — IO-based approaches kept
-  // missing fires:
-  //   - IO only fires on enter/exit *transitions*, not while the
-  //     sentinel is steadily in view. If `loading=true` swallows the
-  //     first event and the load completes WITHOUT the sentinel
-  //     scrolling out of view (typical on small popup with rapid
-  //     fetch), no fresh enter event is generated and the user has
-  //     to scroll back-and-forth to trigger a new one.
-  //   - The reactive split (sentinelInView state + drain effect) we
-  //     tried first fixed that in theory but the user reported it
-  //     still felt off — likely IO update-timing relative to Svelte
-  //     reactivity, or the popup's nested overflow-y-auto vs
-  //     `root: null` having a less-predictable interaction than
-  //     reading scrollTop directly.
-  //
-  // Direct scroll-event check is just `scrollHeight - scrollTop -
-  // clientHeight < threshold` — straightforward, no IO root /
-  // rootMargin / clipping subtleties to reason about. Fires on every
-  // scroll event (Chrome throttles those automatically; we don't
-  // need our own throttle since the work is gated by `loading`).
-  //
-  // The drain effect fires loadPage AFTER each fetch completes if
-  // the user is still close to the bottom — covers the case where
-  // a slow first fetch finishes while the user has stopped scrolling
-  // but is still near the end (no fresh scroll event would fire).
-  let scrollContainer = $state<HTMLElement | null>(null);
-  const NEAR_BOTTOM_PX = 600;
-  function isNearBottom(): boolean {
-    const el = scrollContainer;
-    if (!el) return false;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-  }
-  function onScroll(): void {
-    if (isNearBottom() && !loading && hasMore) {
-      void loadPage(nextPage);
-    }
-  }
-  $effect(() => {
-    // Drain on load-complete: when `loading` flips back to false, if
-    // we're still within NEAR_BOTTOM_PX of the bottom, fire the next
-    // page. Without this, a user who scrolled to the bottom and
-    // stopped (no further scroll events) wouldn't get the next batch
-    // after the first one arrived.
-    //
-    // `articles.length` is included as a dependency so this effect
-    // re-runs after the new batch is rendered (DOM update changes
-    // scrollHeight / clientHeight). Bare `_=articles.length` is a
-    // common Svelte 5 pattern for "depend on this state without
-    // reading it for logic".
-    void articles.length;
-    if (!loading && hasMore && isNearBottom()) {
-      void loadPage(nextPage);
-    }
-  });
-
   // Snapshot the unread count BEFORE markSeen clears it. The badge on the
   // sidebar goes to 0 the moment the user opens the module, but the user still
   // wants to know *which* articles are the new ones. The list is newest-first,
@@ -261,12 +181,12 @@
   const unreadAtOpen = notifyState.state.counts['comm-link'];
   const showNewRibbon = $derived(!hasActiveFilter);
 
-  loadPage(1);
+  void list.loadPage(1);
   notifyState.markSeen('comm-link');
 </script>
 
 <section class="flex h-full flex-col overflow-hidden">
-  <ModuleHeader title="Comm-Link" {loading} {fromCache} onRefresh={refresh} refreshLabel="Refresh">
+  <ModuleHeader title="Comm-Link" loading={list.loading} fromCache={list.fromCache} onRefresh={refresh} refreshLabel="Refresh">
     {#snippet meta()}
       {#if hasActiveFilter}
         <span class="text-[10px] text-sky-400">· filtered</span>
@@ -389,7 +309,7 @@
           type="button"
           class="rounded-md bg-sky-600 px-3 py-1 text-[11px] font-semibold text-sky-50 transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
           onclick={applyPending}
-          disabled={loading}
+          disabled={list.loading}
         >
           Apply
         </button>
@@ -397,28 +317,24 @@
     </div>
   {/if}
 
-  <div
-    class="flex-1 overflow-y-auto p-3"
-    bind:this={scrollContainer}
-    onscroll={onScroll}
-  >
-    {#if error}
+  <div class="flex-1 overflow-y-auto p-3" use:list.attach>
+    {#if list.error}
       <div
         class="flex items-start gap-2 rounded-md border border-rose-900/60 bg-rose-950/40 p-3 text-xs text-rose-200"
       >
         <AlertTriangle class="mt-0.5 size-4 shrink-0" />
         <div>
           <p class="font-semibold">Failed to load Comm-Link</p>
-          <p class="mt-1 break-all text-rose-300/80">{error}</p>
+          <p class="mt-1 break-all text-rose-300/80">{list.error}</p>
         </div>
       </div>
-    {:else if loading && articles.length === 0}
+    {:else if list.loading && list.items.length === 0}
       <div class="flex h-full items-center justify-center text-slate-500">
         <Loader2 class="size-5 animate-spin" />
       </div>
     {:else}
       <ul class="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 3xl:grid-cols-6 4xl:grid-cols-7">
-        {#each articles as a, i (a.href)}
+        {#each list.items as a, i (a.href)}
           {@const isNew = showNewRibbon && i < unreadAtOpen}
           <li class="virt-item-lg">
             <a
@@ -469,17 +385,17 @@
         {/each}
       </ul>
 
-      {#if articles.length === 0 && !loading}
+      {#if list.items.length === 0 && !list.loading}
         <p class="mt-6 text-center text-xs italic text-slate-500">
           No articles match the current filters.
         </p>
       {/if}
 
-      {#if articles.length > 0}
+      {#if list.items.length > 0}
         <div class="mt-4 flex h-10 items-center justify-center text-xs text-slate-500">
-          {#if loading}
+          {#if list.loading}
             <Loader2 class="size-4 animate-spin" />
-          {:else if !hasMore}
+          {:else if !list.hasMore}
             <span class="italic">No more articles.</span>
           {/if}
         </div>

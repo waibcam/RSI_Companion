@@ -902,29 +902,47 @@
             {/if}
             <div class="space-y-3 text-sm leading-relaxed text-slate-300">
               {#each articleBlocks as block, i (i)}
-                {#if block.kind === 'heading'}
-                  {#if block.level === 1}
-                    <h2 class="mt-4 text-base font-semibold uppercase tracking-wider text-sky-300">{block.text}</h2>
-                  {:else if block.level === 2}
-                    <h3 class="mt-3 text-sm font-semibold text-slate-100">{block.text}</h3>
+                <!-- Per-block error boundary. Galactapedia content is
+                     parsed from RSI's GraphQL response (which may
+                     occasionally ship a block with an unexpected
+                     shape — pre-release content, half-localised
+                     entries, etc.). Without this, a single bad
+                     block tears down the entire article render via
+                     the parent module-level boundary in App.svelte;
+                     the user has to click "Reload module" to recover.
+                     With it, the broken block degrades to a one-line
+                     fallback and the rest of the article still
+                     reads. -->
+                <svelte:boundary>
+                  {#if block.kind === 'heading'}
+                    {#if block.level === 1}
+                      <h2 class="mt-4 text-base font-semibold uppercase tracking-wider text-sky-300">{block.text}</h2>
+                    {:else if block.level === 2}
+                      <h3 class="mt-3 text-sm font-semibold text-slate-100">{block.text}</h3>
+                    {:else}
+                      <h4 class="mt-2 text-[13px] font-semibold text-slate-200">{block.text}</h4>
+                    {/if}
                   {:else}
-                    <h4 class="mt-2 text-[13px] font-semibold text-slate-200">{block.text}</h4>
+                    <p>
+                      {#each block.segments as seg, j (j)}
+                        {#if seg.kind === 'text'}{seg.text}{:else}
+                          <a
+                            href={safeHref(seg.href)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onclick={(e) => interceptInlineLink(e, seg.href)}
+                            class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
+                          >{seg.text}</a>
+                        {/if}
+                      {/each}
+                    </p>
                   {/if}
-                {:else}
-                  <p>
-                    {#each block.segments as seg, j (j)}
-                      {#if seg.kind === 'text'}{seg.text}{:else}
-                        <a
-                          href={safeHref(seg.href)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onclick={(e) => interceptInlineLink(e, seg.href)}
-                          class="text-sky-400 underline decoration-sky-700 underline-offset-2 hover:decoration-sky-400"
-                        >{seg.text}</a>
-                      {/if}
-                    {/each}
-                  </p>
-                {/if}
+                  {#snippet failed()}
+                    <p class="text-[11px] italic text-rose-400/70">
+                      [Galactapedia rendering error — skipping this block]
+                    </p>
+                  {/snippet}
+                </svelte:boundary>
               {/each}
             </div>
             {#if art.relatedArticles.length > 0}

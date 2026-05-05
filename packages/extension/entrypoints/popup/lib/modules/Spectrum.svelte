@@ -2511,6 +2511,15 @@
     {@const baseColor = tintGold ? 'rgb(255, 230, 130)' : 'rgb(226, 232, 240)'}
     {@const headColor = tintGold ? 'rgb(255, 230, 130)' : 'rgb(241, 245, 249)'}
     {#each blocks as b, i (i)}
+      <!-- Per-block error boundary for Spectrum rich text. Spectrum
+           threads / DMs are user-supplied content (sometimes from
+           orgs we know nothing about), and a malformed segment
+           (custom embed type, missing entity ranges, …) used to take
+           down the entire thread render via the module-level
+           boundary in App.svelte. With this, the bad block degrades
+           to a one-line fallback and the rest of the post stays
+           readable. -->
+      <svelte:boundary>
       {#if b.type === 'image' && b.imageUrl}
         <img
           src={b.imageUrl}
@@ -2549,6 +2558,12 @@
           {@render richText(b, baseColor)}
         </p>
       {/if}
+        {#snippet failed()}
+          <p class="text-[10px] italic text-rose-400/70">
+            [Spectrum block render error — open in Spectrum to view]
+          </p>
+        {/snippet}
+      </svelte:boundary>
     {/each}
   {/snippet}
 

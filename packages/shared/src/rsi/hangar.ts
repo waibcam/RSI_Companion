@@ -16,8 +16,10 @@
 // each module's blast radius small if RSI re-skins one path.
 
 import { parseHTML } from 'linkedom';
+import { z } from 'zod';
 import { RSI_BASE_URL } from '../constants.js';
-import { SHIP_CODES, type ShipCodeEntry } from '../data/index.js';
+import { SHIP_CODES, type ShipCodeEntry } from '../data/ship-codes.js';
+import { log } from '../log.js';
 import { fetchWithTimeout } from '../net.js';
 import {
   assertRsiHtmlNotLogin,
@@ -389,6 +391,63 @@ export interface HangarPagesResult {
   maxPage: number;
 }
 
+// Runtime validation schemas. The hangar parser is the only RSI
+// surface in this codebase that builds a typed payload by hand from
+// linkedom DOM walking — every other RSI call goes through a JSON
+// endpoint where Zod is already applied at the response boundary.
+// Without these schemas, a markup change on RSI's side could produce
+// a partial / mistyped pledge that crashes the consumer (Hangar
+// module, BuyBack module, HTF export) several call sites later
+// rather than at the parser boundary where it's debuggable.
+//
+// Strategy: validate per-pledge and DROP invalid rows rather than
+// failing the whole page. A user with one corrupt pledge still sees
+// the rest of their hangar; the dropped row's pledgeId (if we
+// captured it) goes to the diagnostics ring buffer so a bug report
+// can include it. The maxPage value is independent and preserved.
+
+const HangarShipEntrySchema = z.object({
+  shipName: z.string(),
+  shipNickname: z.string().nullable(),
+  manufacturerCode: z.string(),
+  manufacturerName: z.string(),
+  imageUrl: z.string().nullable(),
+}) satisfies z.ZodType<HangarShipEntry>;
+
+const HangarPledgeTypeSchema = z.enum([
+  'standalone-ship',
+  'standalone-vehicle',
+  'package',
+  'combo',
+  'pack',
+  'add-on',
+  'upgrade',
+  'extra',
+  'paint',
+  'other',
+]) satisfies z.ZodType<HangarPledgeType>;
+
+const HangarPledgeSchema = z.object({
+  pledgeId: z.string(),
+  pledgeName: z.string(),
+  pledgeNameRaw: z.string(),
+  pledgeType: HangarPledgeTypeSchema,
+  pledgeCost: z.string(),
+  pledgeCostNumeric: z.number(),
+  pledgeDate: z.string(),
+  lti: z.boolean(),
+  warbond: z.boolean(),
+  isMeltable: z.boolean(),
+  isGiftable: z.boolean(),
+  hasSquadron: z.boolean(),
+  hasStarcitizen: z.boolean(),
+  hasUpgrade: z.boolean(),
+  hasReward: z.boolean(),
+  isFreeCcu: z.boolean(),
+  imageUrl: z.string().nullable(),
+  ships: z.array(HangarShipEntrySchema),
+}) satisfies z.ZodType<HangarPledge>;
+
 export function parseHangarPledgesPage(html: string): HangarPagesResult {
   const { document } = parseHTML(html);
   const pledges: HangarPledge[] = [];
@@ -490,7 +549,23 @@ export function parseHangarPledgesPage(html: string): HangarPagesResult {
   const match = /page=(\d+)/.exec(href);
   if (match?.[1]) maxPage = Number.parseInt(match[1], 10) || 1;
 
-  return { pledges, maxPage };
+  // Per-pledge runtime validation — drops malformed rows but keeps
+  // the rest. See the schema block above for the rationale.
+  const validated: HangarPledge[] = [];
+  for (const p of pledges) {
+    const result = HangarPledgeSchema.safeParse(p);
+    if (result.success) {
+      validated.push(result.data);
+    } else {
+      log.warn(
+        'hangar',
+        `dropping invalid pledge row (id=${p.pledgeId || '?'})`,
+        result.error.issues.slice(0, 3),
+      );
+    }
+  }
+
+  return { pledges: validated, maxPage };
 }
 
 /** Fetch every page of `/account/pledges` and concatenate the parsed

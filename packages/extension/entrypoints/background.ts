@@ -14,6 +14,7 @@ if (typeof browser !== 'undefined') {
 }
 
 import { z } from 'zod';
+import { SHIP_NAME_CATALOG } from '@rsi-companion/shared/data/ship-name-info';
 import {
   LOANERS,
   BUNDLES,
@@ -23,7 +24,6 @@ import {
   RSI_COOKIE_LIVE,
   Rsi,
   Schemas,
-  SHIP_NAME_CATALOG,
   fetchWithTimeout,
   log,
   CONTACTS_SYNC_TO_PTU_PORT,
