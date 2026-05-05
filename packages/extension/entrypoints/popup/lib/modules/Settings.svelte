@@ -63,29 +63,49 @@
   import { errorMessage } from '../error';
   import { persistedState } from '../persist.svelte';
 
-  // Display labels + a short hint for the badge-modules picker. The
-  // module key set is BADGE_MODULES_ALL from notify.ts; we render
-  // them in that order. Note that the on/off DEFAULT for each module
-  // is handled by `BADGE_MODULES_DEFAULT` (in notify.ts) — here we
-  // only label them. release-notes carries an italic note clarifying
-  // it's the extension's own changelog so users know what they're
-  // toggling on.
+  // Display labels + an italic note for each badge-modules picker
+  // entry. The module key set is BADGE_MODULES_ALL from notify.ts;
+  // we render them in that order, so the visible order matches the
+  // declaration order in the shared package. The on/off DEFAULT for
+  // each module is handled by `BADGE_MODULES_DEFAULT` (in notify.ts)
+  // — here we only label them.
+  //
+  // Every entry carries a `note` string clarifying what the module
+  // counts — without one the user often has to guess (e.g. "is
+  // Spectrum just DMs? threads I'm subscribed to? everything?").
+  // Keep notes terse: one short clause that fits next to the label
+  // on a single line.
   const BADGE_MODULE_META: Record<
     Notify.NotifyModule,
-    { label: string; note?: string }
+    { label: string; note: string }
   > = {
-    spectrum: { label: 'Spectrum (notifications & DMs)' },
-    'comm-link': { label: 'Comm-Link' },
-    'patch-notes': { label: 'Patch Notes' },
-    roadmap: { label: 'Roadmap' },
-    contacts: { label: 'Contacts (friend requests)' },
-    'release-notes': {
-      label: 'Release Notes',
-      note: "extension's own changelog",
+    spectrum: {
+      label: 'Spectrum',
+      note: 'replies on subscribed threads, mentions, DMs',
+    },
+    'comm-link': {
+      label: 'Comm-Link',
+      note: 'official RSI news articles',
     },
     devtracker: {
       label: 'DevTracker',
-      note: 'CIG staff posts in Spectrum',
+      note: 'CIG staff posts across Spectrum forums',
+    },
+    'patch-notes': {
+      label: 'Patch Notes',
+      note: 'new game patch releases',
+    },
+    roadmap: {
+      label: 'Roadmap',
+      note: 'cards added, removed or reshuffled by CIG',
+    },
+    contacts: {
+      label: 'Contacts',
+      note: 'incoming friend requests',
+    },
+    'release-notes': {
+      label: 'Extension notes',
+      note: "this extension's own changelog (not RSI content)",
     },
   };
 
@@ -1343,9 +1363,7 @@
                 <span class="flex-1 {checked ? 'text-slate-200' : 'text-slate-500'}">
                   {meta.label}
                 </span>
-                {#if meta.note}
-                  <span class="text-[10px] italic text-slate-400">{meta.note}</span>
-                {/if}
+                <span class="text-[10px] italic text-slate-400">{meta.note}</span>
               </label>
             </li>
           {/each}

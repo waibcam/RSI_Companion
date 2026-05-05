@@ -84,16 +84,26 @@ export const EMPTY_COUNTS: NotifyCounts = {
 };
 
 /** Default set of modules that contribute to the toolbar badge total
- *  when the user hasn't customised the preference. All five
+ *  when the user hasn't customised the preference. All six
  *  RSI / Star Citizen content surfaces; the extension's own
  *  `release-notes` is intentionally excluded by default — Etyx
  *  reported on Discord (2026-05-04) that internal changelog updates
  *  shouldn't pollute the count of "stuff happening on RSI". Users
  *  who want to include it can flip the toggle in
- *  Settings → Appearance → Toolbar badge. */
+ *  Settings → Appearance → Toolbar badge.
+ *
+ *  `devtracker` joined the default set in 1.5.7. Initial design
+ *  shipped it as opt-in (CIG can drop a 30-post burst on patch days
+ *  and we worried about badge noise) but the user feedback was
+ *  immediate: DevTracker is the closest thing to "official news from
+ *  the devs", users WANT to see it bump the badge. Default-on it is.
+ *  Position: between `comm-link` and `patch-notes` to mirror how the
+ *  three feed types relate (community articles → CIG dev posts →
+ *  CIG patch notes). */
 export const BADGE_MODULES_DEFAULT: ReadonlyArray<NotifyModule> = [
   'spectrum',
   'comm-link',
+  'devtracker',
   'patch-notes',
   'roadmap',
   'contacts',
@@ -101,20 +111,17 @@ export const BADGE_MODULES_DEFAULT: ReadonlyArray<NotifyModule> = [
 
 /** Every module the badge could possibly contribute from. Drives
  *  the Settings UI (one checkbox per entry). Order matters — it's
- *  the order the checkboxes render.
- *
- *  `devtracker` joined the list in 1.5.7 (Dakota's Discord report:
- *  "are we not getting any notifications for the DevTracker
- *  anymore?"). Opt-in by default — DevTracker fires often enough
- *  that some users would find it noisy on the toolbar badge. */
+ *  the order the checkboxes render. Mirrors BADGE_MODULES_DEFAULT's
+ *  order for the six default-on modules; `release-notes` (the
+ *  extension's own changelog) sits last as the one opt-in entry. */
 export const BADGE_MODULES_ALL: ReadonlyArray<NotifyModule> = [
   'spectrum',
   'comm-link',
+  'devtracker',
   'patch-notes',
   'roadmap',
   'contacts',
   'release-notes',
-  'devtracker',
 ];
 
 /** Sum of unread counts that contribute to the TOOLBAR BADGE.

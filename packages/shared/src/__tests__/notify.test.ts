@@ -23,7 +23,7 @@ describe('totalUnread', () => {
     expect(totalUnread(EMPTY_COUNTS)).toBe(0);
   });
 
-  it('default sums RSI-content modules (spectrum + comm-link + patch-notes + roadmap + contacts)', () => {
+  it('default sums every RSI-content module (spectrum + comm-link + devtracker + patch-notes + roadmap + contacts)', () => {
     const counts: NotifyCounts = {
       spectrum: 1,
       'comm-link': 2,
@@ -31,10 +31,13 @@ describe('totalUnread', () => {
       roadmap: 4,
       contacts: 5,
       'release-notes': 0,
-      devtracker: 0,
+      devtracker: 6,
     };
-    // 1 + 2 + 3 + 4 + 5 = 15. Default excludes release-notes AND devtracker.
-    expect(totalUnread(counts)).toBe(15);
+    // 1 + 2 + 3 + 4 + 5 + 6 = 21. Default excludes only release-notes
+    // (the extension's own changelog) — DevTracker shipped opt-in
+    // in the initial 1.5.7 design and was promoted to default-on
+    // before release.
+    expect(totalUnread(counts)).toBe(21);
   });
 
   it('default ignores release-notes (extension changelog is not RSI content)', () => {
@@ -89,18 +92,20 @@ describe('totalUnread', () => {
     expect(totalUnread(counts, [])).toBe(0);
   });
 
-  it('honours an explicit modules filter — DevTracker opt-in', () => {
-    // User has ticked DevTracker in Settings → Toolbar badge.
+  it('honours an explicit modules filter — DevTracker opt-out', () => {
+    // User has unticked DevTracker in Settings → Toolbar badge.
+    // DevTracker is default-on, so opting out has to be explicit.
     const counts: NotifyCounts = {
       ...EMPTY_COUNTS,
       spectrum: 2,
       devtracker: 5,
     };
+    // Default sums spectrum + devtracker.
+    expect(totalUnread(counts)).toBe(7);
+    // Without devtracker in the explicit filter, only spectrum counts.
     expect(
-      totalUnread(counts, ['spectrum', 'comm-link', 'patch-notes', 'roadmap', 'contacts', 'devtracker']),
-    ).toBe(7);
-    // Same counts with default modules: devtracker ignored.
-    expect(totalUnread(counts)).toBe(2);
+      totalUnread(counts, ['spectrum', 'comm-link', 'patch-notes', 'roadmap', 'contacts']),
+    ).toBe(2);
   });
 
   it('ignores negative inputs by treating them as-is (contract: non-negative)', () => {
@@ -112,25 +117,28 @@ describe('totalUnread', () => {
     expect(BADGE_MODULES_DEFAULT).not.toContain('release-notes');
   });
 
-  it('BADGE_MODULES_ALL includes every module key', () => {
+  it('BADGE_MODULES_ALL lists every module in picker order', () => {
     // Pin down that the Settings UI iterates every module that has
     // a count slot — adding a new NotifyModule without updating
     // BADGE_MODULES_ALL would silently hide it from the picker.
+    // Order matches BADGE_MODULES_DEFAULT for the six default-on
+    // modules, with `release-notes` (opt-in) trailing.
     expect(BADGE_MODULES_ALL).toEqual([
       'spectrum',
       'comm-link',
+      'devtracker',
       'patch-notes',
       'roadmap',
       'contacts',
       'release-notes',
-      'devtracker',
     ]);
   });
 
-  it('BADGE_MODULES_DEFAULT excludes devtracker (opt-in only)', () => {
-    // DevTracker was added in 1.5.7 — opt-in for the toolbar badge
-    // because CIG can drop a 30-post burst on patch days and not
-    // every user wants that spilling into the badge.
-    expect(BADGE_MODULES_DEFAULT).not.toContain('devtracker');
+  it('BADGE_MODULES_DEFAULT includes devtracker (default-on as of 1.5.7 final)', () => {
+    // DevTracker shipped opt-in in the 1.5.7 design pass but was
+    // promoted to default-on before release. CIG dev posts ARE the
+    // closest thing to "official news from the devs" and users want
+    // them counted by default.
+    expect(BADGE_MODULES_DEFAULT).toContain('devtracker');
   });
 });
