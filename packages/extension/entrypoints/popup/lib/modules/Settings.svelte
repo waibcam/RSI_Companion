@@ -126,6 +126,60 @@
     }
   });
 
+  // ---- Tab-mode table-of-contents -----------------------------------------
+  //
+  // In tab mode (≥1024px viewport) Settings has plenty of horizontal
+  // breathing room, so we surface a sticky sidebar that lists the
+  // cards present in the current tab and lets the user jump straight
+  // to one. Same anchor ids that the release-note deep-links target
+  // (since 1.5.4) — the deep-link `consumePendingTab` effect above
+  // and the TOC click handler below share the exact same scroll
+  // mechanism, so the two paths can't drift.
+  //
+  // In popup mode (toolbar window, ~760×570 px) the TOC stays hidden
+  // (`hidden tab:block`) — the popup viewport is too narrow to spare
+  // the column without compressing card content unreadably.
+  //
+  // No active-section highlighting yet — the popup is short enough
+  // that visual hover/click feedback on the TOC link itself is
+  // sufficient. If the cards count grows past 4-5 per tab we may
+  // want IntersectionObserver-based current-section tracking.
+
+  type TocEntry = { id: string; label: string };
+  const TOC: Record<SettingsTabId, ReadonlyArray<TocEntry>> = {
+    appearance: [
+      { id: 'popup-size',      label: 'Popup size' },
+      { id: 'ui-scale',        label: 'UI scale' },
+      { id: 'toolbar-badge',   label: 'Toolbar badge' },
+      { id: 'sidebar-modules', label: 'Sidebar modules' },
+    ],
+    performance: [
+      { id: 'cache',    label: 'Cache' },
+      { id: 'prefetch', label: 'Prefetch' },
+    ],
+    diagnostics: [
+      { id: 'sessions',       label: 'Sessions' },
+      { id: 'ui-prompts',     label: 'UI prompts' },
+      { id: 'debug-info',     label: 'Debug info' },
+      { id: 'reset-settings', label: 'Reset settings' },
+    ],
+  };
+  const tocEntries = $derived<ReadonlyArray<TocEntry>>(TOC[tab]);
+
+  /** Smooth-scroll a section into view by id. Mirrors the rAF-deferred
+   *  scroll the `consumePendingTab` effect uses for release-note
+   *  deep-links — same one-frame defer guards against the case where
+   *  the click also flips the tab and the target section hasn't
+   *  finished mounting yet. */
+  function jumpToSection(id: string): void {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }
+
   // --- Cache section ---------------------------------------------------------
 
   type CacheStats = CacheStatsResponsePayload;
@@ -620,7 +674,36 @@
   </div>
 
   <div class="flex-1 overflow-y-auto p-3">
-    <div class="mx-auto flex max-w-3xl flex-col gap-3">
+    <!-- Tab-mode layout: sticky TOC on the left, cards on the right.
+         Popup mode collapses to the original single-column flow
+         (`tab:` Tailwind variant gates everything). Width budget:
+         w-44 TOC + gap-6 + flex-1 cards in tab mode; the cards
+         keep their max-w-3xl reading column instead of stretching
+         across an entire 4K viewport. -->
+    <div class="mx-auto flex max-w-3xl flex-col gap-3 tab:max-w-5xl tab:flex-row tab:items-start tab:gap-6">
+
+      <!-- =================================================== TOC ============= -->
+      <aside class="hidden tab:block tab:w-44 tab:shrink-0">
+        <nav class="sticky top-0 flex flex-col gap-0.5" aria-label="Settings sections">
+          <p class="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            On this page
+          </p>
+          {#each tocEntries as entry (entry.id)}
+            <button
+              type="button"
+              onclick={() => jumpToSection(entry.id)}
+              class="rounded px-2 py-1 text-left text-xs text-slate-400 transition hover:bg-slate-800/60 hover:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            >
+              {entry.label}
+            </button>
+          {/each}
+        </nav>
+      </aside>
+
+      <!-- Cards column. Keeps the existing max-w-3xl reading width in
+           tab mode so long forms (Cache, Sidebar modules) stay
+           legible regardless of viewport width. -->
+      <div class="flex flex-1 flex-col gap-3 tab:max-w-3xl">
 
       <!-- =================================================== CACHE =========== -->
       {#if tab === 'performance'}
@@ -1424,6 +1507,7 @@
         </div>
       </section>
       {/if}
+      </div>
     </div>
   </div>
 </section>
