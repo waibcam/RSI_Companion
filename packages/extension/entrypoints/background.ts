@@ -3599,7 +3599,16 @@ const FAST_POLL_ALARM = 'rsi-companion-poll';
 const SLOW_POLL_ALARM = 'rsi-companion-poll-slow';
 const FAST_POLL_MINUTES = 10;
 const SLOW_POLL_MINUTES = 60;
-const FAST_MODULES: readonly Notify.NotifyModule[] = ['spectrum', 'contacts', 'comm-link'];
+const FAST_MODULES: readonly Notify.NotifyModule[] = [
+  'spectrum',
+  'contacts',
+  'comm-link',
+  // DevTracker joined the fast lane in 1.5.7. CIG can drop a 30-post
+  // burst on a patch day so a 60-min slow tick would feel laggy. The
+  // 10-min fast tick + scrape of /community/devtracker (~one HTML page
+  // per tick) is the same cost profile as comm-link's poll.
+  'devtracker',
+];
 const SLOW_MODULES: readonly Notify.NotifyModule[] = ['patch-notes', 'roadmap', 'release-notes'];
 const NOTIFY_SEEN_PREFIX = 'notify:seen:';
 const NOTIFY_STATE_KEY = 'notify:state';
@@ -3611,7 +3620,12 @@ const NOTIFY_MIGRATION_KEY = 'notify:migration';
 // so first poll after upgrade doesn't flash counts on everything.
 // v4: state shape: lastError: string | null → lastErrors: per-module record.
 // Old singleton error would break on read under the new type.
-const NOTIFY_MIGRATION_VERSION = 4;
+// v5: added 'devtracker' module (1.5.7). Same baseline-on-first-poll
+// reasoning as v3 — without the migration bump, first poll after
+// upgrade would mark every existing devpost as new (the seen set is
+// empty for a never-polled module, so every id arrives fresh) and
+// the user would see a 30+ count out of nowhere.
+const NOTIFY_MIGRATION_VERSION = 5;
 const MAX_SEEN_IDS = 5000;
 
 type SeenFingerprint = { ids: string[] };
@@ -3850,6 +3864,25 @@ async function collectPatchNotesIds(): Promise<string[]> {
   return notes.map((n) => n.href);
 }
 
+async function collectDevTrackerIds(): Promise<string[]> {
+  // Scrapes /en/community/devtracker (the same HTML page the popup's
+  // DevTracker tab consumes via `spectrum.threads`) and emits a stable
+  // id per post. We avoid `t.id` because `fetchDevTrackerPosts`
+  // synthesizes a numeric id from `chanId * 1_000_000` when no
+  // replyId is in the URL — that's stable enough for diffing within
+  // DevTracker but not globally unique against other Spectrum feeds.
+  // `t.url` is the canonical key here: every devpost has a distinct
+  // URL on RSI's site, so collisions are not a concern.
+  //
+  // Distinct from `collectSpectrumIds` (spectrum module) which polls
+  // `fetchHighlightedThreads` — a different feed produced by Spectrum's
+  // notifications endpoint. The two collectors operate on independent
+  // module counts so toggling DevTracker on for the toolbar badge can't
+  // double-count posts that already showed up in the Spectrum feed.
+  const posts = await Rsi.fetchDevTrackerPosts();
+  return posts.map((t) => t.url);
+}
+
 async function collectRoadmapIds(): Promise<string[]> {
   const snap = await collectRoadmapSnapshot();
   return Object.keys(snap);
@@ -4037,6 +4070,13 @@ const INVALIDATE_ON_NEW_PREFIXES: Record<Notify.NotifyModule, string[]> = {
   'patch-notes': ['patchnotes:list:'],
   roadmap: ['roadmap:data', 'progress-tracker:v2'],
   'release-notes': [], // bundled JSON, no cache layer
+  // DevTracker tab in Spectrum reads from `spectrum:threads` cache
+  // (same key as the highlighted-threads feed used by the spectrum
+  // counter — they share storage but not collector). Evicting that
+  // key on a fresh devtracker tick makes the next popup open refetch
+  // and surface the new post immediately, instead of waiting for
+  // TTL.spectrum to elapse.
+  devtracker: ['spectrum:threads'],
 };
 
 async function invalidateCacheForNewItems(module: Notify.NotifyModule): Promise<void> {
@@ -4155,6 +4195,7 @@ async function pollNotifications(scope: PollScope = 'all'): Promise<Notify.Notif
     run('roadmap', collectRoadmapIds);
     run('contacts', collectContactsPendingIds);
     run('release-notes', collectReleaseNoteIds);
+    run('devtracker', collectDevTrackerIds);
 
     await Promise.all(tasks);
 

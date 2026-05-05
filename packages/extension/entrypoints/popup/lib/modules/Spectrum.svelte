@@ -84,6 +84,23 @@
     typeof v === 'string' && (TABS as readonly string[]).includes(v);
   const tabP = persistedState<Tab>('spectrum:tab', 'devtracker', isTab);
 
+  // Snapshot of the DevTracker unread counter at module mount, BEFORE
+  // any markSeen() calls below clear it. Drives the NEW chip on top-N
+  // entries in the DevTracker tab, same pattern Comm-Link and Patch
+  // Notes use. Reading the reactive notify state once at script init
+  // captures it as a plain number; subsequent markSeen() calls update
+  // notifyState.state.counts.devtracker but don't re-read this const.
+  // Behaviour for users who land on Spectrum mid-session:
+  //   - first mount: snapshot = N → markSeen('devtracker') zeroes
+  //     notify state → top N cards show NEW chip until module unmount.
+  //   - second mount within same popup session: snapshot = 0 (already
+  //     cleared) → no NEW chips, which is correct.
+  //   - new posts arrive while popup is open: notify state
+  //     updates live, but the snapshot stays — we don't surprise the
+  //     user with a fresh batch of chips mid-browsing. They land on the
+  //     next mount.
+  const unreadDevTrackerAtOpen = notifyState.state.counts.devtracker;
+
   // Forums-tab navigation state. Three persisted keys:
   //   communityId — which community's forums we're browsing (1 = SC).
   //   channelId   — active channel within that community (null = list).
@@ -1359,6 +1376,15 @@
     if (next === 'notifications') {
       void notifyState.markSeen('spectrum');
     }
+    // DevTracker has a separate counter from the rest of Spectrum —
+    // clear it whenever the user switches into the tab so the toolbar
+    // badge (when opted in via Settings → Toolbar badge) zeroes
+    // straight away. The NEW chip stays on the cards visible during
+    // this session because `unreadDevTrackerAtOpen` was snapshotted
+    // before this call.
+    if (next === 'devtracker') {
+      void notifyState.markSeen('devtracker');
+    }
     if (next === 'notifications' && !notifsLoaded) {
       loadNotifications();
     } else if (next === 'trending' && !trendingLoaded) {
@@ -1540,6 +1566,15 @@
         if (forumThreadP.value != null) void loadThreadDetail(forumThreadP.value);
       }
       void notifyState.markSeen('spectrum');
+      // DevTracker has its own counter (separate poll source) — clear
+      // it only when the user actually lands on the devtracker tab.
+      // If the user persisted a different sub-tab (DMs / Notifications
+      // / Forums / Trending / Bookmarks), leave the devtracker counter
+      // intact so the NEW chip + the toolbar-badge contribution
+      // (when opted-in) survive until they actually open DevTracker.
+      if (tabP.value === 'devtracker') {
+        void notifyState.markSeen('devtracker');
+      }
     } else if (authState.signedIn === false) {
       signedIn = false;
       threadsLoading = false;
@@ -1705,7 +1740,7 @@
     {/if}
   {/snippet}
 
-  {#snippet threadCardBody(t: Thread, stripe: string)}
+  {#snippet threadCardBody(t: Thread, stripe: string, showNewChip: boolean = false)}
     {@render avatar(avatarUrl(t.authorAvatar), t.authorDisplayName, t.authorNickname, 'size-9')}
     {#if t.mediaPreviewUrl}
       <img
@@ -1728,7 +1763,7 @@
             pinned
           </span>
         {/if}
-        {#if t.isNew}
+        {#if t.isNew || showNewChip}
           <span class="rounded bg-sky-500/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-sky-200">
             new
           </span>
@@ -1783,7 +1818,7 @@
     </div>
   {/snippet}
 
-  {#snippet threadCard(t: Thread, onLocalClick?: (t: Thread) => void)}
+  {#snippet threadCard(t: Thread, onLocalClick?: (t: Thread) => void, showNewChip: boolean = false)}
     {@const stripe = t.channel.color || '#475569'}
     <!-- Stripe colour: channel hue normally, CIG gold when the post
          author is staff (matches Spectrum's site treatment). -->
@@ -1801,7 +1836,7 @@
           class={cls}
           style="border-left: 3px solid {leftStripe}; {cardStyle}"
         >
-          {@render threadCardBody(t, stripe)}
+          {@render threadCardBody(t, stripe, showNewChip)}
         </button>
       {:else}
         <!-- DevTracker / Trending / Bookmarks fallback path: render an
@@ -1822,7 +1857,7 @@
             navigateToThread(t);
           }}
         >
-          {@render threadCardBody(t, stripe)}
+          {@render threadCardBody(t, stripe, showNewChip)}
         </a>
       {/if}
     </li>
@@ -2945,8 +2980,22 @@
         {/if}
       {:else}
         <ul class="mx-auto flex max-w-3xl flex-col gap-1">
-          {#each filteredThreads as t (t.id)}
-            {@render threadCard(t)}
+          {#each filteredThreads as t, i (t.id)}
+            <!-- NEW chip on top-N entries when on the DevTracker tab,
+                 where N is the unread count we snapshotted at module
+                 mount (before markSeen cleared it). Same pattern as
+                 Comm-Link / Patch Notes. Suppressed when:
+                 - on Trending tab (filteredThreads is sourced from
+                   `trending` then; the index ordering doesn't match
+                   "newest devtracker posts since last visit"),
+                 - the user is filtering with the search box (filtered
+                   list breaks newest-first ordering — top-N would
+                   land on wrong cards). -->
+            {@render threadCard(
+              t,
+              undefined,
+              tab === 'devtracker' && !query.trim() && i < unreadDevTrackerAtOpen,
+            )}
           {/each}
         </ul>
 

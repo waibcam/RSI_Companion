@@ -83,6 +83,10 @@
       label: 'Release Notes',
       note: "extension's own changelog",
     },
+    devtracker: {
+      label: 'DevTracker',
+      note: 'CIG staff posts in Spectrum',
+    },
   };
 
   // Three top-level tabs: Appearance / Performance / Diagnostics. The

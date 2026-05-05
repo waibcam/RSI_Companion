@@ -31,8 +31,9 @@ describe('totalUnread', () => {
       roadmap: 4,
       contacts: 5,
       'release-notes': 0,
+      devtracker: 0,
     };
-    // 1 + 2 + 3 + 4 + 5 = 15.
+    // 1 + 2 + 3 + 4 + 5 = 15. Default excludes release-notes AND devtracker.
     expect(totalUnread(counts)).toBe(15);
   });
 
@@ -70,6 +71,7 @@ describe('totalUnread', () => {
       roadmap: 4,
       contacts: 5,
       'release-notes': 6,
+      devtracker: 7,
     };
     expect(totalUnread(counts, ['spectrum'])).toBe(1);
   });
@@ -82,8 +84,23 @@ describe('totalUnread', () => {
       roadmap: 4,
       contacts: 5,
       'release-notes': 6,
+      devtracker: 7,
     };
     expect(totalUnread(counts, [])).toBe(0);
+  });
+
+  it('honours an explicit modules filter — DevTracker opt-in', () => {
+    // User has ticked DevTracker in Settings → Toolbar badge.
+    const counts: NotifyCounts = {
+      ...EMPTY_COUNTS,
+      spectrum: 2,
+      devtracker: 5,
+    };
+    expect(
+      totalUnread(counts, ['spectrum', 'comm-link', 'patch-notes', 'roadmap', 'contacts', 'devtracker']),
+    ).toBe(7);
+    // Same counts with default modules: devtracker ignored.
+    expect(totalUnread(counts)).toBe(2);
   });
 
   it('ignores negative inputs by treating them as-is (contract: non-negative)', () => {
@@ -106,6 +123,14 @@ describe('totalUnread', () => {
       'roadmap',
       'contacts',
       'release-notes',
+      'devtracker',
     ]);
+  });
+
+  it('BADGE_MODULES_DEFAULT excludes devtracker (opt-in only)', () => {
+    // DevTracker was added in 1.5.7 — opt-in for the toolbar badge
+    // because CIG can drop a 30-post burst on patch days and not
+    // every user wants that spilling into the badge.
+    expect(BADGE_MODULES_DEFAULT).not.toContain('devtracker');
   });
 });

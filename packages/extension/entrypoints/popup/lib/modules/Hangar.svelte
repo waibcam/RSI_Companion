@@ -648,6 +648,24 @@
           {@const totalContent = p.ships.length + bundled.length}
           {@const isExpandable = totalContent > 0}
           {@const thumbUrl = p.imageUrl ?? p.ships[0]?.imageUrl ?? null}
+          <!-- Upgraded-pledge primary-label swap. Reported as a feature
+               request on Discord by WhisperDark + Dakota: when a pledge
+               has been CCU'd to a different ship, RSI's hangar still
+               shows the ORIGINAL pledge title ("Standalone Ships -
+               STV plus Blue Steel Paint") in the title slot, with the
+               new ship hidden behind the expand. We surface the
+               current ship as the primary label and demote the
+               original pledge name to a "from …" sub-line, so the
+               list reads as "what you have NOW" rather than "what you
+               originally bought".
+               Only applied to single-ship pledges — combo packs (game
+               package + add-on ship) have multiple ships and the
+               pledge title is the most useful summary. -->
+          {@const isUpgradedSingle =
+            p.hasUpgrade &&
+            p.ships.length === 1 &&
+            !!p.ships[0] &&
+            p.ships[0].shipName !== p.pledgeName}
           <li class="virt-item-lg rounded-md bg-slate-900/60 ring-1 ring-slate-800">
             <!-- Pledges with no Ship/Vehicle items inside (rewards-only,
                  coupon-only, sub-flair, etc.) render as a static row —
@@ -687,15 +705,32 @@
                   </div>
                 {/if}
                 <div class="flex min-w-0 flex-1 flex-col justify-center">
-                  <p class="truncate text-xs font-medium text-slate-200">
-                    {p.pledgeName || '(unnamed pledge)'}
-                  </p>
-                  <p class="truncate text-[10px] text-slate-500">
-                    #{p.pledgeId} · {p.pledgeDate}
-                    {#if p.pledgeCost} · {p.pledgeCost}{/if}
-                  </p>
+                  {#if isUpgradedSingle && p.ships[0]}
+                    <p class="truncate text-xs font-medium text-slate-200">
+                      {p.ships[0].shipName}
+                    </p>
+                    <p class="truncate text-[10px] text-slate-500">
+                      <span class="italic">from {p.pledgeName}</span>
+                      · #{p.pledgeId} · {p.pledgeDate}{#if p.pledgeCost} · {p.pledgeCost}{/if}
+                    </p>
+                  {:else}
+                    <p class="truncate text-xs font-medium text-slate-200">
+                      {p.pledgeName || '(unnamed pledge)'}
+                    </p>
+                    <p class="truncate text-[10px] text-slate-500">
+                      #{p.pledgeId} · {p.pledgeDate}
+                      {#if p.pledgeCost} · {p.pledgeCost}{/if}
+                    </p>
+                  {/if}
                 </div>
                 <div class="flex shrink-0 items-center gap-1 self-center">
+                  {#if isUpgradedSingle}
+                    <span
+                      class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300 ring-1 ring-inset ring-amber-500/30"
+                      title="Upgraded via CCU — primary label shows the current ship; original pledge in italics above"
+                      >Upgraded</span
+                    >
+                  {/if}
                   {#if p.lti}
                     <span
                       class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-emerald-300 ring-1 ring-inset ring-emerald-500/30"

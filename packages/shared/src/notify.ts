@@ -13,7 +13,8 @@ export type NotifyModule =
   | 'patch-notes'
   | 'roadmap'
   | 'contacts'
-  | 'release-notes';
+  | 'release-notes'
+  | 'devtracker';
 
 export interface NotifyCounts {
   spectrum: number;
@@ -22,6 +23,16 @@ export interface NotifyCounts {
   roadmap: number;
   contacts: number;
   'release-notes': number;
+  /** New posts in Spectrum's DevTracker tab since the user last
+   *  visited it. Tracked separately from `spectrum` because the
+   *  DevTracker UI uses `fetchDevTrackerPosts` (HTML scrape from
+   *  /community/devtracker) while the existing `spectrum` counter
+   *  is fed by `fetchHighlightedThreads` + DM lobbies + native
+   *  notifications — three different feeds that can't dedup
+   *  cleanly. Opt-in for the toolbar badge (NOT in
+   *  `BADGE_MODULES_DEFAULT`) — only contributes when the user
+   *  ticks the box in Settings → Toolbar badge. */
+  devtracker: number;
 }
 
 /** Per-module error messages from the most recent poll. A module with no
@@ -69,6 +80,7 @@ export const EMPTY_COUNTS: NotifyCounts = {
   roadmap: 0,
   contacts: 0,
   'release-notes': 0,
+  devtracker: 0,
 };
 
 /** Default set of modules that contribute to the toolbar badge total
@@ -89,7 +101,12 @@ export const BADGE_MODULES_DEFAULT: ReadonlyArray<NotifyModule> = [
 
 /** Every module the badge could possibly contribute from. Drives
  *  the Settings UI (one checkbox per entry). Order matters — it's
- *  the order the checkboxes render. */
+ *  the order the checkboxes render.
+ *
+ *  `devtracker` joined the list in 1.5.7 (Dakota's Discord report:
+ *  "are we not getting any notifications for the DevTracker
+ *  anymore?"). Opt-in by default — DevTracker fires often enough
+ *  that some users would find it noisy on the toolbar badge. */
 export const BADGE_MODULES_ALL: ReadonlyArray<NotifyModule> = [
   'spectrum',
   'comm-link',
@@ -97,6 +114,7 @@ export const BADGE_MODULES_ALL: ReadonlyArray<NotifyModule> = [
   'roadmap',
   'contacts',
   'release-notes',
+  'devtracker',
 ];
 
 /** Sum of unread counts that contribute to the TOOLBAR BADGE.
