@@ -4269,6 +4269,15 @@ async function handleNotifyMarkSeen(module: Notify.NotifyModule): Promise<Notify
       await seenSet('contacts', await collectContactsPendingIds());
     } else if (module === 'release-notes') {
       await seenSet('release-notes', await collectReleaseNoteIds());
+    } else if (module === 'devtracker') {
+      // Without this branch, markSeen('devtracker') zeroed counts but
+      // never updated `notify:seen:devtracker` — so the very next poll
+      // (10-min alarm, or every popup open via `pollNow()`) re-diffed
+      // `current \ seen` against the stale baseline and re-surfaced
+      // every devpost as "new". The badge would come back the instant
+      // the user closed and reopened the popup. Reported by Kamille on
+      // 2026-05-06 morning, half a day after the 1.5.7 publication.
+      await seenSet('devtracker', await collectDevTrackerIds());
     }
   } catch (e) {
     // If refresh fails, we still clear the count so the user isn't stuck.
