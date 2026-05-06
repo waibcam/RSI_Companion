@@ -51,7 +51,22 @@
   );
 
   function unreadFor(id: ModuleId): number {
-    if (id === 'spectrum') return notifyState.state.counts.spectrum;
+    if (id === 'spectrum') {
+      // DevTracker is its own NotifyModule (separate poll source —
+      // `fetchDevTrackerPosts` vs `fetchHighlightedThreads`) but
+      // visually lives as a sub-tab inside the Spectrum module.
+      // Roll its count into the Spectrum sidebar pill so the user
+      // can locate where to click when the toolbar badge bumps for
+      // a fresh devpost (without this, the icon badge shows "2" but
+      // every sidebar pill is empty — the count exists in
+      // BADGE_MODULES_DEFAULT's sum but has nowhere to surface in
+      // the sidebar). Tap-through cost: opening Spectrum lands on
+      // its persisted last sub-tab; if that's not DevTracker the
+      // pill stays lit until the user actually visits the
+      // DevTracker sub-tab — markSeen('devtracker') only fires
+      // there.
+      return notifyState.state.counts.spectrum + notifyState.state.counts.devtracker;
+    }
     if (id === 'comm-link') return notifyState.state.counts['comm-link'];
     if (id === 'patch-notes') return notifyState.state.counts['patch-notes'];
     if (id === 'roadmap') return notifyState.state.counts.roadmap;
