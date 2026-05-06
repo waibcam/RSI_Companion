@@ -29,7 +29,7 @@
     "@types/chrome": "^0.1.40",
     "@types/firefox-webext-browser": "^143.0.0",
     "@wxt-dev/module-svelte": "^2.0.2",
-    "svelte-check": "^4.0.6",
+    "svelte-check": "^4.4.8",
     "tailwindcss": "^4.2.4",
     "typescript": "^5.6.3",
     "wxt": "^0.20.25"
