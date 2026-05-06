@@ -2,7 +2,7 @@
   {
     "version": "1.5.8",
     "released_at": 1778133600,
-    "notes": "{\"info\":[\"Two DevTracker hotfixes on 1.5.7.\"],\"features\":[\"When the toolbar icon badge bumped for a fresh DevTracker post, the [Spectrum](module:spectrum) sidebar pill stayed empty so you couldn't tell where to click. The Spectrum pill now folds in DevTracker's count (since DevTracker lives as a sub-tab inside Spectrum). The icon and the sidebar agree again.\",\"DevTracker count no longer comes back after closing and reopening the popup. The 'mark as seen' on tab open was zeroing the visible count but not updating the persistent baseline, so every subsequent poll re-diffed against stale data and resurfaced the same posts.\"]}"
+    "notes": "{\"info\":[\"Three DevTracker hotfixes on 1.5.7.\"],\"features\":[\"When the toolbar icon badge bumped for a fresh DevTracker post, the [Spectrum](module:spectrum) sidebar pill stayed empty so you couldn't tell where to click. The Spectrum pill now folds in DevTracker's count (since DevTracker lives as a sub-tab inside Spectrum). The icon and the sidebar agree again.\",\"DevTracker count no longer comes back after closing and reopening the popup. The 'mark as seen' on tab open was zeroing the visible count but not updating the persistent baseline, so every subsequent poll re-diffed against stale data and resurfaced the same posts.\",\"Opening the popup directly onto the DevTracker tab (when it was already your last-used tab) now clears the count immediately, instead of needing you to switch to another module and come back. A race between the popup-open background poll and the tab's own 'mark as seen' was letting the poll's stale write win.\"]}"
   },
   {
     "version": "1.5.7",

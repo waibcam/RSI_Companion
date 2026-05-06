@@ -4249,6 +4249,30 @@ async function handleRoadmapSnapshotCommit(
 }
 
 async function handleNotifyMarkSeen(module: Notify.NotifyModule): Promise<Notify.NotifyState> {
+  // Wait for any in-flight poll to finish before we touch state. Without
+  // this guard, a popup open that lands on the persisted DevTracker tab
+  // races the popup-side `pollNow()` kicked off by App.svelte:
+  //   t=0    popup opens, pollNow() starts pollNotifications('all')
+  //   t=2ms  pollNotifications.diffModule captures `seen` (old baseline)
+  //   t=10ms Spectrum mount fires markSeen('devtracker') — this handler
+  //   t=600ms pollNotifications fetches finish + write counts based on the
+  //          stale `seen` snapshot. counts.devtracker becomes N, OVERWRITING
+  //          the zero we'd just persisted.
+  // Result: user sees the badge unclear on first popup open even though
+  // they're already viewing the new posts. The fix is to make markSeen the
+  // LAST writer: await any concurrent poll, then run our seenSet + zero.
+  // The dedupe map exposes in-flight poll Promises by key; pollNotifications
+  // uses keys shaped `notify:poll:<scope>`. allSettled because we don't
+  // care about poll failures here, only that they're done writing.
+  // Reported by Kamille on 2026-05-06 morning while testing the prior
+  // markSeen-persistence fix.
+  const polls = [...inFlight.entries()]
+    .filter(([k]) => k.startsWith('notify:poll:'))
+    .map(([, p]) => p);
+  if (polls.length > 0) {
+    await Promise.allSettled(polls);
+  }
+
   const prev = await notifyStateGet();
   // Snapshot the current set of ids for this module into `seen`. We fetch fresh
   // so that anything visible right now in the module counts as "read", not just
