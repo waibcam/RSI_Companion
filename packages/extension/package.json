@@ -25,7 +25,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.2.4",
+    "@tailwindcss/vite": "^4.3.0",
     "@types/chrome": "^0.1.40",
     "@types/firefox-webext-browser": "^143.0.0",
     "@wxt-dev/module-svelte": "^2.0.2",
