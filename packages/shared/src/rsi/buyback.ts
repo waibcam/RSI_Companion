@@ -34,6 +34,20 @@ function resolveUrl(src: string | null | undefined): string | null {
   return src.startsWith('http') ? src : `${RSI_BASE_URL}${src}`;
 }
 
+/** Case-insensitive attribute read. RSI writes the CCU pledge id as
+ *  `data-pledgeId` (camelCase) and linkedom — unlike a browser's HTML
+ *  parser — preserves the source casing verbatim, so a plain
+ *  `getAttribute('data-pledgeid')` misses it. Scanning the attribute
+ *  list works whichever casing RSI ships. */
+function attrCaseInsensitive(el: Element | null | undefined, name: string): string | null {
+  if (!el) return null;
+  const want = name.toLowerCase();
+  for (const at of Array.from(el.attributes ?? [])) {
+    if (at.name.toLowerCase() === want) return at.value;
+  }
+  return null;
+}
+
 /** djb2 hash → base36 string. Used to synthesize a stable fallback ID
  *  for buy-back pledges that have neither a reclaim href nor a CCU data
  *  attribute to key off. Using `${page}:${pledges.length}` as a fallback
@@ -53,6 +67,8 @@ function stableHash(s: string): string {
 export function parseBuyBackPage(html: string, page: number): BuyBackListPage {
   const { document } = parseHTML(html);
   const pledges: BuyBackPledge[] = [];
+  /** How many times each base id has been emitted on this page. */
+  const idCounts = new Map<string, number>();
 
   for (const card of Array.from(document.querySelectorAll('article.pledge'))) {
     const title = text(card.querySelector('h1'));
@@ -81,13 +97,28 @@ export function parseBuyBackPage(html: string, page: number): BuyBackListPage {
       !reclaimHref && Boolean(card.querySelector('a.holosmallbtn.js-open-ship-upgrades'));
 
     const idMatch = reclaimHref ? /\/pledge\/buyback\/(\d+)/.exec(reclaimHref) : null;
-    const ccuIdMatch = ccuOnly
-      ? /data-pledgeId=(\d+)/i.exec(card.querySelector('a.holosmallbtn.js-open-ship-upgrades')?.outerHTML ?? '')
+    const ccuId = ccuOnly
+      ? attrCaseInsensitive(
+          card.querySelector('a.holosmallbtn.js-open-ship-upgrades'),
+          'data-pledgeid',
+        )
       : null;
     // Content-hash fallback: deterministic across reorderings and pagination
     // shifts, so favourites and the popup-side cache don't break when RSI
     // rearranges the hangar list.
-    const id = idMatch?.[1] ?? ccuIdMatch?.[1] ?? `fb:${stableHash(`${title}|${image ?? ''}`)}`;
+    const baseId = idMatch?.[1] ?? ccuId ?? `fb:${stableHash(`${title}|${image ?? ''}`)}`;
+
+    // Two genuinely distinct pledges can share `baseId`: the content hash
+    // collides for duplicate SKUs (two identical Auroras in buy-back have
+    // the same title + image), and RSI itself repeats `data-pledgeId`
+    // across CCU rows that point at the same source pledge. A duplicate id
+    // crashes the popup's keyed `{#each ... (p.id)}` with
+    // `each_key_duplicate`, so disambiguate repeats within the page.
+    // The first occurrence keeps the bare id, which keeps the common
+    // (non-duplicated) case byte-identical to what the cache already holds.
+    const seenCount = idCounts.get(baseId) ?? 0;
+    idCounts.set(baseId, seenCount + 1);
+    const id = seenCount === 0 ? baseId : `${baseId}#${seenCount + 1}`;
 
     pledges.push({ id, title, image, fields, reclaimUrl, ccuOnly });
   }

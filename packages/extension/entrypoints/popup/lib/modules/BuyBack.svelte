@@ -23,13 +23,21 @@
   let query = $state('');
   let hideCcu = $state(false);
 
-  // Paged-list state. The dedup-on-append is critical here — RSI's
-  // buyback paginator sometimes echoes a pledge across adjacent
-  // pages when something melts/restores between fetches and the row
-  // shifts the page boundary, which crashed Svelte's `{#each as p
-  // (p.id)}` with `each_key_duplicate` before the dedup helper
-  // landed (reported by MoBIoS [RHLD] on 2026-05-04). The helper's
-  // `keyOf` does the dedup centrally now.
+  // Paged-list state. The dedup is critical here — duplicate `p.id`
+  // crashes the keyed `{#each as p (p.id)}` below with
+  // `each_key_duplicate`. Two independent sources of duplicates, both
+  // now handled:
+  //
+  //   1. Cross-page echo: RSI's paginator repeats a pledge across
+  //      adjacent pages when something melts/restores between fetches
+  //      and the row shifts the page boundary (reported by MoBIoS
+  //      [RHLD] on 2026-05-04). The helper's `keyOf` dedups on append.
+  //   2. Within a single page: the parser's content-hash fallback id
+  //      collides for duplicate SKUs, so an account holding several
+  //      copies of the same ship crashed on page 1 — before any
+  //      pagination happened (reported by Chris on Discord,
+  //      2026-09-03). Fixed in `parseBuyBackPage` by suffixing repeat
+  //      ids, with the helper deduping within-batch as a backstop.
   const list = createPagedList<Pledge>({
     keyOf: (p) => p.id,
     fetchPage: async (page, force) => {

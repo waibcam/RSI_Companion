@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.5.10",
+    "released_at": 1788516000,
+    "notes": "{\"info\":[\"One crash fix for the Buy-Back module.\"],\"features\":[\"[Buy-Back](module:buy-back) no longer dies with \\\"This module crashed\\\" when your buy-back list holds several copies of the same ship. Pledges usable only through a CCU/upgrade were never getting their real pledge ID read out of the page, so they all fell back to an ID derived from the ship name and picture — identical for identical ships. Two rows then claimed the same identity and the module gave up on the whole list. Real CCU IDs are read correctly again, genuine duplicates get distinct IDs, and the list loader now rejects repeated IDs on every page instead of only from the second one on. Thanks to Chris on Discord for the report.\"]}"
+  },
+  {
     "version": "1.5.9",
     "released_at": 1778148000,
     "notes": "{\"info\":[\"One more DevTracker hotfix on top of 1.5.8.\"],\"features\":[\"Opening the popup directly onto the [Spectrum](module:spectrum) DevTracker tab (when it was already your last-used tab) now clears the count immediately, instead of needing you to switch to another module and come back. A race between the popup-open background poll and the tab's own 'mark as seen' was letting the poll's stale write win.\"]}"

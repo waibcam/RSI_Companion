@@ -148,13 +148,24 @@ export function createPagedList<T>(opts: CreatePagedListOptions<T>): PagedList<T
     error = null;
     try {
       const res = await opts.fetchPage(page, force);
-      if (page === 1) {
-        items = res.items;
-      } else {
-        const seen = new Set(items.map(opts.keyOf));
-        const fresh = res.items.filter((it) => !seen.has(opts.keyOf(it)));
-        items = [...items, ...fresh];
+      // Dedup unconditionally, and against the incoming batch as well as
+      // the accumulated items. The earlier version only deduped on
+      // append (page > 1) and only against what was already in `items`,
+      // so a page that carried a repeated key *within itself* — page 1
+      // included — went straight into the keyed `{#each}` and crashed it
+      // with `each_key_duplicate`. Keys are the caller's contract, but a
+      // scraped upstream can't be trusted to honour it, and a dropped
+      // row beats a dead module.
+      const base = page === 1 ? [] : items;
+      const seen = new Set(base.map(opts.keyOf));
+      const fresh: T[] = [];
+      for (const it of res.items) {
+        const key = opts.keyOf(it);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        fresh.push(it);
       }
+      items = page === 1 ? fresh : [...items, ...fresh];
       if (res.fromCache !== undefined) fromCache = res.fromCache;
       nextPage = page + 1;
       // hasMore: server flag wins when supplied; otherwise infer from
