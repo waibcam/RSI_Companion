@@ -626,6 +626,12 @@
     ]
   },
   {
+    "name": "Nova Tank",
+    "ids": [
+      "154"
+    ]
+  },
+  {
     "name": "Banu Merchantman",
     "ids": [
       "36"
@@ -737,6 +743,12 @@
     "name": "ATLS GEO",
     "ids": [
       "296"
+    ]
+  },
+  {
+    "name": "Ursa Rover",
+    "ids": [
+      "139"
     ]
   },
   {

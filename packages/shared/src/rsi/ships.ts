@@ -369,7 +369,13 @@ export function mergeHangarIntoMatrix(input: MergeInput): ShipListBundle {
       }
     }
 
-    const aliased = byAlias.get(name);
+    // Alias lookup on the raw name first, then on the prefix-stripped
+    // form. The stripped attempt means one bare catalog entry
+    // ("Ursa Rover") covers every branded spelling RSI emits for it
+    // ("RSI Ursa Rover", "Roberts Space Industries Ursa Rover"),
+    // instead of needing a hand-written variant per manufacturer
+    // prefix the way "- Nova Tank" / "Tumbril - Nova Tank" did.
+    const aliased = byAlias.get(name) ?? (stripped ? byAlias.get(stripped) : undefined);
     if (aliased) {
       for (const ship of aliased) {
         ship.owned = true;

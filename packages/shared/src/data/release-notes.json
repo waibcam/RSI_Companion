@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.5.11",
+    "released_at": 1788552000,
+    "notes": "{\"info\":[\"Ship-name catalog fix.\"],\"features\":[\"[Ships](module:ships): \\\"Nova Tank\\\" and \\\"Ursa Rover\\\" no longer show up under \\\"Unknown ships in your hangar\\\". CIG dropped the suffixes in the public Ship Matrix — they are listed there as \\\"Nova\\\" and \\\"Ursa\\\" — while the hangar still serves the original SKU names, and the alias catalog only carried the manufacturer-prefixed spellings. Alias lookup also falls back to the manufacturer-stripped name now, so one catalog entry covers every branded spelling RSI emits for the same vehicle instead of needing a hand-written variant per prefix. Thanks to Shufflepuff [RAID] on Discord for the report.\"]}"
+  },
+  {
     "version": "1.5.10",
     "released_at": 1788516000,
     "notes": "{\"info\":[\"One crash fix for the Buy-Back module.\"],\"features\":[\"[Buy-Back](module:buy-back) no longer dies with \\\"This module crashed\\\" when your buy-back list holds several copies of the same ship. Pledges usable only through a CCU/upgrade were never getting their real pledge ID read out of the page, so they all fell back to an ID derived from the ship name and picture — identical for identical ships. Two rows then claimed the same identity and the module gave up on the whole list. Real CCU IDs are read correctly again, genuine duplicates get distinct IDs, and the list loader now rejects repeated IDs on every page instead of only from the second one on. Thanks to Chris on Discord for the report.\"]}"

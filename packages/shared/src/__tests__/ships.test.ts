@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { mergeHangarIntoMatrix, parseHangarPage } from '../rsi/ships.js';
 import type { ShipMatrixEntry } from '../rsi/ships.js';
+import { SHIP_NAME_CATALOG } from '../data/ship-name-info.js';
 
 // mergeHangarIntoMatrix is the core correctness boundary for the Ships module:
 // the user's ownership list, loaner inheritance, and "ship not found" reports
@@ -73,6 +74,38 @@ describe('mergeHangarIntoMatrix', () => {
     expect(aurora.owned).toBe(true);
     expect(aurora.count).toBe(1);
     expect(out.notFound).toEqual([]);
+  });
+
+  // Reported by Shufflepuff [RAID] on Discord (2026-09-04): "Nova Tank"
+  // and "Ursa Rover" showed up under "Unknown ships in my hangar". CIG
+  // dropped the legacy suffixes in the Ship Matrix ("Nova", "Ursa") but
+  // the hangar still lists the original SKU names, and the catalog only
+  // carried the manufacturer-prefixed spellings.
+  it('resolves an alias through the manufacturer-stripped hangar name', () => {
+    const out = mergeHangarIntoMatrix({
+      matrix: [entry(139, 'Ursa', MFG_RSI)],
+      hangarNames: ['RSI Ursa Rover'],
+      nameCatalog: [{ name: 'Ursa Rover', ids: ['139'] }],
+      loanerTable: {},
+    });
+    expect(out.notFound).toEqual([]);
+    const ursa = out.ships.find((s) => s.id === 139)!;
+    expect(ursa.owned).toBe(true);
+    expect(ursa.count).toBe(1);
+  });
+
+  it('prefers the raw-name alias over the stripped one', () => {
+    const out = mergeHangarIntoMatrix({
+      matrix: [entry(139, 'Ursa', MFG_RSI), entry(273, 'Ursa Medivac', MFG_RSI)],
+      hangarNames: ['RSI Ursa Rover'],
+      nameCatalog: [
+        { name: 'RSI Ursa Rover', ids: ['273'] },
+        { name: 'Ursa Rover', ids: ['139'] },
+      ],
+      loanerTable: {},
+    });
+    expect(out.ships.find((s) => s.id === 273)!.owned).toBe(true);
+    expect(out.ships.find((s) => s.id === 139)!.owned).toBe(false);
   });
 
   it('reports unknown hangar names in notFound', () => {
@@ -362,5 +395,38 @@ describe('parseHangarPage', () => {
     const { names, maxPage } = parseHangarPage(html);
     expect(names).toEqual(['Gladius']);
     expect(maxPage).toBe(5);
+  });
+});
+
+// Guards the bundled alias catalog itself, not just the merge algorithm.
+// Every name here is a hangar SKU a user actually reported as unmatched;
+// the matrix ids are the live values from POST /ship-matrix/index.
+describe('SHIP_NAME_CATALOG', () => {
+  const RENAMED: Array<[hangarName: string, matrixId: number, matrixName: string]> = [
+    ['Nova Tank', 154, 'Nova'],
+    ['Ursa Rover', 139, 'Ursa'],
+  ];
+
+  for (const [hangarName, matrixId, matrixName] of RENAMED) {
+    it(`resolves the legacy hangar name "${hangarName}" to ${matrixName}`, () => {
+      const out = mergeHangarIntoMatrix({
+        matrix: [entry(matrixId, matrixName, MFG_RSI)],
+        hangarNames: [hangarName],
+        nameCatalog: SHIP_NAME_CATALOG.map((e) => ({ ...e })),
+        loanerTable: {},
+      });
+      expect(out.notFound).toEqual([]);
+      expect(out.ships.find((s) => s.id === matrixId)!.owned).toBe(true);
+    });
+  }
+
+  it('has no duplicate alias names', () => {
+    const seen = new Set<string>();
+    const dupes: string[] = [];
+    for (const e of SHIP_NAME_CATALOG) {
+      if (seen.has(e.name)) dupes.push(e.name);
+      seen.add(e.name);
+    }
+    expect(dupes).toEqual([]);
   });
 });
