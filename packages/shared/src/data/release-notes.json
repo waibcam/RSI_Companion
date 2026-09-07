@@ -1,5 +1,10 @@
 [
   {
+    "version": "1.5.12",
+    "released_at": 1788555600,
+    "notes": "{\"info\":[\"Ship-name catalog cleanup.\"],\"features\":[\"[Ships](module:ships): retired special editions are matched to the hull they folded back into, so they stop landing in \\\"Unknown ships in your hangar\\\". The 2949 Best in Show liveries now resolve to Cutlass Black, Caterpillar, Hammerhead and Reclaimer, and the two F8C Lightning variants plus the Greycat PTV point at their current Ship Matrix entries. Twenty-one catalog aliases had been left pointing at ship IDs CIG has since removed from the matrix — inert, but they made the catalog look like it covered names it did not. The catalog is now checked against a snapshot of the live Ship Matrix on every test run, so a dead alias can't slip back in unnoticed.\"]}"
+  },
+  {
     "version": "1.5.11",
     "released_at": 1788552000,
     "notes": "{\"info\":[\"Ship-name catalog fix.\"],\"features\":[\"[Ships](module:ships): \\\"Nova Tank\\\" and \\\"Ursa Rover\\\" no longer show up under \\\"Unknown ships in your hangar\\\". CIG dropped the suffixes in the public Ship Matrix — they are listed there as \\\"Nova\\\" and \\\"Ursa\\\" — while the hangar still serves the original SKU names, and the alias catalog only carried the manufacturer-prefixed spellings. Alias lookup also falls back to the manufacturer-stripped name now, so one catalog entry covers every branded spelling RSI emits for the same vehicle instead of needing a hand-written variant per prefix. Thanks to Shufflepuff [RAID] on Discord for the report.\"]}"
