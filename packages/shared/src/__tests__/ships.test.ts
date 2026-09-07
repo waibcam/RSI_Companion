@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mergeHangarIntoMatrix, parseHangarPage } from '../rsi/ships.js';
 import type { ShipMatrixEntry } from '../rsi/ships.js';
 import { SHIP_NAME_CATALOG } from '../data/ship-name-info.js';
+import SHIP_MATRIX_FIXTURE from './fixtures/ship-matrix-ids.json';
 
 // mergeHangarIntoMatrix is the core correctness boundary for the Ships module:
 // the user's ownership list, loaner inheritance, and "ship not found" reports
@@ -428,5 +429,56 @@ describe('SHIP_NAME_CATALOG', () => {
       seen.add(e.name);
     }
     expect(dupes).toEqual([]);
+  });
+
+  // Dead-id guard. An alias whose ids no longer exist in the matrix is
+  // silently inert: the byAlias index in mergeHangarIntoMatrix only
+  // registers a name when at least one of its ids resolves against the
+  // live matrix. Nothing throws, nothing logs — the catalog just looks
+  // like it covers a name it doesn't, which is exactly the state that
+  // hides a real gap when someone reports an unmatched hangar ship.
+  //
+  // The fixture is a checked-in snapshot of the live matrix's ids (see
+  // `pnpm fixture:ship-matrix`). CIG retires ids when a limited-edition
+  // SKU is folded back into its base hull — the four 2949 "Best in
+  // Show" entries (193-196) went that way — so a failure here means
+  // "refresh the fixture, then remap or delete the aliases it flags",
+  // not "the test is wrong".
+  describe('against the checked-in ship-matrix fixture', () => {
+    const liveIds = new Set(SHIP_MATRIX_FIXTURE.ships.map((s) => s.id));
+
+    it('has a fixture that actually covers the matrix', () => {
+      // Cheap tripwire: a truncated or half-written fixture would make
+      // every assertion below vacuously pass.
+      expect(SHIP_MATRIX_FIXTURE.ships.length).toBe(SHIP_MATRIX_FIXTURE.count);
+      expect(SHIP_MATRIX_FIXTURE.ships.length).toBeGreaterThan(200);
+    });
+
+    it('references only ids that exist in the matrix', () => {
+      const dead: string[] = [];
+      for (const alias of SHIP_NAME_CATALOG) {
+        for (const idStr of alias.ids) {
+          const id = Number.parseInt(idStr, 10);
+          if (!liveIds.has(id)) dead.push(`${alias.name} -> ${idStr}`);
+        }
+      }
+      expect(dead).toEqual([]);
+    });
+
+    it('resolves every alias name through the merge', () => {
+      // End-to-end counterpart to the id check above: feeds the whole
+      // catalog through the real merge against the whole fixture matrix
+      // and asserts nothing lands in `notFound`. Catches an alias that
+      // resolves on paper but can't be reached by the lookup order in
+      // mergeHangarIntoMatrix.
+      const matrix = SHIP_MATRIX_FIXTURE.ships.map((s) => entry(s.id, s.name, MFG_RSI));
+      const out = mergeHangarIntoMatrix({
+        matrix,
+        hangarNames: SHIP_NAME_CATALOG.map((e) => e.name),
+        nameCatalog: SHIP_NAME_CATALOG.map((e) => ({ ...e })),
+        loanerTable: {},
+      });
+      expect(out.notFound).toEqual([]);
+    });
   });
 });

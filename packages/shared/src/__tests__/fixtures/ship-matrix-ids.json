@@ -1,0 +1,1019 @@
+{
+  "source": "POST https://robertsspaceindustries.com/ship-matrix/index",
+  "fetchedAt": "2026-09-07",
+  "count": 253,
+  "ships": [
+    {
+      "id": 1,
+      "name": "Aurora Mk I ES"
+    },
+    {
+      "id": 3,
+      "name": "Aurora Mk I LX"
+    },
+    {
+      "id": 4,
+      "name": "Aurora Mk I MR"
+    },
+    {
+      "id": 5,
+      "name": "Aurora Mk I CL"
+    },
+    {
+      "id": 6,
+      "name": "Aurora Mk I LN"
+    },
+    {
+      "id": 7,
+      "name": "300i"
+    },
+    {
+      "id": 8,
+      "name": "315p"
+    },
+    {
+      "id": 9,
+      "name": "325a"
+    },
+    {
+      "id": 10,
+      "name": "350r"
+    },
+    {
+      "id": 11,
+      "name": "F7C Hornet Mk I"
+    },
+    {
+      "id": 13,
+      "name": "F7C-S Hornet Ghost Mk I"
+    },
+    {
+      "id": 14,
+      "name": "F7C-R Hornet Tracker Mk I"
+    },
+    {
+      "id": 15,
+      "name": "F7C-M Super Hornet Mk I"
+    },
+    {
+      "id": 16,
+      "name": "Freelancer"
+    },
+    {
+      "id": 22,
+      "name": "M50"
+    },
+    {
+      "id": 24,
+      "name": "Caterpillar"
+    },
+    {
+      "id": 26,
+      "name": "Scythe"
+    },
+    {
+      "id": 27,
+      "name": "Idris-M"
+    },
+    {
+      "id": 28,
+      "name": "Idris-P"
+    },
+    {
+      "id": 31,
+      "name": "Freelancer DUR"
+    },
+    {
+      "id": 32,
+      "name": "Freelancer MAX"
+    },
+    {
+      "id": 33,
+      "name": "Freelancer MIS"
+    },
+    {
+      "id": 35,
+      "name": "Khartu-Al"
+    },
+    {
+      "id": 36,
+      "name": "Merchantman"
+    },
+    {
+      "id": 37,
+      "name": "F7A Hornet Mk II"
+    },
+    {
+      "id": 41,
+      "name": "Hull C"
+    },
+    {
+      "id": 45,
+      "name": "Constellation Andromeda"
+    },
+    {
+      "id": 46,
+      "name": "Constellation Taurus"
+    },
+    {
+      "id": 47,
+      "name": "Constellation Aquila"
+    },
+    {
+      "id": 49,
+      "name": "Constellation Phoenix"
+    },
+    {
+      "id": 51,
+      "name": "Reclaimer"
+    },
+    {
+      "id": 55,
+      "name": "890 Jump"
+    },
+    {
+      "id": 56,
+      "name": "Cutlass Black"
+    },
+    {
+      "id": 57,
+      "name": "Cutlass Red"
+    },
+    {
+      "id": 58,
+      "name": "Cutlass Blue"
+    },
+    {
+      "id": 59,
+      "name": "Redeemer"
+    },
+    {
+      "id": 60,
+      "name": "Gladius"
+    },
+    {
+      "id": 61,
+      "name": "Herald"
+    },
+    {
+      "id": 62,
+      "name": "Carrack"
+    },
+    {
+      "id": 63,
+      "name": "Javelin"
+    },
+    {
+      "id": 64,
+      "name": "Gladiator"
+    },
+    {
+      "id": 65,
+      "name": "Mustang Alpha"
+    },
+    {
+      "id": 66,
+      "name": "Mustang Beta"
+    },
+    {
+      "id": 67,
+      "name": "Mustang Gamma"
+    },
+    {
+      "id": 69,
+      "name": "Mustang Delta"
+    },
+    {
+      "id": 70,
+      "name": "Mustang Omega"
+    },
+    {
+      "id": 71,
+      "name": "Orion"
+    },
+    {
+      "id": 75,
+      "name": "Vanguard Warden"
+    },
+    {
+      "id": 84,
+      "name": "Hull A"
+    },
+    {
+      "id": 85,
+      "name": "Hull B"
+    },
+    {
+      "id": 86,
+      "name": "Hull D"
+    },
+    {
+      "id": 87,
+      "name": "Hull E"
+    },
+    {
+      "id": 88,
+      "name": "Starfarer"
+    },
+    {
+      "id": 89,
+      "name": "Starfarer Gemini"
+    },
+    {
+      "id": 90,
+      "name": "Reliant Kore"
+    },
+    {
+      "id": 91,
+      "name": "Genesis"
+    },
+    {
+      "id": 92,
+      "name": "P-52 Merlin"
+    },
+    {
+      "id": 93,
+      "name": "Glaive"
+    },
+    {
+      "id": 95,
+      "name": "Vanguard Harbinger"
+    },
+    {
+      "id": 96,
+      "name": "Vanguard Sentinel"
+    },
+    {
+      "id": 97,
+      "name": "Endeavor"
+    },
+    {
+      "id": 98,
+      "name": "Sabre"
+    },
+    {
+      "id": 99,
+      "name": "Retaliator"
+    },
+    {
+      "id": 100,
+      "name": "Avenger Stalker"
+    },
+    {
+      "id": 101,
+      "name": "Avenger Warlock"
+    },
+    {
+      "id": 102,
+      "name": "Avenger Titan"
+    },
+    {
+      "id": 103,
+      "name": "Crucible"
+    },
+    {
+      "id": 104,
+      "name": "P-72 Archimedes"
+    },
+    {
+      "id": 105,
+      "name": "Reliant Mako"
+    },
+    {
+      "id": 106,
+      "name": "Reliant Sen"
+    },
+    {
+      "id": 107,
+      "name": "Reliant Tana"
+    },
+    {
+      "id": 108,
+      "name": "Blade"
+    },
+    {
+      "id": 109,
+      "name": "Prospector"
+    },
+    {
+      "id": 110,
+      "name": "Buccaneer"
+    },
+    {
+      "id": 111,
+      "name": "Dragonfly Yellowjacket"
+    },
+    {
+      "id": 112,
+      "name": "Dragonfly Black"
+    },
+    {
+      "id": 113,
+      "name": "MPUV Personnel"
+    },
+    {
+      "id": 114,
+      "name": "MPUV Cargo"
+    },
+    {
+      "id": 115,
+      "name": "Terrapin"
+    },
+    {
+      "id": 116,
+      "name": "Polaris"
+    },
+    {
+      "id": 117,
+      "name": "Prowler"
+    },
+    {
+      "id": 120,
+      "name": "Sabre Comet"
+    },
+    {
+      "id": 121,
+      "name": "Gladius Valiant"
+    },
+    {
+      "id": 122,
+      "name": "F7C Hornet Wildfire Mk I"
+    },
+    {
+      "id": 123,
+      "name": "85X"
+    },
+    {
+      "id": 124,
+      "name": "Avenger Titan Renegade"
+    },
+    {
+      "id": 126,
+      "name": "Razor"
+    },
+    {
+      "id": 127,
+      "name": "Vanguard Hoplite"
+    },
+    {
+      "id": 128,
+      "name": "Hurricane"
+    },
+    {
+      "id": 129,
+      "name": "Defender"
+    },
+    {
+      "id": 130,
+      "name": "Eclipse"
+    },
+    {
+      "id": 131,
+      "name": "Nox"
+    },
+    {
+      "id": 132,
+      "name": "Nox Kue"
+    },
+    {
+      "id": 134,
+      "name": "Cyclone"
+    },
+    {
+      "id": 135,
+      "name": "Cyclone TR"
+    },
+    {
+      "id": 136,
+      "name": "Cyclone RC"
+    },
+    {
+      "id": 137,
+      "name": "Cyclone RN"
+    },
+    {
+      "id": 138,
+      "name": "Cyclone AA"
+    },
+    {
+      "id": 139,
+      "name": "Ursa"
+    },
+    {
+      "id": 140,
+      "name": "600i Touring"
+    },
+    {
+      "id": 141,
+      "name": "600i Explorer"
+    },
+    {
+      "id": 143,
+      "name": "X1"
+    },
+    {
+      "id": 145,
+      "name": "X1 Velocity"
+    },
+    {
+      "id": 147,
+      "name": "X1 Force"
+    },
+    {
+      "id": 148,
+      "name": "Sabre Raven"
+    },
+    {
+      "id": 149,
+      "name": "Pioneer"
+    },
+    {
+      "id": 150,
+      "name": "Hawk"
+    },
+    {
+      "id": 151,
+      "name": "Hammerhead"
+    },
+    {
+      "id": 154,
+      "name": "Nova"
+    },
+    {
+      "id": 155,
+      "name": "Vulcan"
+    },
+    {
+      "id": 156,
+      "name": "Constellation Phoenix Emerald"
+    },
+    {
+      "id": 157,
+      "name": "Razor EX"
+    },
+    {
+      "id": 158,
+      "name": "Razor LX"
+    },
+    {
+      "id": 159,
+      "name": "100i"
+    },
+    {
+      "id": 160,
+      "name": "125a"
+    },
+    {
+      "id": 161,
+      "name": "135c"
+    },
+    {
+      "id": 162,
+      "name": "C2 Hercules"
+    },
+    {
+      "id": 163,
+      "name": "M2 Hercules"
+    },
+    {
+      "id": 164,
+      "name": "A2 Hercules"
+    },
+    {
+      "id": 165,
+      "name": "Vulture"
+    },
+    {
+      "id": 166,
+      "name": "Apollo Triage"
+    },
+    {
+      "id": 167,
+      "name": "Apollo Medivac"
+    },
+    {
+      "id": 168,
+      "name": "Mercury"
+    },
+    {
+      "id": 169,
+      "name": "Valkyrie"
+    },
+    {
+      "id": 170,
+      "name": "Kraken"
+    },
+    {
+      "id": 171,
+      "name": "Valkyrie Liberator Edition"
+    },
+    {
+      "id": 172,
+      "name": "Mustang Alpha Vindicator"
+    },
+    {
+      "id": 173,
+      "name": "Arrow"
+    },
+    {
+      "id": 174,
+      "name": "San'tok.yāi"
+    },
+    {
+      "id": 175,
+      "name": "Kraken Privateer"
+    },
+    {
+      "id": 176,
+      "name": "SRV"
+    },
+    {
+      "id": 177,
+      "name": "F7C-M Super Hornet Heartseeker Mk I"
+    },
+    {
+      "id": 178,
+      "name": "Corsair"
+    },
+    {
+      "id": 179,
+      "name": "Ursa Fortuna"
+    },
+    {
+      "id": 180,
+      "name": "Ranger RC"
+    },
+    {
+      "id": 181,
+      "name": "Ranger TR"
+    },
+    {
+      "id": 182,
+      "name": "Ranger CV"
+    },
+    {
+      "id": 183,
+      "name": "Ballista"
+    },
+    {
+      "id": 184,
+      "name": "Anvil Ballista Snowblind"
+    },
+    {
+      "id": 185,
+      "name": "Anvil Ballista Dunestalker"
+    },
+    {
+      "id": 186,
+      "name": "Nautilus"
+    },
+    {
+      "id": 187,
+      "name": "Nautilus Solstice Edition"
+    },
+    {
+      "id": 188,
+      "name": "Gladius Pirate Edition"
+    },
+    {
+      "id": 189,
+      "name": "Mantis"
+    },
+    {
+      "id": 191,
+      "name": "C8 Pisces"
+    },
+    {
+      "id": 192,
+      "name": "C8X Pisces Expedition"
+    },
+    {
+      "id": 198,
+      "name": "Ares Inferno"
+    },
+    {
+      "id": 200,
+      "name": "Ares Ion"
+    },
+    {
+      "id": 201,
+      "name": "MOLE"
+    },
+    {
+      "id": 202,
+      "name": "Argo Mole Carbon Edition"
+    },
+    {
+      "id": 203,
+      "name": "Argo Mole Talus Edition"
+    },
+    {
+      "id": 204,
+      "name": "Carrack w/C8X"
+    },
+    {
+      "id": 205,
+      "name": "Carrack Expedition w/C8X"
+    },
+    {
+      "id": 206,
+      "name": "Carrack Expedition"
+    },
+    {
+      "id": 207,
+      "name": "P-72 Archimedes Emerald"
+    },
+    {
+      "id": 208,
+      "name": "G12"
+    },
+    {
+      "id": 209,
+      "name": "G12r"
+    },
+    {
+      "id": 210,
+      "name": "G12a"
+    },
+    {
+      "id": 211,
+      "name": "Talon"
+    },
+    {
+      "id": 212,
+      "name": "Talon Shrike"
+    },
+    {
+      "id": 214,
+      "name": "ROC"
+    },
+    {
+      "id": 215,
+      "name": "PTV"
+    },
+    {
+      "id": 216,
+      "name": "Nomad"
+    },
+    {
+      "id": 217,
+      "name": "Perseus"
+    },
+    {
+      "id": 218,
+      "name": "Cyclone MT"
+    },
+    {
+      "id": 219,
+      "name": "ROC-DS"
+    },
+    {
+      "id": 221,
+      "name": "Scorpius"
+    },
+    {
+      "id": 222,
+      "name": "Railen"
+    },
+    {
+      "id": 223,
+      "name": "400i"
+    },
+    {
+      "id": 224,
+      "name": "Liberator"
+    },
+    {
+      "id": 225,
+      "name": "Spartan"
+    },
+    {
+      "id": 226,
+      "name": "RAFT"
+    },
+    {
+      "id": 227,
+      "name": "Odyssey"
+    },
+    {
+      "id": 228,
+      "name": "Cutlass Steel"
+    },
+    {
+      "id": 229,
+      "name": "HoverQuad"
+    },
+    {
+      "id": 230,
+      "name": "Expanse"
+    },
+    {
+      "id": 231,
+      "name": "Mule"
+    },
+    {
+      "id": 232,
+      "name": "Legionnaire"
+    },
+    {
+      "id": 233,
+      "name": "Centurion"
+    },
+    {
+      "id": 234,
+      "name": "C1 Spirit"
+    },
+    {
+      "id": 237,
+      "name": "A1 Spirit"
+    },
+    {
+      "id": 239,
+      "name": "E1 Spirit"
+    },
+    {
+      "id": 240,
+      "name": "STV"
+    },
+    {
+      "id": 241,
+      "name": "C8R Pisces"
+    },
+    {
+      "id": 242,
+      "name": "Cutter"
+    },
+    {
+      "id": 243,
+      "name": "Scorpius Antares"
+    },
+    {
+      "id": 244,
+      "name": "Galaxy"
+    },
+    {
+      "id": 245,
+      "name": "Lynx"
+    },
+    {
+      "id": 246,
+      "name": "Fury"
+    },
+    {
+      "id": 248,
+      "name": "Fury MX"
+    },
+    {
+      "id": 249,
+      "name": "Storm"
+    },
+    {
+      "id": 250,
+      "name": "Fury LX"
+    },
+    {
+      "id": 251,
+      "name": "Zeus Mk II ES"
+    },
+    {
+      "id": 256,
+      "name": "Zeus Mk II MR"
+    },
+    {
+      "id": 257,
+      "name": "Zeus Mk II CL"
+    },
+    {
+      "id": 259,
+      "name": "Cutter Scout"
+    },
+    {
+      "id": 260,
+      "name": "Arrastra"
+    },
+    {
+      "id": 261,
+      "name": "F8C Lightning"
+    },
+    {
+      "id": 263,
+      "name": "F8C Lightning Executive Edition"
+    },
+    {
+      "id": 264,
+      "name": "Storm AA"
+    },
+    {
+      "id": 265,
+      "name": "Syulen"
+    },
+    {
+      "id": 266,
+      "name": "Cutter Rambler"
+    },
+    {
+      "id": 267,
+      "name": "Sabre Firebird"
+    },
+    {
+      "id": 268,
+      "name": "MPUV Tractor"
+    },
+    {
+      "id": 269,
+      "name": "F7A Hornet Mk I"
+    },
+    {
+      "id": 270,
+      "name": "F7C Hornet Mk II"
+    },
+    {
+      "id": 271,
+      "name": "Pulse"
+    },
+    {
+      "id": 272,
+      "name": "Pulse LX"
+    },
+    {
+      "id": 273,
+      "name": "Ursa Medivac"
+    },
+    {
+      "id": 274,
+      "name": "Ironclad"
+    },
+    {
+      "id": 275,
+      "name": "Ironclad Assault"
+    },
+    {
+      "id": 276,
+      "name": "Sabre Peregrine"
+    },
+    {
+      "id": 277,
+      "name": "ATLS"
+    },
+    {
+      "id": 278,
+      "name": "Starlancer MAX"
+    },
+    {
+      "id": 279,
+      "name": "Starlancer TAC"
+    },
+    {
+      "id": 280,
+      "name": "Intrepid"
+    },
+    {
+      "id": 281,
+      "name": "CSV-SM"
+    },
+    {
+      "id": 282,
+      "name": "Paladin"
+    },
+    {
+      "id": 283,
+      "name": "Terrapin Medic"
+    },
+    {
+      "id": 284,
+      "name": "F7C-R Hornet Tracker Mk II"
+    },
+    {
+      "id": 285,
+      "name": "F7C-S Hornet Ghost Mk II"
+    },
+    {
+      "id": 286,
+      "name": "Guardian"
+    },
+    {
+      "id": 287,
+      "name": "Guardian QI"
+    },
+    {
+      "id": 288,
+      "name": "Fortune"
+    },
+    {
+      "id": 293,
+      "name": "F7C-M Super Hornet Mk II"
+    },
+    {
+      "id": 295,
+      "name": "Golem"
+    },
+    {
+      "id": 296,
+      "name": "ATLS GEO"
+    },
+    {
+      "id": 297,
+      "name": "MTC"
+    },
+    {
+      "id": 298,
+      "name": "Guardian MX"
+    },
+    {
+      "id": 299,
+      "name": "Asgard"
+    },
+    {
+      "id": 300,
+      "name": "Prowler Utility"
+    },
+    {
+      "id": 301,
+      "name": "Meteor"
+    },
+    {
+      "id": 302,
+      "name": "L-21 Wolf"
+    },
+    {
+      "id": 303,
+      "name": "Stinger"
+    },
+    {
+      "id": 304,
+      "name": "Shiv"
+    },
+    {
+      "id": 305,
+      "name": "L-22 Alpha Wolf"
+    },
+    {
+      "id": 306,
+      "name": "MDC"
+    },
+    {
+      "id": 307,
+      "name": "Salvation"
+    },
+    {
+      "id": 308,
+      "name": "Clipper"
+    },
+    {
+      "id": 309,
+      "name": "Golem OX"
+    },
+    {
+      "id": 310,
+      "name": "Hermes"
+    },
+    {
+      "id": 311,
+      "name": "MOTH"
+    },
+    {
+      "id": 312,
+      "name": "Aurora Mk II"
+    },
+    {
+      "id": 313,
+      "name": "Aurora Mk I SE"
+    },
+    {
+      "id": 314,
+      "name": "UTV"
+    },
+    {
+      "id": 315,
+      "name": "M80"
+    },
+    {
+      "id": 316,
+      "name": "Tiburon"
+    },
+    {
+      "id": 317,
+      "name": "Odin"
+    },
+    {
+      "id": 318,
+      "name": "Pitbull"
+    },
+    {
+      "id": 319,
+      "name": "Starlite"
+    },
+    {
+      "id": 320,
+      "name": "Tyilui"
+    },
+    {
+      "id": 321,
+      "name": "Basher"
+    },
+    {
+      "id": 322,
+      "name": "S-65 Stingray"
+    }
+  ]
+}

@@ -104,13 +104,13 @@
   {
     "name": "Caterpillar 2949 Best in Show",
     "ids": [
-      "194"
+      "24"
     ]
   },
   {
     "name": "Cutlass 2949 Best In Show",
     "ids": [
-      "193"
+      "56"
     ]
   },
   {
@@ -146,13 +146,13 @@
   {
     "name": "F8C Lightning Civilian",
     "ids": [
-      "1001"
+      "261"
     ]
   },
   {
     "name": "F8C Lightning Executive Edition",
     "ids": [
-      "1002"
+      "263"
     ]
   },
   {
@@ -176,85 +176,19 @@
   {
     "name": "PTV",
     "ids": [
-      "1003"
+      "215"
     ]
   },
   {
     "name": "Greycat PTV",
     "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: Rifle Green",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: Tactical Stealth",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: Agate Gray",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Paint: Rifle Green",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Paint: Tactical Stealth",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Paint: Agate Gray",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Paint: Cherry",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Paint: All Terrain Camouflage: Forest",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: All Terrain Camouflage: Forest",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: Cherry",
-    "ids": [
-      "1003"
-    ]
-  },
-  {
-    "name": "Greycat Paint: Gunmetal",
-    "ids": [
-      "1003"
+      "215"
     ]
   },
   {
     "name": "Hammerhead 2949 Best in Show",
     "ids": [
-      "195"
+      "151"
     ]
   },
   {
@@ -370,7 +304,7 @@
   {
     "name": "Reclaimer 2949 Best in Show",
     "ids": [
-      "196"
+      "51"
     ]
   },
   {
@@ -490,13 +424,13 @@
   {
     "name": "Anvil F8C Lightning Civilian",
     "ids": [
-      "1001"
+      "261"
     ]
   },
   {
     "name": "Anvil F8C Lightning Executive Edition",
     "ids": [
-      "1002"
+      "263"
     ]
   },
   {
